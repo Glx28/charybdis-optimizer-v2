@@ -35,18 +35,21 @@ class ViolationFactor(FitnessFactor):
     """Aggregates constraint violations. Lower is better."""
     name = "violations"
     
-    def __init__(self, weights: dict = None):
+    def __init__(self, weights: dict = None, threshold: float = 6.0):
         self.sub_weights = weights or {
             "duplicate": 10.0,
             "l0_displacement": 50.0,
-            "missing_important": 15.0,
+            "missing_important": 5000000.0,
             "cross_layer_duplicate": 8.0,
             "group_split": 200.0,
             "thumb_occupancy": 200.0,
-            "arrow_order": 200.0,
+            "arrow_order": 500000.0,
             "hand_bias": 2000.0,
             "mouse_layer_access": 5000.0,
+            "arrow_scattered": 5000000.0,
+            "layer7_unreachable": 50000000.0,
         }
+        self.threshold = threshold
     
     def compute(self, layout: Layout) -> float:
         total = 0.0
@@ -59,6 +62,8 @@ class ViolationFactor(FitnessFactor):
         total += self._arrow_order(layout) * self.sub_weights["arrow_order"]
         total += self._hand_bias(layout) * self.sub_weights["hand_bias"]
         total += self._mouse_layer_access(layout) * self.sub_weights["mouse_layer_access"]
+        total += self._arrow_scattered(layout) * self.sub_weights["arrow_scattered"]
+        total += self._layer7_unreachable(layout) * self.sub_weights["layer7_unreachable"]
         return total
     
     def _duplicate_penalty(self, layout: Layout) -> float:
@@ -90,11 +95,13 @@ class ViolationFactor(FitnessFactor):
         return penalty
     
     def _missing_important(self, layout: Layout) -> float:
+        """Penalize missing high-importance shortcuts."""
         penalty = 0.0
         assigned = set(layout.genome[layout.genome >= 0])
         for sc in layout.shortcuts:
-            if sc.sid not in assigned and sc.importance >= 6.0:
-                penalty += sc.importance
+            if sc.sid in assigned or sc.importance < self.threshold:
+                continue
+            penalty += sc.importance
         return penalty
     
     def _cross_layer_duplicate(self, layout: Layout) -> float:
@@ -297,3 +304,70 @@ class ViolationFactor(FitnessFactor):
                 penalty += shortcut.importance * 100.0
         
         return penalty
+
+    def _arrow_l0(self, layout: Layout) -> float:
+        """Penalize ANY arrow key on layer 0 (base layer).
+        
+        Arrows do not belong on the base typing layer. L7 already provides
+        arrow access. Any arrow on L0 is wasting a base-layer slot.
+        """
+        ARROW_KEYS = {"LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW"}
+        penalty = 0.0
+        for i, sid in enumerate(layout.genome):
+            if sid < 0:
+                continue
+            sc = layout.shortcuts[sid]
+            if sc.base_key.upper() in ARROW_KEYS:
+                if layout.positions[i].layer == 0:
+                    penalty += 1.0
+        return penalty
+
+    def _arrow_scattered(self, layout: Layout) -> float:
+        """Penalize arrows split across multiple non-L7 layers.
+        
+        Arrows should be grouped on ONE layer (L7 is preferred, but one
+        other layer is acceptable). Being scattered across 2+ layers is
+        worse than having them all on one layer or not at all.
+        """
+        ARROW_KEYS = {"LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW"}
+        layers_with_arrows = set()
+        for i, sid in enumerate(layout.genome):
+            if sid < 0:
+                continue
+            sc = layout.shortcuts[sid]
+            if sc.base_key.upper() in ARROW_KEYS:
+                layer = layout.positions[i].layer
+                if layer != 7:
+                    layers_with_arrows.add(layer)
+        
+        n_layers = len(layers_with_arrows)
+        if n_layers <= 1:
+            return 0.0
+        return float(n_layers - 1)
+
+    def _layer7_unreachable(self, layout: Layout) -> float:
+        """Penalize if layer 7 is not reachable from layer 0.
+        
+        Layer 7 must be accessible from L0 either directly or via intermediate
+        layers. If unreachable, the keyboard layout is effectively invalid.
+        """
+        # Build directed access graph: source -> list of targets
+        access_graph = {}
+        for access in layout.layer_access:
+            if access.source_layer not in access_graph:
+                access_graph[access.source_layer] = []
+            access_graph[access.source_layer].append(access.target_layer)
+        
+        # BFS from L0
+        visited = {0}
+        queue = [0]
+        while queue:
+            current = queue.pop(0)
+            if current == 7:
+                return 0.0
+            for neighbor in access_graph.get(current, []):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+        
+        return 1.0

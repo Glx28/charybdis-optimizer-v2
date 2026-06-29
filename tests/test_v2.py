@@ -1,6 +1,8 @@
 """Tests for the v2 Charybdis optimizer."""
 import sys
 import os
+import json
+import tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import numpy as np
@@ -14,6 +16,7 @@ from fitness.factors.finger_balance import FingerBalanceFactor
 from fitness.factors.same_finger import SameFingerFactor
 from fitness.factors.violation import ViolationFactor
 from evolution.surrogate import LayoutSurrogate, SurrogateTrainer
+from core.loader import load_shortcuts
 
 
 class TestDataStructures(unittest.TestCase):
@@ -31,6 +34,77 @@ class TestDataStructures(unittest.TestCase):
         layout = Layout(g, (p, p), (s,), m)
         self.assertTrue(layout.is_valid())
         self.assertEqual(layout.n_assigned, 1)
+
+    def test_l0_raw_duplicates_are_filtered(self):
+        canonical = {
+            "layers": {
+                "0": {
+                    "keys": {
+                        "8:2": {
+                            "x": 8,
+                            "y": 2,
+                            "label": "J",
+                            "behavior": "Key Press",
+                            "parameter": "J",
+                            "modifiers": [],
+                        },
+                        "4:4": {
+                            "x": 4,
+                            "y": 4,
+                            "label": "Space",
+                            "behavior": "Key Press",
+                            "parameter": "Spacebar",
+                            "modifiers": [],
+                        },
+                        "5:4": {
+                            "x": 5,
+                            "y": 4,
+                            "label": "Alt",
+                            "behavior": "Key Press",
+                            "parameter": "LeftAlt",
+                            "modifiers": [],
+                        },
+                        "7:5": {
+                            "x": 7,
+                            "y": 5,
+                            "label": "Ret",
+                            "behavior": "Key Press",
+                            "parameter": "Return Enter",
+                            "modifiers": [],
+                        },
+                    }
+                }
+            }
+        }
+        app_scores = {
+            "apps": [{
+                "name": "Browser",
+                "shortcuts": [
+                    {"keys": "J", "action": "Previous tab", "importance": 5.7},
+                    {"keys": "Ctrl+J", "action": "Downloads", "importance": 1.0},
+                    {"keys": "Spacebar", "action": "Page down", "importance": 5.0},
+                    {"keys": "Enter", "action": "Send", "importance": 5.0},
+                    {"keys": "LeftAlt", "action": "Menu", "importance": 5.0},
+                ],
+            }]
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json", encoding="utf-8") as f:
+            json.dump(app_scores, f)
+            path = f.name
+        try:
+            shortcuts = load_shortcuts(path, canonical)
+        finally:
+            os.unlink(path)
+
+        keys = {s.keys for s in shortcuts}
+        self.assertIn("_base_j", keys)
+        self.assertIn("_base_spacebar", keys)
+        self.assertIn("_base_returnenter", keys)
+        self.assertIn("Ctrl+J", keys)
+        self.assertIn("LeftAlt", keys)
+        self.assertNotIn("J", keys)
+        self.assertNotIn("Spacebar", keys)
+        self.assertNotIn("Enter", keys)
 
 
 class TestFitnessFactors(unittest.TestCase):

@@ -8,6 +8,94 @@ import numpy as np
 from core import Position, Shortcut, Layout, UsageData, LayerAccess
 
 
+RAW_KEY_ALIASES = {
+    "escape": "escape",
+    "esc": "escape",
+    "delete": "delete",
+    "bksp": "delete",
+    "backspace": "delete",
+    "tab": "tab",
+    "space": "spacebar",
+    "spacebar": "spacebar",
+    "enter": "returnenter",
+    "return": "returnenter",
+    "return enter": "returnenter",
+    "leftshift": "leftshift",
+    "rightshift": "rightshift",
+    "shift": "leftshift",
+    "leftcontrol": "leftcontrol",
+    "rightcontrol": "rightcontrol",
+    "ctrl": "leftcontrol",
+    "leftalt": "leftalt",
+    "rightalt": "rightalt",
+    "left gui": "leftgui",
+    "leftgui": "leftgui",
+    "comma": ",",
+    "comma and lessthan": ",",
+    "period": ".",
+    "period and greaterthan": ".",
+    "forwardslash": "/",
+    "forwardslash and questionmark": "/",
+    "backslash": "\\",
+    "backslash and pipe": "\\",
+    "semicolon": ";",
+    "semicolon and colon": ";",
+    "left apos": "'",
+    "left apos and double": "'",
+    "apostrophe": "'",
+    "left brace": "[",
+    "right brace": "]",
+}
+
+L0_FROZEN_THUMB_RAW_KEYS = {"spacebar", "returnenter"}
+
+
+def _normalize_raw_key_id(value: str) -> Optional[str]:
+    """Normalize a raw no-modifier key to a stable id."""
+    if value is None:
+        return None
+    clean = str(value).strip()
+    if not clean:
+        return None
+    clean = clean.replace("Keyboard ", "").replace("keyboard ", "")
+    clean = clean.split(" and ")[0] if " and " in clean and clean[:1].isdigit() else clean
+    lowered = clean.lower().strip()
+    if lowered in RAW_KEY_ALIASES:
+        return RAW_KEY_ALIASES[lowered]
+    if len(clean) == 1:
+        return clean.lower()
+    if clean.isdigit():
+        return clean
+    if re.fullmatch(r"f\d{1,2}", lowered):
+        return lowered
+    return None
+
+
+def _permanent_l0_raw_keys(canonical_data: dict) -> Dict[str, str]:
+    """Return raw keys permanently present on L0 rows y=0..3 plus frozen thumb exceptions."""
+    permanent = {}
+    l0_keys = canonical_data.get("layers", {}).get("0", {}).get("keys", {})
+    for key_data in l0_keys.values():
+        if key_data.get("behavior", "").lower() != "key press":
+            continue
+        if key_data.get("modifiers"):
+            continue
+        key_id = _normalize_raw_key_id(key_data.get("parameter", ""))
+        if key_id is None:
+            key_id = _normalize_raw_key_id(key_data.get("label", ""))
+        try:
+            y = float(key_data.get("y", 0))
+        except (TypeError, ValueError):
+            continue
+        is_main_l0_key = 0 <= y <= 3
+        is_frozen_thumb_exception = key_id in L0_FROZEN_THUMB_RAW_KEYS
+        if not is_main_l0_key and not is_frozen_thumb_exception:
+            continue
+        if key_id is not None:
+            permanent[key_id] = key_data.get("label") or key_data.get("parameter") or key_id
+    return permanent
+
+
 def _parse_layer_from_behavior(label: str, behavior: str, parameter: str) -> Optional[int]:
     """Extract target layer number from a layer access key."""
     # Check parameter first (most reliable)
@@ -205,9 +293,14 @@ def load_canonical(path: str) -> Tuple[List[Position], np.ndarray, List[LayerAcc
             is_thumb = pos_meta.get("zone") == "thumb" or finger == 0
             is_frozen = layer_num == 7  # L7 is frozen
             
-            # On L0, main typing area is frozen, thumb area is open
+            # On L0, main typing area is frozen. Only Space and Return are
+            # frozen thumb raw inputs; the other thumb positions stay mutable.
             if layer_num == 0 and not is_thumb and pos_meta.get("zone") == "finger":
                 is_frozen = True
+            if layer_num == 0 and is_thumb:
+                raw_key_id = _normalize_raw_key_id(key_data.get("parameter", ""))
+                if raw_key_id in L0_FROZEN_THUMB_RAW_KEYS:
+                    is_frozen = True
             
             pos = Position(
                 gene_idx=len(positions),
@@ -233,13 +326,29 @@ def load_canonical(path: str) -> Tuple[List[Position], np.ndarray, List[LayerAcc
     return positions, frozen_mask, layer_access
 
 
-def load_shortcuts(path: str) -> List[Shortcut]:
+def load_shortcuts(path: str, canonical_data: Optional[dict] = None) -> List[Shortcut]:
     """Load app_shortcut_scores.json and build Shortcut objects."""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     
     shortcuts = []
     seen_keys = set()
+    permanent_l0_raw = _permanent_l0_raw_keys(canonical_data or {})
+
+    for key_id, label in sorted(permanent_l0_raw.items()):
+        shortcuts.append(Shortcut(
+            sid=len(shortcuts),
+            keys=f"_base_{key_id}",
+            action="Base typing key for the permanent L0 layout.",
+            app="Base",
+            importance=0.0,
+            category="base",
+            modifiers=tuple(),
+            base_key=label,
+            is_l0_only=True,
+            complexity=1,
+            preferred_hand="either",
+        ))
     
     for app_data in data.get("apps", []):
         app_name = app_data.get("name", "unknown")
@@ -259,6 +368,10 @@ def load_shortcuts(path: str) -> List[Shortcut]:
             modifiers = []
             for part in keys.replace('+', ' ').split()[:-1]:
                 modifiers.append(part)
+
+            raw_key_id = _normalize_raw_key_id(base_key) if not modifiers and "+" not in keys else None
+            if raw_key_id is not None and raw_key_id in permanent_l0_raw:
+                continue
             
             sc = Shortcut(
                 sid=len(shortcuts),
@@ -446,15 +559,13 @@ def _extract_base_key_id(param: str, behavior: str, modifiers: List[str]) -> Opt
                "leftshift", "rightshift", "leftcontrol", "rightcontrol",
                "leftalt", "rightalt", "left gui"]:
         if kw in p:
-            return kw
+            return _normalize_raw_key_id(kw) or kw
     
-    # Single letter/number (no modifiers)
+    # Single raw key (no modifiers)
     if not modifiers:
-        clean = p.replace("keyboard ", "").split(" and ")[0].split(" ")[0].strip()
-        if len(clean) == 1 and clean.isalpha():
-            return clean
-        if clean.isdigit() or (len(clean) >= 2 and clean[0].isdigit()):
-            return clean[0] if clean[0].isdigit() else clean
+        raw_id = _normalize_raw_key_id(p)
+        if raw_id is not None:
+            return raw_id
     
     # F-keys
     f_match = re.search(r'\bf(\d+)\b', p)
@@ -464,10 +575,46 @@ def _extract_base_key_id(param: str, behavior: str, modifiers: List[str]) -> Opt
     return None
 
 
-def build_layout(build_dir: str) -> Layout:
-    """Build a Layout from v1 data files."""
-    positions, frozen_mask, layer_access = load_canonical(os.path.join(build_dir, "canonical.json"))
-    shortcuts = load_shortcuts(os.path.join(build_dir, "app_shortcut_scores.json"))
+def build_layout(build_dir: str, config: dict = None) -> Layout:
+    """Build a Layout from v1 data files.
+    
+    Optional config dict can contain 'shortcut_importance_overrides' to
+    adjust shortcut importance without editing the source data.
+    """
+    canonical_path = os.path.join(build_dir, "canonical.json")
+    with open(canonical_path, "r", encoding="utf-8") as f:
+        canonical_data = json.load(f)
+
+    positions, frozen_mask, layer_access = load_canonical(canonical_path)
+    shortcuts = load_shortcuts(os.path.join(build_dir, "app_shortcut_scores.json"), canonical_data)
+    
+    # Apply importance overrides from config
+    if config:
+        overrides = config.get("shortcut_importance_overrides", {})
+        if overrides:
+            updated = []
+            for sc in shortcuts:
+                if sc.keys in overrides:
+                    updated.append(Shortcut(
+                        sid=sc.sid,
+                        keys=sc.keys,
+                        action=sc.action,
+                        app=sc.app,
+                        importance=float(overrides[sc.keys]),
+                        category=sc.category,
+                        modifiers=sc.modifiers,
+                        base_key=sc.base_key,
+                        is_capability=sc.is_capability,
+                        is_l0_only=sc.is_l0_only,
+                        complexity=sc.complexity,
+                        preferred_hand=sc.preferred_hand,
+                        primary_app=sc.primary_app,
+                        app_demand=sc.app_demand,
+                    ))
+                else:
+                    updated.append(sc)
+            shortcuts = updated
+    
     usage = load_usage_stats(os.path.join(build_dir, "usage_stats.json"))
     
     # Build layer_to_indices mapping
@@ -475,11 +622,6 @@ def build_layout(build_dir: str) -> Layout:
     for layer in set(p.layer for p in positions):
         indices = [p.gene_idx for p in positions if p.layer == layer]
         layer_to_indices[layer] = np.array(indices, dtype=np.int32)
-    
-    # Load canonical data for pre-seeding
-    canonical_path = os.path.join(build_dir, "canonical.json")
-    with open(canonical_path, "r", encoding="utf-8") as f:
-        canonical_data = json.load(f)
     
     # Build pre-seeded genome from canonical + greedy fill
     genome = build_scratch_genome(canonical_data, positions, shortcuts)

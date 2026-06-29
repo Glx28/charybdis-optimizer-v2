@@ -237,6 +237,29 @@ def _prepare_arrays(layout: Layout, evaluator: FitnessEvaluator):
             access_rows.append((access.target_layer, 0 if access.hand == "left" else 1))
     access = np.asarray(access_rows, dtype=np.int32).reshape((-1, 2)) if access_rows else np.empty((0, 2), dtype=np.int32)
 
+    # Compute layer 7 reachability from L0 via BFS through all access types
+    layer7_unreachable = 0.0
+    if layout.layer_access:
+        access_graph = {}
+        for la in layout.layer_access:
+            if la.source_layer not in access_graph:
+                access_graph[la.source_layer] = []
+            access_graph[la.source_layer].append(la.target_layer)
+        visited = {0}
+        queue = [0]
+        reachable = False
+        while queue:
+            current = queue.pop(0)
+            if current == 7:
+                reachable = True
+                break
+            for neighbor in access_graph.get(current, []):
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+        if not reachable:
+            layer7_unreachable = 1.0
+
     weights = evaluator.weights
     objective_weights = np.asarray([
         weights.get("effort", 1.0),
@@ -250,7 +273,38 @@ def _prepare_arrays(layout: Layout, evaluator: FitnessEvaluator):
         weights.get("trackball_proximity", 2.0),
     ], dtype=np.float32)
 
-    violation_weights = np.asarray([10.0, 50.0, 15.0, 8.0, 200.0, 200.0, 200.0, 2000.0, 5000.0], dtype=np.float32)
+    # Build violation weights from evaluator config or use defaults
+    vw = getattr(evaluator, 'violation_weights', None)
+    if vw is None:
+        vw = {
+            "duplicate": 10.0,
+            "l0_displacement": 50.0,
+            "missing_important": 5000000.0,
+            "cross_layer_duplicate": 8.0,
+            "group_split": 200.0,
+            "thumb_occupancy": 200.0,
+            "arrow_order": 500000.0,
+            "hand_bias": 2000.0,
+            "mouse_layer_access": 5000.0,
+            "arrow_scattered": 5000000.0,
+            "layer7_unreachable": 50000000.0,
+        }
+    
+    violation_weights = np.asarray([
+        vw.get("duplicate", 10.0),
+        vw.get("l0_displacement", 50.0),
+        vw.get("missing_important", 5000000.0),
+        vw.get("cross_layer_duplicate", 8.0),
+        vw.get("group_split", 200.0),
+        vw.get("thumb_occupancy", 200.0),
+        vw.get("arrow_order", 500000.0),
+        vw.get("hand_bias", 2000.0),
+        vw.get("mouse_layer_access", 5000.0),
+        vw.get("arrow_scattered", 5000000.0),
+        vw.get("layer7_unreachable", 50000000.0),
+    ], dtype=np.float32)
+
+    threshold = getattr(evaluator, 'threshold', 6.0)
 
     ref = evaluator.reference_layout.genome if evaluator.reference_layout is not None else np.full(layout.n_positions, -1, dtype=np.int32)
 
@@ -265,6 +319,8 @@ def _prepare_arrays(layout: Layout, evaluator: FitnessEvaluator):
         np.asarray(evaluator.scale_factors, dtype=np.float32),
         layer_access_cost,
         layer_right_required,
+        np.float32(layer7_unreachable),
+        np.float32(threshold),
     )
 
 
@@ -290,6 +346,7 @@ class BatchExactEvaluator:
         return _evaluate_batch_numba(np.asarray(genomes, dtype=np.int32), *self.arrays)
 
     def validate_parity(self, n: int = 32, tolerance: float = 1e-4) -> BatchParityResult:
+        tolerance = float(tolerance)
         rng = np.random.default_rng(12345)
         samples = [self.layout.genome.astype(np.int32).copy()]
         mutable = self.layout.mutable_indices
@@ -311,14 +368,14 @@ class BatchExactEvaluator:
 
 
 if NUMBA_AVAILABLE:
-    @njit(parallel=True, cache=False)
+    @njit(parallel=False, cache=False)
     def _evaluate_batch_numba(
         genomes, pos_effort, pos_layer, pos_finger, pos_hand, pos_is_thumb, dist, trackball_dist, pos_x,
         shortcut_importance, shortcut_app, shortcut_category, shortcut_base, shortcut_l0_only, shortcut_trackball,
         shortcut_is_mouse, shortcut_preferred_hand, shortcut_arrow_type,
         app_usage_weight, access, group_matrix, sequence_rows, chain_rows, workflow_rows, blind_rows,
         reference_genome, objective_weights, violation_weights, scale_factors, layer_access_cost,
-        layer_right_required,
+        layer_right_required, layer7_unreachable, threshold,
     ):
         batch = genomes.shape[0]
         n_pos = genomes.shape[1]
@@ -326,7 +383,7 @@ if NUMBA_AVAILABLE:
         n_apps = app_usage_weight.shape[0]
         out = np.zeros((batch, 3), dtype=np.float32)
 
-        for b in prange(batch):
+        for b in range(batch):
             genome = genomes[b]
             sid_pos = np.full(n_short, -1, dtype=np.int32)
             sid_layer_seen = np.zeros((n_short, 32), dtype=np.bool_)
@@ -493,7 +550,7 @@ if NUMBA_AVAILABLE:
 
             missing = 0.0
             for sid in range(n_short):
-                if not assigned[sid] and shortcut_importance[sid] >= 6.0:
+                if not assigned[sid] and shortcut_importance[sid] >= threshold:
                     missing += shortcut_importance[sid]
 
             cross_dup = 0.0
@@ -578,6 +635,23 @@ if NUMBA_AVAILABLE:
                         elif down_x > max_x:
                             arrow_order += (down_x - max_x + 1.0) * 60.0
 
+            arrow_scattered = 0.0
+            arrow_layers = np.zeros(32, dtype=np.int32)
+            for i in range(n_pos):
+                sid = genome[i]
+                if sid < 0 or sid >= n_short:
+                    continue
+                atype = shortcut_arrow_type[sid]
+                if atype != 0:
+                    layer = pos_layer[i]
+                    if layer != 7 and 0 <= layer < 32:
+                        arrow_layers[layer] = 1
+            n_arrow_layers = 0
+            for layer in range(32):
+                n_arrow_layers += arrow_layers[layer]
+            if n_arrow_layers > 1:
+                arrow_scattered = float(n_arrow_layers - 1)
+
             violations_raw = (
                 duplicate * violation_weights[0] +
                 l0_displacement * violation_weights[1] +
@@ -587,7 +661,9 @@ if NUMBA_AVAILABLE:
                 thumb_occ * violation_weights[5] +
                 arrow_order * violation_weights[6] +
                 hand_bias * violation_weights[7] +
-                mouse_layer_access * violation_weights[8]
+                mouse_layer_access * violation_weights[8] +
+                arrow_scattered * violation_weights[9] +
+                layer7_unreachable * violation_weights[10]
             )
 
             workflow = 0.0

@@ -16,7 +16,7 @@ from fitness.factors.trackball_proximity import TrackballProximityFactor
 class FitnessEvaluator:
     """Composable fitness evaluator with optional objective normalization."""
     
-    def __init__(self, weights: Dict[str, float] = None, reference_layout: Layout = None, scale_factors=None):
+    def __init__(self, weights: Dict[str, float] = None, reference_layout: Layout = None, scale_factors=None, violation_weights: Dict[str, float] = None):
         self.weights = weights or {
             "effort": 1.0,
             "adjacency": 1.5,
@@ -30,6 +30,8 @@ class FitnessEvaluator:
         }
         self.reference_layout = reference_layout
         self.scale_factors = scale_factors if scale_factors is not None else np.ones(3, dtype=np.float32)
+        self.violation_weights = violation_weights
+        self.threshold = violation_weights.get("missing_important_threshold", 6.0) if violation_weights else 6.0
         self.factors = self._build_factors()
     
     def _build_factors(self) -> List[FitnessFactor]:
@@ -38,7 +40,7 @@ class FitnessEvaluator:
             AdjacencyFactor(),
             FingerBalanceFactor(),
             SameFingerFactor(),
-            ViolationFactor(),
+            ViolationFactor(weights=self.violation_weights, threshold=self.violation_weights.get("missing_important_threshold", 6.0) if self.violation_weights else 6.0),
             WorkflowCoherenceFactor(),
             LearningCurveFactor(self.reference_layout),
             AppCoherenceFactor(),
