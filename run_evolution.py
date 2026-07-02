@@ -1,4 +1,5 @@
-"""Run the full pymoo evolution loop with surrogate."""
+"""Run the full pymoo evolution loop."""
+import argparse
 import sys
 import os
 import random
@@ -13,13 +14,22 @@ import pstats
 # Unbuffer stdout so manager can see progress in real-time
 sys.stdout.reconfigure(line_buffering=True)
 
+# Use all logical CPU threads for Numba prange (crossover + exact eval kernels)
+import os as _os
+_numba_threads = int(_os.environ.get("NUMBA_NUM_THREADS", _os.cpu_count() or 8))
+_os.environ.setdefault("NUMBA_NUM_THREADS", str(_numba_threads))
+
 sys.path.insert(0, os.path.dirname(__file__))
 
 from core.loader import build_layout
 from fitness.evaluator import FitnessEvaluator
-from fitness.batch_evaluator import BatchExactEvaluator, NUMBA_AVAILABLE
+from fitness.kernel import NUMBA_AVAILABLE
+from fitness.kernel import _app_matches, _shortcut_duplicate_support
+from evolution import create_algorithm, LayoutProblem
 from evolution.surrogate import LayoutSurrogate, SurrogateTrainer, SurrogateManager
-from evolution import create_algorithm
+from evolution.completion_cluster import analyze_completion_cluster
+from evolution.arrow_cluster import analyze_arrows
+from evolution.acceptance import build_acceptance_report
 from config import Config
 
 from pymoo.optimize import minimize
@@ -27,7 +37,10 @@ from pymoo.core.callback import Callback
 
 
 def generate_random_layouts(layout, n):
+    from evolution import build_group_placements
+
     mutable = layout.mutable_indices
+    mutable_set = set(mutable.tolist()) if hasattr(mutable, 'tolist') else set(mutable)
     n_shortcuts = layout.n_shortcuts
     layouts = np.full((n, layout.n_positions), -1, dtype=np.int32)
     if n <= 0:
@@ -36,134 +49,238 @@ def generate_random_layouts(layout, n):
     layouts[0] = layout.genome.astype(np.int32).copy()
     frozen = layout.frozen_indices
     frozen_assigned = {int(sid) for sid in layout.genome[frozen] if sid >= 0}
-    available_sids = [sid for sid in range(n_shortcuts) if sid not in frozen_assigned]
+
+    # Exclude group sids from individual random assignment — they are placed
+    # as complete groups at valid anchors so initial genomes are never scattered.
+    groups = build_group_placements(layout)
+    group_sids_all = {sid for sid_tuple, _ in groups for sid in sid_tuple}
+
+    available_sids = [
+        sid for sid in range(n_shortcuts)
+        if sid not in frozen_assigned and sid not in group_sids_all
+    ]
 
     for i in range(1, n):
         layouts[i, frozen] = layout.genome[frozen]
-        n_assign = min(len(mutable), n_shortcuts, len(available_sids))
+        n_assign = min(len(mutable), len(available_sids))
         assigned = random.sample(available_sids, n_assign)
         layouts[i, mutable[:n_assign]] = assigned
+
+        # Place each group at a random valid anchor.
+        for sid_tuple, anchor_list in groups:
+            anchor = list(random.choice(anchor_list))
+            anchor_set = set(anchor)
+            # Read what's at the anchor positions now (to displace them).
+            displaced = [int(layouts[i, pos]) for pos in anchor]
+            # Place group sids at anchor.
+            for sid, pos in zip(sid_tuple, anchor):
+                layouts[i, pos] = sid
+            # Displaced non-group sids go to the first free mutable slots.
+            fill_sids = [s for s in displaced if s >= 0 and s not in group_sids_all]
+            free_slots = [
+                pos for pos in mutable
+                if pos not in anchor_set and int(layouts[i, pos]) == -1
+            ]
+            for pos, sid in zip(free_slots, fill_sids):
+                layouts[i, pos] = sid
+
     return layouts
 
 
-def _setup_mp_env():
-    """Set PYTHONPATH so child processes can find the venv and project."""
-    import os, sys
-    paths = []
-    project_root = os.path.dirname(os.path.abspath(__file__))
-    paths.append(project_root)
-    exe_dir = os.path.dirname(sys.executable)
-    for candidate in [
-        os.path.join(exe_dir, 'Lib', 'site-packages'),
-        os.path.join(os.path.dirname(exe_dir), 'Lib', 'site-packages'),
-        os.path.join(project_root, '.venv', 'Lib', 'site-packages'),
-    ]:
-        if os.path.exists(candidate) and candidate not in paths:
-            paths.append(candidate)
-    current = os.environ.get('PYTHONPATH', '')
-    new_paths = os.pathsep.join(paths)
-    if current:
-        os.environ['PYTHONPATH'] = new_paths + os.pathsep + current
-    else:
-        os.environ['PYTHONPATH'] = new_paths
-
-
-def _eval_one(args):
-    """Module-level worker for parallel exact eval."""
-    (idx, genome, positions, shortcuts, frozen_mask, layer_to_indices, usage_data,
-     layer_access, dynamic_groups, evaluator_weights, evaluator_scale, reference_genome) = args
-    from core import Layout, UsageData
-    from fitness.evaluator import FitnessEvaluator
-    import numpy as np
-    
-    l = Layout(
-        genome=genome,
-        positions=positions,
-        shortcuts=shortcuts,
-        frozen_mask=frozen_mask,
-        layer_to_indices=layer_to_indices,
-        usage_data=usage_data if usage_data is not None else UsageData(),
-        layer_access=layer_access,
-        dynamic_groups=dynamic_groups if dynamic_groups is not None else tuple(),
-    )
-    ref = Layout(
-        genome=reference_genome,
-        positions=positions,
-        shortcuts=shortcuts,
-        frozen_mask=frozen_mask,
-        layer_to_indices=layer_to_indices,
-        usage_data=usage_data if usage_data is not None else UsageData(),
-        layer_access=layer_access,
-        dynamic_groups=dynamic_groups if dynamic_groups is not None else tuple(),
-    ) if reference_genome is not None else None
-    ev = FitnessEvaluator(weights=evaluator_weights, reference_layout=ref, scale_factors=evaluator_scale)
-    result = ev.evaluate(l)
-    return idx, result.objectives
-
-
-def evaluate_exact_batch(layouts, layout, evaluator, n_workers=None, batch_evaluator=None, perf=None, label="exact_eval"):
-    """Evaluate exact fitness for a batch of layouts, using all CPU cores."""
+def evaluate_exact_batch(layouts, layout, evaluator, perf=None, label="exact_eval"):
+    """Evaluate exact fitness for a batch of layouts using the compiled model."""
     t0 = time.perf_counter()
-    if batch_evaluator is not None and getattr(batch_evaluator, "enabled", False):
-        try:
-            scores = batch_evaluator.evaluate(layouts)
-            if perf is not None:
-                perf.add(label, time.perf_counter() - t0)
-            return scores
-        except Exception as exc:
-            print(f"  Compiled exact evaluator failed, falling back to CPU: {exc}", flush=True)
-            batch_evaluator.enabled = False
-
-    import multiprocessing as mp
-    n = layouts.shape[0]
-    scores = np.zeros((n, 3), dtype=np.float32)
-    
-    # For small batches, just use sequential evaluation
-    if n <= 20 or n_workers == 1:
-        for i in range(n):
-            result = evaluator.evaluate(layout.clone_with(genome=layouts[i]))
-            scores[i] = result.objectives
+    try:
+        scores, constraints = evaluator.evaluate_batch(layouts)
         if perf is not None:
             perf.add(label, time.perf_counter() - t0)
-        return scores
-    
-    # Parallel evaluation for larger batches
-    n_workers = n_workers or max(1, mp.cpu_count() - 1)
-    
-    # Fix environment for child processes (Windows spawn doesn't inherit venv)
-    _setup_mp_env()
-    
-    # Prepare args - pickleable objects
-    args_list = []
+        return scores, constraints
+    except Exception as exc:
+        print(f"  Compiled exact evaluator failed, falling back to sequential: {exc}", flush=True)
+
+    n = layouts.shape[0]
+    scores = np.zeros((n, 3), dtype=np.float32)
+    constraints = np.zeros((n, len(evaluator.hard_constraints)), dtype=np.float32)
     for i in range(n):
-        args_list.append((
-            i,
-            layouts[i].copy(),
-            layout.positions,
-            layout.shortcuts,
-            layout.frozen_mask.copy(),
-            layout.layer_to_indices,
-            layout.usage_data,
-            layout.layer_access,
-            layout.dynamic_groups,
-            evaluator.weights.copy() if hasattr(evaluator.weights, 'copy') else evaluator.weights,
-            evaluator.scale_factors.copy() if evaluator.scale_factors is not None else None,
-            evaluator.reference_layout.genome.copy() if evaluator.reference_layout is not None else None,
-        ))
-    
-    try:
-        with mp.Pool(n_workers) as pool:
-            for idx, obj in pool.imap_unordered(_eval_one, args_list):
-                scores[idx] = obj
-    except Exception as e:
-        print(f"  Warning: parallel eval failed ({e}), falling back to sequential", flush=True)
-        for i in range(n):
-            result = evaluator.evaluate(layout.clone_with(genome=layouts[i]))
-            scores[i] = result.objectives
-    
+        result = evaluator.evaluate(layout.clone_with(genome=layouts[i]))
+        scores[i] = result.objectives
+        constraints[i] = result.constraints
+
     if perf is not None:
         perf.add(label, time.perf_counter() - t0)
-    return scores
+    return scores, constraints
+
+
+def validate_exact_evaluator(layout, evaluator, tolerance=1e-4, n=16):
+    """Validate the compiled evaluator against sequential Python evaluation."""
+    tolerance = float(tolerance)
+    try:
+        parity = evaluator.model.validate_parity(evaluator, n=n, tolerance=tolerance)
+        if parity.ok:
+            print(f"  Compiled exact evaluator enabled (parity max diff={parity.max_abs_diff:.3g}).", flush=True)
+        else:
+            print(f"  Compiled exact evaluator parity failed: {parity.message}", flush=True)
+        return parity.ok
+    except Exception as exc:
+        print(f"  Compiled exact evaluator unavailable: {exc}", flush=True)
+        return False
+
+
+def maybe_validate_exact_evaluator(config, layout, evaluator):
+    """Run expensive compiled/parity validation only when explicitly enabled."""
+    if not bool(config.get("exact_eval.validate_parity", False)):
+        print("  Exact evaluator parity validation skipped (exact_eval.validate_parity=false).", flush=True)
+        return True
+    return validate_exact_evaluator(
+        layout,
+        evaluator,
+        tolerance=config.get("exact_eval.parity_tolerance", 1e-4),
+        n=config.get("exact_eval.parity_samples", 16),
+    )
+
+
+def build_evaluator(config, layout, scale_factors=None):
+    return FitnessEvaluator(
+        weights=config.get("fitness.weights", {}),
+        reference_layout=layout,
+        scale_factors=scale_factors,
+        violation_weights=config.get("fitness.violation_sub_weights", {}),
+        missing_important_threshold=config.get("fitness.missing_important_threshold", 6.0),
+        hard_constraints=config.get("fitness.hard_constraints", []),
+        toggle_effort_multiplier=float(config.get("fitness.toggle_effort_multiplier", 2.5)),
+    )
+
+
+def enforce_training_device_policy(config):
+    """Fail fast when the configured training path would run CPU-primary.
+
+    This project is GPU-focused.  CPU-only exact evaluation may be useful for
+    unit tests or one-off diagnostics, but it must not silently become the
+    training path for an evolution run.
+    """
+    require_cuda = bool(config.get("training.require_cuda", True))
+    require_gpu_primary = bool(config.get("training.require_gpu_primary", True))
+    allow_cpu_exact_validation = bool(config.get("training.allow_cpu_exact_validation", False))
+    cuda_available = bool(torch.cuda.is_available())
+    surrogate_enabled = bool(config.get("surrogate.enabled", False))
+
+    if require_cuda and not cuda_available:
+        raise SystemExit(
+            "GPU training policy violation: CUDA is required, but torch.cuda.is_available() is false. "
+            "Do not start a CPU training run."
+        )
+    if require_gpu_primary and not surrogate_enabled:
+        raise SystemExit(
+            "GPU training policy violation: GPU-primary training is required, but surrogate.enabled=false. "
+            "The current run_evolution.py exact-evaluation path is CPU/Numba-primary. "
+            "Enable or implement a CUDA-backed training path before starting a training run."
+        )
+    if require_gpu_primary and not allow_cpu_exact_validation:
+        raise SystemExit(
+            "GPU training policy violation: allow_cpu_exact_validation=false, but this runner still uses "
+            "CPU exact evaluation as teacher labels/checkpoint validation. Implement a CUDA exact kernel or "
+            "explicitly allow CPU validation while keeping training GPU-primary."
+        )
+
+
+def analyze_duplicates(layout):
+    """Explain which duplicate placements have usage support."""
+    support = _shortcut_duplicate_support(layout)
+    counts = {}
+    layers = {}
+    positions = {}
+    frozen_counts = {}
+    for i, sid in enumerate(layout.genome):
+        sid = int(sid)
+        if sid < 0:
+            continue
+        counts[sid] = counts.get(sid, 0) + 1
+        pos = layout.positions[i]
+        layers.setdefault(sid, set()).add(pos.layer)
+        if layout.frozen_mask[i]:
+            frozen_counts[sid] = frozen_counts.get(sid, 0) + 1
+        positions.setdefault(sid, []).append({
+            "idx": int(i),
+            "layer": int(pos.layer),
+            "x": float(pos.x),
+            "y": float(pos.y),
+            "hand": pos.hand,
+        })
+
+    supported = []
+    uncertain = []
+    unsupported = []
+    multi_workflow = []
+    for sid, count in sorted(counts.items(), key=lambda item: (-item[1], item[0])):
+        if count <= 1:
+            continue
+        shortcut = layout.shortcuts[sid]
+        if shortcut.is_l0_only or shortcut.keys.startswith("_base_"):
+            continue
+        if frozen_counts.get(sid, 0) == count:
+            continue
+        seq_hits = [
+            key for key, data in layout.usage_data.sequences.items()
+            if shortcut.keys in key.split(" -> ") and isinstance(data, dict) and data.get("count", 0) >= 2
+        ]
+        workflow_hits = [
+            key for key, data in list(layout.usage_data.chains.items()) + list(layout.usage_data.workflows.items())
+            if shortcut.keys in key.split(" -> ") and isinstance(data, dict) and data.get("count", 0) >= 2
+        ]
+        app_hits = [
+            key for key, data in layout.usage_data.app_workflows.items()
+            if (
+                isinstance(data, dict)
+                and data.get("count", 0) >= 2
+                and any(_app_matches(shortcut.app, part.strip()) for part in key.split(" + "))
+            )
+        ]
+        mouse_hit = layout.usage_data.mouse_session_shortcuts.get(shortcut.keys, {})
+        usage_count = 0
+        usage_row = layout.usage_data.shortcuts.get(shortcut.keys, {})
+        if isinstance(usage_row, dict):
+            usage_count = int(usage_row.get("count", 0))
+        reasons = []
+        if usage_count > 0:
+            reasons.append(f"shortcut_count={usage_count}")
+        if seq_hits:
+            reasons.append(f"sequence_hits={len(seq_hits)}")
+        if workflow_hits:
+            reasons.append(f"workflow_hits={len(workflow_hits)}")
+        if app_hits:
+            reasons.append(f"app_workflow_clusters={len(app_hits)}")
+        if isinstance(mouse_hit, dict) and mouse_hit.get("count", 0) > 0:
+            reasons.append(f"mouse_sessions={mouse_hit.get('count', 0)}")
+        row = {
+            "sid": int(sid),
+            "keys": shortcut.keys,
+            "app": shortcut.app,
+            "count": int(count),
+            "layers": sorted(int(x) for x in layers.get(sid, set())),
+            "support": float(support[sid]),
+            "reasons": reasons,
+            "positions": positions.get(sid, []),
+        }
+        if support[sid] >= 0.75:
+            row["classification"] = "workflow_supported"
+            supported.append(row)
+            if len(workflow_hits) + len(app_hits) >= 2:
+                multi_workflow.append(row)
+        elif not reasons:
+            row["classification"] = "needs_more_logger_data"
+            uncertain.append(row)
+        elif support[sid] >= 0.25:
+            row["classification"] = "partial_support_uncertain"
+            uncertain.append(row)
+        else:
+            row["classification"] = "unsupported_or_wasteful"
+            unsupported.append(row)
+    return {
+        "workflow_supported_duplicates": supported,
+        "uncertain_duplicates_needing_more_data": uncertain,
+        "unsupported_duplicates": unsupported,
+        "multi_workflow_duplicates": multi_workflow,
+    }
 
 
 class PerfStats:
@@ -187,338 +304,9 @@ class PerfStats:
         return summary
 
 
-def make_batch_evaluator(layout, evaluator, enabled=True, tolerance=1e-4):
-    if not enabled:
-        return None
-    tolerance = float(tolerance)
-    if not NUMBA_AVAILABLE:
-        print("  Numba not available; exact eval uses CPU fallback.", flush=True)
-        return None
-    try:
-        batch = BatchExactEvaluator(layout, evaluator, validate=False)
-        parity = batch.validate_parity(n=32, tolerance=tolerance)
-        batch.parity = parity
-        batch.enabled = parity.ok
-        if parity.ok:
-            print(f"  Numba exact evaluator enabled (parity max diff={parity.max_abs_diff:.3g}).", flush=True)
-            return batch
-        print(f"  Numba exact evaluator disabled: {parity.message}", flush=True)
-    except Exception as exc:
-        print(f"  Numba exact evaluator unavailable: {exc}", flush=True)
-    return None
-
-
-class SurrogateCallback(Callback):
-    """Callback that manages surrogate retraining, exact evaluation, and checkpointing."""
-    
-    def __init__(
-        self,
-        layout,
-        evaluator,
-        manager,
-        build_dir,
-        exact_eval_batch=20,
-        checkpoint_every=100,
-        batch_evaluator=None,
-        perf=None,
-    ):
-        super().__init__()
-        self.layout = layout
-        self.evaluator = evaluator
-        self.manager = manager
-        self.build_dir = build_dir
-        self.exact_eval_batch = exact_eval_batch
-        self.checkpoint_every = checkpoint_every
-        self.batch_evaluator = batch_evaluator
-        self.perf = perf
-        self.exact_history = []
-        self.evolved_accuracy_history = []
-        self.best_exact = None
-        self.stagnation_count = 0
-        self.last_best_quality = float('inf')
-        self.base_mutation_prob = None
-    
-    def _get_mutation(self, algorithm):
-        """Safely access the mutation operator from the algorithm."""
-        mating = getattr(algorithm, 'mating', None)
-        if mating is not None:
-            return getattr(mating, 'mutation', None)
-        return None
-    
-    def _adjust_mutation_rate(self, algorithm, gen):
-        """Adaptive mutation: increase when stagnated, restore when improving."""
-        mutation = self._get_mutation(algorithm)
-        if mutation is None:
-            return
-        
-        if self.base_mutation_prob is None:
-            prob = getattr(mutation, 'prob', None)
-            if prob is not None:
-                self.base_mutation_prob = float(prob.value) if hasattr(prob, 'value') else float(prob)
-        
-        pop = algorithm.pop.get("F")
-        if pop is None or pop.shape[0] == 0:
-            return
-        
-        # Use violations (last column) as quality metric
-        best_quality = float(np.min(pop[:, -1]))
-        
-        if best_quality < self.last_best_quality * 0.999:
-            # Improvement detected; reset stagnation and restore base rate if needed
-            if self.stagnation_count > 0:
-                current_prob = getattr(mutation, 'prob', None)
-                if current_prob is not None and self.base_mutation_prob is not None:
-                    if hasattr(current_prob, 'value'):
-                        current_prob.value = self.base_mutation_prob
-                    else:
-                        mutation.prob = self.base_mutation_prob
-                    print(f"    Gen {gen}: improvement detected (best_quality={best_quality:.3f}). Restoring mutation rate to {self.base_mutation_prob:.3f}", flush=True)
-            self.stagnation_count = 0
-        else:
-            self.stagnation_count += 1
-            if self.stagnation_count >= 100 and self.stagnation_count % 100 == 0:
-                current_prob = getattr(mutation, 'prob', None)
-                if current_prob is not None and self.base_mutation_prob is not None:
-                    current_val = float(current_prob.value) if hasattr(current_prob, 'value') else float(current_prob)
-                    new_prob = min(0.5, current_val * 1.2)
-                    if hasattr(current_prob, 'value'):
-                        current_prob.value = new_prob
-                    else:
-                        mutation.prob = new_prob
-                    print(f"    Gen {gen}: stagnation for {self.stagnation_count} gens (best_quality={best_quality:.3f}). Increasing mutation rate to {new_prob:.3f}", flush=True)
-        
-        self.last_best_quality = best_quality
-    
-    def _repair_best_groups(self, algorithm, gen):
-        """Post-process the best individual to fix group splits. Very fast: only 1 individual per gen."""
-        if gen % 10 != 0:  # Run every 10 generations
-            return
-        
-        from fitness.factors.violation import KEY_GROUPS, shortcut_matches_group
-        
-        pop_X = algorithm.pop.get("X")
-        pop_F = algorithm.pop.get("F")
-        if pop_X is None or pop_F is None or len(pop_X) == 0:
-            return
-        
-        # Find best individual (min total objective)
-        best_idx = int(np.argmin(pop_F.ravel()))
-        genome = pop_X[best_idx].copy()
-        n_var = len(genome)
-        
-        # Build sid -> position mapping
-        sid_to_pos = {}
-        for pos, sid in enumerate(genome):
-            if sid >= 0:
-                sid_to_pos[sid] = pos
-        
-        # Build layer -> mutable positions mapping
-        pos_layer = np.array([p.layer for p in self.layout.positions], dtype=np.int32)
-        mutable = self.layout.mutable_indices
-        layer_to_empty = {}
-        for layer in set(pos_layer):
-            layer_pos = np.where((pos_layer == layer) & (~self.layout.frozen_mask))[0]
-            empty = [p for p in layer_pos if genome[p] < 0]
-            layer_to_empty[layer] = empty
-        
-        all_groups = list(KEY_GROUPS) + list(self.layout.dynamic_groups)
-        repaired = False
-        
-        for group in all_groups:
-            if not group.get("protected"):
-                continue
-            
-            # Find group members
-            sids = set()
-            if "sids" in group:
-                for sid in group.get("sids", []):
-                    if 0 <= int(sid) < self.layout.n_shortcuts:
-                        sids.add(int(sid))
-            else:
-                for shortcut in self.layout.shortcuts:
-                    if shortcut_matches_group(shortcut, group):
-                        sids.add(shortcut.sid)
-            
-            if len(sids) <= 1:
-                continue
-            
-            # Find members and their layers
-            member_info = []  # (pos, sid, layer)
-            for sid in sids:
-                if sid in sid_to_pos:
-                    pos = sid_to_pos[sid]
-                    member_info.append((pos, sid, pos_layer[pos]))
-            
-            if len(member_info) <= 1:
-                continue
-            
-            # Count per layer
-            layer_counts = {}
-            for pos, sid, layer in member_info:
-                layer_counts[layer] = layer_counts.get(layer, 0) + 1
-            
-            if len(layer_counts) <= 1:
-                continue
-            
-            dominant_layer = max(layer_counts, key=layer_counts.get)
-            
-            # Move non-dominant members to empty positions on dominant layer
-            for pos, sid, layer in member_info:
-                if layer == dominant_layer:
-                    continue
-                if not layer_to_empty.get(dominant_layer):
-                    continue
-                target_pos = layer_to_empty[dominant_layer].pop(0)
-                genome[target_pos] = sid
-                genome[pos] = -1
-                # Update sid_to_pos
-                sid_to_pos[sid] = target_pos
-                # Add old position back to empty list
-                layer_to_empty.setdefault(layer, []).append(pos)
-                repaired = True
-        
-        if repaired:
-            # Re-evaluate and update if improved
-            best_layout = self.layout.clone_with(genome=genome.astype(np.int32))
-            try:
-                exact_result = self.evaluator.evaluate(best_layout)
-                new_viol = exact_result.violations
-                old_viol = pop_F[best_idx, -1]
-                if new_viol < old_viol:
-                    pop_X[best_idx] = genome
-                    pop_F[best_idx] = exact_result.objectives
-                    print(f"    Gen {gen}: group repair improved best individual viol={old_viol:.2f} -> {new_viol:.2f}", flush=True)
-            except Exception:
-                pass
-    
-    def notify(self, algorithm):
-        self.manager.step()
-        gen = self.manager.generation
-        
-        # Adaptive mutation rate
-        self._adjust_mutation_rate(algorithm, gen)
-        
-        # Post-process best individual for group repair
-        self._repair_best_groups(algorithm, gen)
-        
-        # Periodic exact evaluation
-        if self.manager.should_exact_eval():
-            pop = algorithm.pop.get("X")
-            n_eval = min(self.exact_eval_batch, len(pop))
-            indices = np.random.choice(len(pop), n_eval, replace=False)
-            exact_layouts = pop[indices]
-            surrogate_total = self.manager.trainer.predict(exact_layouts)
-            exact_scores = evaluate_exact_batch(
-                exact_layouts,
-                self.layout,
-                self.evaluator,
-                batch_evaluator=self.batch_evaluator,
-                perf=self.perf,
-                label="callback_exact_eval",
-            )
-            exact_total = exact_scores.sum(axis=1, keepdims=True)
-            drift = self._surrogate_drift_metrics(surrogate_total, exact_total)
-            self.evolved_accuracy_history.append((gen, drift))
-            self.manager.add_exact_evaluations(exact_layouts, exact_total)
-            self.exact_history.append((gen, exact_scores.mean(axis=0)))
-            if np.isfinite(drift["corr_mean"]) and drift["corr_mean"] < 0.70:
-                self.manager.exact_eval_every = max(25, self.manager.exact_eval_every // 2)
-                print(
-                    f"    Warning: evolved surrogate corr={drift['corr_mean']:.3f}; "
-                    f"increasing exact eval cadence to every {self.manager.exact_eval_every} generations.",
-                    flush=True,
-                )
-            print(
-                f"    Gen {gen}: exact eval {n_eval} individuals, avg obj={exact_scores.mean(axis=0)}, "
-                f"evolved R^2={drift['r2_mean']:.3f}, corr={drift['corr_mean']:.3f}",
-                flush=True,
-            )
-        
-        # Periodic retraining
-        if self.manager.should_retrain():
-            self.manager.retrain()
-        
-        # Periodic checkpointing
-        if gen > 0 and gen % self.checkpoint_every == 0:
-            t0 = time.perf_counter()
-            self._save_checkpoint(algorithm, gen)
-            if self.perf is not None:
-                self.perf.add("checkpoint", time.perf_counter() - t0)
-
-    @staticmethod
-    def _surrogate_drift_metrics(predicted, exact):
-        residual = predicted - exact
-        denom = np.sum((exact - exact.mean(axis=0)) ** 2, axis=0)
-        r2 = np.full(exact.shape[1], np.nan, dtype=np.float32)
-        valid = denom > 1e-6
-        r2[valid] = 1 - np.sum(residual[:, valid] ** 2, axis=0) / denom[valid]
-
-        corr = np.full(exact.shape[1], np.nan, dtype=np.float32)
-        for j in range(exact.shape[1]):
-            if np.std(predicted[:, j]) > 1e-6 and np.std(exact[:, j]) > 1e-6:
-                corr[j] = np.corrcoef(predicted[:, j], exact[:, j])[0, 1]
-
-        return {
-            "r2": [None if np.isnan(x) else float(x) for x in r2],
-            "r2_mean": float(np.nanmean(r2)) if np.any(~np.isnan(r2)) else float("nan"),
-            "corr": [None if np.isnan(x) else float(x) for x in corr],
-            "corr_mean": float(np.nanmean(corr)) if np.any(~np.isnan(corr)) else float("nan"),
-            "mae": [float(x) for x in np.mean(np.abs(residual), axis=0)],
-        }
-    
-    def _save_checkpoint(self, algorithm, gen):
-        """Save intermediate results so progress is not lost if process is killed."""
-        pop = algorithm.pop.get("X")
-        F = algorithm.pop.get("F")
-        best_idx = np.argmin(F.ravel()) if F is not None else 0
-        best_genome = pop[best_idx] if pop is not None else None
-        
-        checkpoint = {
-            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "generation": gen,
-            "population_size": len(pop) if pop is not None else 0,
-            "surrogate_r2_history": self.manager.accuracy_history,
-            "exact_eval_history": [(int(g), [float(x) for x in s]) for g, s in self.exact_history],
-            "evolved_surrogate_accuracy_history": [
-                {"generation": int(g), **metrics} for g, metrics in self.evolved_accuracy_history
-            ],
-        }
-        
-        if best_genome is not None:
-            best_layout = self.layout.clone_with(genome=best_genome.astype(np.int32))
-            exact_result = self.evaluator.evaluate(best_layout)
-            checkpoint["best_exact"] = {
-                "effort": float(exact_result.effort),
-                "adjacency": float(exact_result.adjacency),
-                "violations": float(exact_result.violations),
-                "factor_scores": {k: float(v) for k, v in exact_result.factor_scores.items()},
-                "genome": [int(x) for x in best_genome],
-            }
-            self.best_exact = checkpoint["best_exact"]
-            print(f"  Checkpoint gen {gen}: best_exact viol={exact_result.violations:.0f}", flush=True)
-        
-        ckpt_path = os.path.join(self.build_dir, f"v2_checkpoint_gen{gen}.json")
-        with open(ckpt_path, "w", encoding="utf-8") as f:
-            json.dump(checkpoint, f, indent=2, default=str)
-        self._cleanup_old_checkpoints()
-
-    def _cleanup_old_checkpoints(self, keep=5):
-        paths = glob.glob(os.path.join(self.build_dir, "v2_checkpoint_gen*.json"))
-        if len(paths) <= keep:
-            return
-        paths_sorted = sorted(paths, key=os.path.getmtime, reverse=True)
-        for path in paths_sorted[keep:]:
-            try:
-                os.remove(path)
-            except OSError as exc:
-                print(f"  Warning: could not remove old checkpoint {path}: {exc}", flush=True)
-        removed = len(paths_sorted) - keep
-        if removed > 0:
-            print(f"  Cleanup: removed {removed} old checkpoint(s), kept {keep}", flush=True)
-
 class ExactEvalCallback(Callback):
     """Callback for exact-evaluation mode (no surrogate). Handles adaptive mutation,
-    group repair, and checkpointing."""
+    diversity injection, surrogate teacher updates, and checkpointing."""
 
     def __init__(
         self,
@@ -526,28 +314,101 @@ class ExactEvalCallback(Callback):
         evaluator,
         build_dir,
         checkpoint_every=100,
-        batch_evaluator=None,
         perf=None,
+        surrogate_manager=None,
     ):
         super().__init__()
         self.layout = layout
         self.evaluator = evaluator
         self.build_dir = build_dir
         self.checkpoint_every = checkpoint_every
-        self.batch_evaluator = batch_evaluator
         self.perf = perf
+        self.surrogate_manager = surrogate_manager
         self.exact_history = []
         self.evolved_accuracy_history = []
         self.best_exact = None
+        self.global_best_genome = None
+        self.global_best_exact = None
+        self.global_best_generation = None
         self.stagnation_count = 0
         self.last_best_quality = float('inf')
         self.base_mutation_prob = None
+        self.last_diversity_reset = 0
+        self.archive_stagnation = 0
 
     def _get_mutation(self, algorithm):
         mating = getattr(algorithm, 'mating', None)
         if mating is not None:
             return getattr(mating, 'mutation', None)
         return None
+
+    def _best_index(self, pop_F, pop_G=None):
+        """Select best individual: feasible first, then minimum sum of objectives."""
+        if pop_F.ndim == 1 or pop_F.shape[1] == 1:
+            return int(np.argmin(pop_F.ravel()))
+        n = pop_F.shape[0]
+        if pop_G is not None and pop_G.shape[1] > 0:
+            cv = np.maximum(pop_G, 0).sum(axis=1)
+        else:
+            cv = np.zeros(n, dtype=np.float32)
+        scalar = pop_F.sum(axis=1) + 1e9 * cv
+        return int(np.argmin(scalar))
+
+    def _exact_entry(self, exact_result, gen):
+        return {
+            "generation": int(gen),
+            "objectives": [float(x) for x in exact_result.objectives],
+            "constraints": [float(x) for x in exact_result.constraints],
+            "factor_scores": {k: float(v) for k, v in exact_result.factor_scores.items()},
+            "total_score": float(exact_result.total_score),
+        }
+
+    def _is_better_exact(self, candidate_entry, incumbent_entry):
+        if incumbent_entry is None:
+            return True
+        cand_cv = sum(max(0.0, float(x)) for x in candidate_entry.get("constraints", []))
+        inc_cv = sum(max(0.0, float(x)) for x in incumbent_entry.get("constraints", []))
+        if cand_cv != inc_cv:
+            return cand_cv < inc_cv
+        cand_accept = bool(candidate_entry.get("optimizer_side_pass", False))
+        inc_accept = bool(incumbent_entry.get("optimizer_side_pass", False))
+        if cand_accept != inc_accept:
+            return cand_accept
+        if not cand_accept:
+            cand_failed = len(candidate_entry.get("acceptance_failed_checks", []))
+            inc_failed = len(incumbent_entry.get("acceptance_failed_checks", []))
+            if cand_failed != inc_failed:
+                return cand_failed < inc_failed
+        return float(candidate_entry["total_score"]) < float(incumbent_entry["total_score"])
+
+    def _update_global_best(self, genome, exact_entry):
+        if self._is_better_exact(exact_entry, self.global_best_exact):
+            self.global_best_genome = genome.astype(np.int32).copy()
+            self.global_best_exact = dict(exact_entry)
+            self.global_best_generation = int(exact_entry["generation"])
+            return True
+        return False
+
+    def _layout_reports(self, candidate_layout):
+        duplicate = analyze_duplicates(candidate_layout)
+        completion = analyze_completion_cluster(candidate_layout)
+        arrow = analyze_arrows(candidate_layout)
+        acceptance = build_acceptance_report(
+            candidate_layout,
+            duplicate_report=duplicate,
+            completion_cluster_report=completion,
+            arrow_report=arrow,
+        )
+        return duplicate, completion, arrow, acceptance
+
+    def _annotate_acceptance(self, entry, acceptance):
+        failed = [
+            key for key, ok in acceptance.get("checks", {}).items()
+            if key != "norwegian_export_bad_literal_count_zero" and not ok
+        ]
+        entry["optimizer_side_pass"] = bool(acceptance.get("optimizer_side_pass", False))
+        entry["acceptance_failed_checks"] = failed
+        return entry
 
     def _adjust_mutation_rate(self, algorithm, gen):
         mutation = self._get_mutation(algorithm)
@@ -563,7 +424,9 @@ class ExactEvalCallback(Callback):
         if pop is None or pop.shape[0] == 0:
             return
 
-        best_quality = float(np.min(pop[:, -1]))
+        # Overall layout quality improvement: any objective improving counts.
+        # Sum all objectives so effort/adjacency/workflow gains prevent false stagnation.
+        best_quality = float(np.min(pop.sum(axis=1)))
 
         if best_quality < self.last_best_quality * 0.999:
             if self.stagnation_count > 0:
@@ -590,92 +453,142 @@ class ExactEvalCallback(Callback):
 
         self.last_best_quality = best_quality
 
-    def _repair_best_groups(self, algorithm, gen):
-        if gen % 10 != 0:
+    def _inject_diversity_on_stagnation(self, algorithm, gen):
+        if self.stagnation_count < 1200:
             return
-
-        from fitness.factors.violation import KEY_GROUPS, shortcut_matches_group
+        if gen - self.last_diversity_reset < 600:
+            return
 
         pop_X = algorithm.pop.get("X")
         pop_F = algorithm.pop.get("F")
-        if pop_X is None or pop_F is None:
+        pop_G = algorithm.pop.get("G")
+        if pop_X is None or pop_F is None or pop_X.shape[0] < 8:
             return
 
-        best_idx = int(np.argmin(pop_F[:, -1]))
-        genome = pop_X[best_idx].astype(np.int32).copy()
+        n_pop = pop_X.shape[0]
+        n_replace = max(4, n_pop // 4)
+        mutable = self.layout.mutable_indices
+        if len(mutable) < 2:
+            return
 
-        sid_to_pos = {}
-        for i, sid in enumerate(genome):
-            if sid >= 0:
-                sid_to_pos[sid] = i
+        cv = np.maximum(pop_G, 0).sum(axis=1) if pop_G is not None and pop_G.shape[1] > 0 else np.zeros(n_pop)
+        scalar = pop_F.sum(axis=1) + 1e9 * cv
+        elite_count = max(2, n_pop // 20)
+        elite_idx = set(np.argsort(scalar)[:elite_count].tolist())
+        replace_order = [idx for idx in np.argsort(scalar)[::-1] if int(idx) not in elite_idx]
+        replace_idx = replace_order[:n_replace]
+        if not replace_idx:
+            return
 
-        layer_to_empty = {}
-        for i, pos in enumerate(self.layout.positions):
-            if genome[i] < 0 and not self.layout.frozen_mask[i]:
-                layer = pos.layer
-                if layer not in layer_to_empty:
-                    layer_to_empty[layer] = []
-                layer_to_empty[layer].append(i)
+        seed = self.layout.genome.astype(np.int32)
+        assigned_frozen = {int(seed[i]) for i in self.layout.frozen_indices if int(seed[i]) >= 0}
+        available = np.asarray([sid for sid in range(self.layout.n_shortcuts) if sid not in assigned_frozen], dtype=np.int32)
+        if len(available) == 0:
+            return
 
-        for group in list(KEY_GROUPS) + list(self.layout.dynamic_groups):
-            if not group.get("protected"):
-                continue
-            members = set()
-            for sid, shortcut in enumerate(self.layout.shortcuts):
-                if shortcut_matches_group(shortcut, group):
-                    members.add(sid)
-            if len(members) < 2:
-                continue
+        exact_genomes = []
+        exact_indices = []
+        for dst in replace_idx:
+            genome = seed.copy()
+            genome[mutable] = -1
+            n_assign = min(len(mutable), len(available))
+            shuffled_pos = np.random.permutation(mutable)
+            shuffled_sids = np.random.permutation(available)[:n_assign]
+            genome[shuffled_pos[:n_assign]] = shuffled_sids
+            pop_X[dst] = genome
+            exact_genomes.append(genome)
+            exact_indices.append(dst)
 
-            layer_counts = {}
-            for sid in members:
-                pos = sid_to_pos.get(sid)
-                if pos is not None:
-                    layer = self.layout.positions[pos].layer
-                    layer_counts[layer] = layer_counts.get(layer, 0) + 1
+        try:
+            exact_F, exact_G = self.evaluator.evaluate_batch(np.asarray(exact_genomes, dtype=np.int32))
+            for row, dst in enumerate(exact_indices):
+                pop_F[dst] = exact_F[row]
+                if pop_G is not None and exact_G.shape[1] > 0:
+                    pop_G[dst] = exact_G[row]
+        except Exception:
+            pass
 
-            if not layer_counts:
-                continue
-            dominant_layer = max(layer_counts, key=layer_counts.get)
-            if layer_counts[dominant_layer] < len(members) * 0.6:
-                continue
+        algorithm.pop.set("X", pop_X)
+        algorithm.pop.set("F", pop_F)
+        if pop_G is not None:
+            algorithm.pop.set("G", pop_G)
 
-            repaired = False
-            for sid in members:
-                pos = sid_to_pos.get(sid)
-                if pos is None:
-                    continue
-                layer = self.layout.positions[pos].layer
-                if layer == dominant_layer:
-                    continue
-                if dominant_layer not in layer_to_empty or not layer_to_empty[dominant_layer]:
-                    continue
-                target_pos = layer_to_empty[dominant_layer].pop(0)
-                genome[target_pos] = sid
-                genome[pos] = -1
-                sid_to_pos[sid] = target_pos
-                layer_to_empty.setdefault(layer, []).append(pos)
-                repaired = True
-
-            if repaired:
-                best_layout = self.layout.clone_with(genome=genome.astype(np.int32))
-                try:
-                    exact_result = self.evaluator.evaluate(best_layout)
-                    new_viol = exact_result.violations
-                    old_viol = pop_F[best_idx, -1]
-                    if new_viol < old_viol:
-                        pop_X[best_idx] = genome
-                        pop_F[best_idx] = exact_result.objectives
-                        print(f"    Gen {gen}: group repair improved best individual viol={old_viol:.2f} -> {new_viol:.2f}", flush=True)
-                except Exception:
-                    pass
+        self.last_diversity_reset = gen
+        print(
+            f"    Gen {gen}: stagnation for {self.stagnation_count} gens. Injected {len(replace_idx)} diverse individuals, kept {elite_count} elites.",
+            flush=True,
+        )
 
     def _save_checkpoint(self, algorithm, gen):
+        pop_X = algorithm.pop.get("X")
+        pop_F = algorithm.pop.get("F")
+        pop_G = algorithm.pop.get("G")
+        best_idx = self._best_index(pop_F, pop_G)
+        population_best_genome = pop_X[best_idx].astype(np.int32)
+        population_best_layout = self.layout.clone_with(genome=population_best_genome)
+        population_exact_result = self.evaluator.evaluate(population_best_layout)
+        population_exact_entry = self._exact_entry(population_exact_result, gen)
+
+        (
+            population_duplicate_report,
+            population_completion_report,
+            population_arrow_report,
+            population_acceptance_report,
+        ) = self._layout_reports(population_best_layout)
+        self._annotate_acceptance(population_exact_entry, population_acceptance_report)
+
+        improved_archive = self._update_global_best(population_best_genome, population_exact_entry)
+        if improved_archive:
+            self.archive_stagnation = 0
+            print(
+                f"    Gen {gen}: global best improved to {population_exact_entry['total_score']:.4f} "
+                f"(optimizer_side_pass={population_exact_entry['optimizer_side_pass']})",
+                flush=True,
+            )
+        else:
+            self.archive_stagnation += 1
+            # Early stop: archive hasn't improved for 5000 gens (measured in checkpoint steps)
+            # and current best already passes all optimizer-side checks.
+            stagnant_gens = self.archive_stagnation * self.checkpoint_every
+            if (
+                stagnant_gens >= 5000
+                and self.global_best_exact is not None
+                and self.global_best_exact.get("optimizer_side_pass", False)
+            ):
+                print(
+                    f"    Gen {gen}: early stop — archive stagnant for {stagnant_gens} gens "
+                    f"with optimizer_side_pass=True (best score={self.global_best_exact['total_score']:.4f})",
+                    flush=True,
+                )
+                algorithm.termination.force_termination = True
+
+        best_genome = self.global_best_genome if self.global_best_genome is not None else population_best_genome
+        best_layout = self.layout.clone_with(genome=best_genome)
+        exact_entry = dict(self.global_best_exact or population_exact_entry)
+        self.best_exact = exact_entry
+        self.exact_history.append(population_exact_entry)
+        if len(self.exact_history) > 20:
+            self.exact_history = self.exact_history[-20:]
+        duplicate_report, completion_report, arrow_report, acceptance_report = self._layout_reports(best_layout)
         checkpoint = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "generation": gen,
-            "best_genome": [int(x) for x in algorithm.pop.get("X")[np.argmin(algorithm.pop.get("F")[:, -1])]],
-            "best_objectives": [float(x) for x in algorithm.pop.get("F")[np.argmin(algorithm.pop.get("F")[:, -1])]],
+            "best_genome": [int(x) for x in best_genome],
+            "best_objectives": [float(x) for x in exact_entry["objectives"]],
+            "best_constraints": [float(x) for x in exact_entry["constraints"]],
+            "best_exact": exact_entry,
+            "best_source": "global_exact_archive",
+            "best_generation": self.global_best_generation,
+            "population_best_genome": [int(x) for x in population_best_genome],
+            "population_best_objectives": [float(x) for x in population_exact_entry["objectives"]],
+            "population_best_constraints": [float(x) for x in population_exact_entry["constraints"]],
+            "population_best_exact": population_exact_entry,
+            "population_acceptance_report": population_acceptance_report,
+            "exact_eval_history": self.exact_history,
+            "duplicate_report": duplicate_report,
+            "completion_cluster_report": completion_report,
+            "arrow_report": arrow_report,
+            "acceptance_report": acceptance_report,
             "population_size": algorithm.pop_size,
             "stagnation_count": self.stagnation_count,
         }
@@ -702,7 +615,26 @@ class ExactEvalCallback(Callback):
         gen = algorithm.n_iter
 
         self._adjust_mutation_rate(algorithm, gen)
-        self._repair_best_groups(algorithm, gen)
+        self._inject_diversity_on_stagnation(algorithm, gen)
+        if self.surrogate_manager is not None:
+            self.surrogate_manager.generation = gen
+            if (
+                gen > 0
+                and self.surrogate_manager.exact_eval_every > 0
+                and gen % self.surrogate_manager.exact_eval_every == 0
+            ):
+                pop_X = algorithm.pop.get("X")
+                if pop_X is not None:
+                    t0 = time.perf_counter()
+                    exact_F, _ = self.evaluator.evaluate_batch(pop_X.astype(np.int32))
+                    self.surrogate_manager.add_exact_evaluations(pop_X.astype(np.int32), exact_F)
+                    if self.perf is not None:
+                        self.perf.add("surrogate_teacher_eval", time.perf_counter() - t0)
+            if self.surrogate_manager.should_retrain():
+                t0 = time.perf_counter()
+                self.surrogate_manager.retrain()
+                if self.perf is not None:
+                    self.perf.add("surrogate_retrain", time.perf_counter() - t0)
 
         if gen > 0 and gen % self.checkpoint_every == 0:
             t0 = time.perf_counter()
@@ -711,19 +643,58 @@ class ExactEvalCallback(Callback):
                 self.perf.add("checkpoint", time.perf_counter() - t0)
 
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python run_evolution.py <build_dir> [--profile-fast]")
-        sys.exit(1)
+def _parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Run the Charybdis v2 layout evolution.",
+    )
+    parser.add_argument(
+        "--data-dir", default="data",
+        help="Directory containing layout.json, app_shortcut_scores.json, usage_stats.json (default: data)",
+    )
+    parser.add_argument(
+        "--config", default="config_v2.yaml",
+        help="Path to config YAML (default: config_v2.yaml)",
+    )
+    parser.add_argument(
+        "--output-dir", default="build",
+        help="Directory for checkpoints, results, and profiling output (default: build)",
+    )
+    parser.add_argument(
+        "--generations", "-g", type=int, default=None,
+        help="Override evolution.n_generations from config",
+    )
+    parser.add_argument(
+        "--pop-size", "-p", type=int, default=None,
+        help="Override evolution.pop_size from config",
+    )
+    parser.add_argument(
+        "--seed", type=int, default=None,
+        help="Override evolution.seed from config",
+    )
+    parser.add_argument(
+        "--no-inject-seed", action="store_true",
+        help="Disable injection of the pre-seeded genome",
+    )
+    parser.add_argument(
+        "--profile-fast", action="store_true",
+        help="Run cProfile and write v2_profile_fast.pstats/txt to output-dir",
+    )
+    return parser.parse_args(argv)
 
-    profile_fast = "--profile-fast" in sys.argv
-    args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
-    build_dir = args[0]
-    config = Config.load(os.path.join(build_dir, "config_v2.yaml"))
-    surrogate_enabled = config.get("surrogate.enabled", True)
+
+def main(argv=None):
+    args = _parse_args(argv)
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    config = Config.load(args.config)
     perf = PerfStats()
+    enforce_training_device_policy(config)
 
-    seed = config.get("evolution.seed", 42)
+    n_gen = args.generations if args.generations is not None else config.get("evolution.n_generations", 10)
+    pop_size = args.pop_size if args.pop_size is not None else config.get("evolution.pop_size", 50)
+    seed = args.seed if args.seed is not None else config.get("evolution.seed", 42)
+    inject_seed = not args.no_inject_seed and config.get("evolution.inject_seed", True)
+
     if seed is not None:
         random.seed(seed)
         np.random.seed(seed)
@@ -737,281 +708,142 @@ def main():
         print(f"  CUDA device: {torch.cuda.get_device_name(0)}", flush=True)
     print(f"  Numba available: {NUMBA_AVAILABLE}", flush=True)
 
-    print(f"Loading data from {build_dir}...", flush=True)
+    print(f"Loading data from {args.data_dir}...", flush=True)
     fitness_config = config.raw.get("fitness", {})
-    layout = build_layout(build_dir, fitness_config)
+    layout = build_layout(args.data_dir, fitness_config)
     print(f"  Positions: {layout.n_positions}, Shortcuts: {layout.n_shortcuts}", flush=True)
     print(f"  Mutable: {len(layout.mutable_indices)}", flush=True)
-    print(f"  Pre-seeded assignments: {layout.n_assigned}", flush=True)
+    frozen_filled = sum(1 for p in layout.positions if p.is_frozen and layout.genome[p.gene_idx] >= 0)
+    print(f"  Frozen genome positions filled: {frozen_filled} (L0 only — L7 is frozen outside training)", flush=True)
 
-    # We'll create evaluator after computing scale factors from training data
-    evaluator = FitnessEvaluator(
-        weights=config.get("fitness.weights", {}),
-        reference_layout=layout,
-        violation_weights=config.get("fitness.violation_sub_weights", {}),
-    )
-    raw_batch_evaluator = make_batch_evaluator(
-        layout,
-        evaluator,
-        enabled=config.get("exact_eval.use_numba", True),
-        tolerance=config.get("exact_eval.parity_tolerance", 1e-4),
-    )
+    hard_constraints = config.get("fitness.hard_constraints", [])
+
+    surrogate_enabled = bool(config.get("surrogate.enabled", False))
+    evaluator = build_evaluator(config, layout)
+    maybe_validate_exact_evaluator(config, layout, evaluator)
 
     # Evaluate pre-seeded genome
     seed_result = evaluator.evaluate(layout)
     print(f"  Seed fitness (raw): effort={seed_result.objectives[0]*1:.0f}, adj={seed_result.objectives[1]*1:.0f}, viol={seed_result.objectives[2]*1:.0f}", flush=True)
 
-    manager = None
-    r2_mean = None
-    scale_factors = evaluator.scale_factors
-    normalized_batch_evaluator = raw_batch_evaluator
+    # Compute robust scale factors from a small random sample (IQR-based, not seed-relative)
+    n_sample = 50
+    sample_layouts = generate_random_layouts(layout, n_sample)
+    sample_scores, _ = evaluate_exact_batch(
+        sample_layouts, layout, evaluator, perf=perf, label="scale_sample_eval",
+    )
+    q25 = np.percentile(sample_scores, 25, axis=0)
+    q75 = np.percentile(sample_scores, 75, axis=0)
+    iqr = q75 - q25
+    seed_scores = np.abs(seed_result.objectives)
+    scale_factors = np.maximum(iqr, seed_scores * 0.1)
+    scale_factors = np.maximum(scale_factors, 1.0)
+    print(f"  IQR scale factors: effort={scale_factors[0]:.2f}, adj={scale_factors[1]:.2f}, viol={scale_factors[2]:.2f}", flush=True)
+    evaluator = build_evaluator(config, layout, scale_factors=scale_factors)
+    maybe_validate_exact_evaluator(config, layout, evaluator)
+    seed_result = evaluator.evaluate(layout)
+    print(f"  Seed fitness (normalized): effort={seed_result.objectives[0]:.2f}, adj={seed_result.objectives[1]:.2f}, viol={seed_result.objectives[2]:.2f}", flush=True)
+
+    surrogate_manager = None
 
     if surrogate_enabled:
-        # Initial exact evaluations for surrogate training
-        n_initial = config.get("surrogate.n_initial_samples", 500)
-        print(f"\nGenerating {n_initial} random layouts for surrogate training...", flush=True)
-        train_layouts = generate_random_layouts(layout, n_initial)
-
-        print("Evaluating exact fitness...", flush=True)
-        t0 = time.perf_counter()
-        train_scores = evaluate_exact_batch(
-            train_layouts,
-            layout,
-            evaluator,
-            batch_evaluator=raw_batch_evaluator,
-            perf=perf,
-            label="initial_raw_exact_eval",
-        )
-        t1 = time.perf_counter()
-        print(f"  Done in {t1-t0:.1f}s ({(t1-t0)/n_initial*1000:.1f}ms per layout)", flush=True)
-        print(f"  Score range: effort=[{train_scores[:,0].min():.2f}, {train_scores[:,0].max():.2f}], "
-              f"adj=[{train_scores[:,1].min():.2f}, {train_scores[:,1].max():.2f}], "
-              f"viol=[{train_scores[:,2].min():.2f}, {train_scores[:,2].max():.2f}]", flush=True)
-
-        # Compute scale factors from training data std dev
-        scale_factors = np.std(train_scores, axis=0)
-        scale_factors = np.maximum(scale_factors, 1.0)  # prevent division by zero
-        print(f"  Scale factors: effort={scale_factors[0]:.2f}, adj={scale_factors[1]:.2f}, viol={scale_factors[2]:.2f}", flush=True)
-
-        # Re-create evaluator with scale factors
-        evaluator = FitnessEvaluator(
-            weights=config.get("fitness.weights", {}),
-            reference_layout=layout,
-            scale_factors=scale_factors,
-        )
-        normalized_batch_evaluator = make_batch_evaluator(
-            layout,
-            evaluator,
-            enabled=config.get("exact_eval.use_numba", True),
-            tolerance=config.get("exact_eval.parity_tolerance", 1e-4),
-        )
-        # CRITICAL: Re-evaluate training layouts with normalized evaluator so surrogate learns normalized scores
-        train_scores = evaluate_exact_batch(
-            train_layouts,
-            layout,
-            evaluator,
-            batch_evaluator=normalized_batch_evaluator,
-            perf=perf,
-            label="initial_normalized_exact_eval",
-        )
-        # Compute total score for single-objective surrogate training
-        total_scores = train_scores.sum(axis=1, keepdims=True)
-        # Re-evaluate seed with normalized objectives
-        seed_result = evaluator.evaluate(layout)
-        print(f"  Seed fitness (normalized): effort={seed_result.objectives[0]:.2f}, adj={seed_result.objectives[1]:.2f}, viol={seed_result.objectives[2]:.2f}", flush=True)
-
-        # Train surrogate on total scores (single-objective)
+        print("  GPU-primary surrogate training enabled.", flush=True)
         surrogate = LayoutSurrogate(
-            n_positions=layout.n_positions,
-            n_shortcuts=layout.n_shortcuts,
-            n_factors=1,
-            hidden_dim=config.get("surrogate.hidden_dim", 128),
+            layout.n_positions,
+            layout.n_shortcuts,
+            n_factors=3,
+            hidden_dim=config.get("surrogate.hidden_dim", 256),
             embedding_dim=config.get("surrogate.embedding_dim", 32),
         )
         trainer = SurrogateTrainer(
             surrogate,
-            device=None,
-            mixed_precision=config.get("surrogate.mixed_precision", True),
-            compile_model=config.get("surrogate.compile", True),
-        )  # auto-detect GPU
-        print(f"\nTraining surrogate ({surrogate.count_parameters()} params) on {trainer.device}...", flush=True)
-        t_train = time.perf_counter()
+            device="cuda",
+            mixed_precision=True,
+            compile_model=config.get("surrogate.compile_model", False),
+        )
+        surrogate_manager = SurrogateManager(
+            surrogate,
+            trainer,
+            retrain_every=config.get("surrogate.retrain_every", 500),
+            exact_eval_every=config.get("surrogate.exact_eval_every", 100),
+            retrain_epochs=config.get("surrogate.retrain_epochs", 10),
+            retrain_batch_size=config.get("surrogate.batch_size", 1024),
+            max_retrain_samples=config.get("surrogate.max_retrain_samples", 20000),
+        )
+        n_initial = int(config.get("surrogate.initial_exact_samples", 1000))
+        t0_train = time.perf_counter()
+        initial_layouts = generate_random_layouts(layout, n_initial)
+        initial_scores, _ = evaluate_exact_batch(
+            initial_layouts, layout, evaluator, perf=perf, label="surrogate_initial_teacher_eval",
+        )
+        surrogate_manager.add_exact_evaluations(initial_layouts, initial_scores)
         trainer.train(
-            train_layouts,
-            total_scores,
-            epochs=config.get("surrogate.surrogate_epochs", 30),
+            initial_layouts,
+            initial_scores,
+            epochs=config.get("surrogate.train_epochs", 30),
             batch_size=config.get("surrogate.batch_size", 256),
         )
-        perf.add("surrogate_initial_train", time.perf_counter() - t_train)
-
-        t_pred = time.perf_counter()
-        acc = trainer.evaluate(train_layouts[:500], total_scores[:500])
-        perf.add("surrogate_initial_eval", time.perf_counter() - t_pred)
-        r2_mean = float(np.mean(acc["r2"]))
-        print(f"  Surrogate R^2 = {r2_mean:.4f}", flush=True)
-        if r2_mean < config.get("surrogate.min_r2", 0.90):
-            print("  Surrogate R^2 below gate; retraining with safer 1000-sample/60-epoch settings.", flush=True)
-            target_n = max(n_initial, 1000)
-            if len(train_layouts) < target_n:
-                extra_layouts = generate_random_layouts(layout, target_n - len(train_layouts))
-                extra_scores = evaluate_exact_batch(
-                    extra_layouts,
-                    layout,
-                    evaluator,
-                    batch_evaluator=normalized_batch_evaluator,
-                    perf=perf,
-                    label="r2_fallback_exact_eval",
-                )
-                extra_total = extra_scores.sum(axis=1, keepdims=True)
-                train_layouts = np.vstack([train_layouts, extra_layouts])
-                total_scores = np.vstack([total_scores, extra_total])
-            t_train = time.perf_counter()
-            trainer.train(train_layouts, total_scores, epochs=60, batch_size=config.get("surrogate.batch_size", 256))
-            perf.add("surrogate_fallback_train", time.perf_counter() - t_train)
-            acc = trainer.evaluate(train_layouts[:min(500, len(train_layouts))], total_scores[:min(500, len(total_scores))])
-            r2_mean = float(np.mean(acc["r2"]))
-            print(f"  Surrogate R^2 after fallback = {r2_mean:.4f}", flush=True)
-
-        manager = SurrogateManager(surrogate, trainer,
-                                   retrain_every=config.get("surrogate.retrain_every", 200),
-                                   exact_eval_every=config.get("surrogate.exact_eval_every", 50))
-        manager.add_exact_evaluations(train_layouts, total_scores)
-    else:
-        print("SURROGATE DISABLED — exact evaluation every generation", flush=True)
-        # Compute robust scale factors from a small random sample (IQR-based, not seed-relative)
-        n_sample = 50
-        sample_layouts = generate_random_layouts(layout, n_sample)
-        sample_scores = evaluate_exact_batch(
-            sample_layouts, layout, evaluator,
-            batch_evaluator=raw_batch_evaluator, perf=perf, label="scale_sample_eval",
+        perf.add("surrogate_initial_train", time.perf_counter() - t0_train)
+        print(
+            f"  Surrogate trained on CUDA device={trainer.device} with {n_initial} exact teacher samples.",
+            flush=True,
         )
-        # Use interquartile range for robustness (ignores outliers)
-        q25 = np.percentile(sample_scores, 25, axis=0)
-        q75 = np.percentile(sample_scores, 75, axis=0)
-        iqr = q75 - q25
-        # Fallback: if IQR is too small, use seed score magnitude
-        seed_scores = np.abs(seed_result.objectives)
-        scale_factors = np.maximum(iqr, seed_scores * 0.1)
-        scale_factors = np.maximum(scale_factors, 1.0)
-        print(f"  IQR scale factors: effort={scale_factors[0]:.2f}, adj={scale_factors[1]:.2f}, viol={scale_factors[2]:.2f}", flush=True)
-        evaluator = FitnessEvaluator(
-            weights=config.get("fitness.weights", {}),
-            reference_layout=layout,
-            scale_factors=scale_factors,
-        )
-        normalized_batch_evaluator = make_batch_evaluator(
-            layout,
-            evaluator,
-            enabled=config.get("exact_eval.use_numba", True),
-            tolerance=config.get("exact_eval.parity_tolerance", 1e-4),
-        )
-        seed_result = evaluator.evaluate(layout)
-        print(f"  Seed fitness (seed-relative): effort={seed_result.objectives[0]:.2f}, adj={seed_result.objectives[1]:.2f}, viol={seed_result.objectives[2]:.2f}", flush=True)
 
-    # Create pymoo problem that uses surrogate for fast evaluation
-    from pymoo.core.problem import Problem
+    # Create pymoo problem.
+    from evolution import SwapMutation, StructuralGenomeSanitizer
+    from evolution.custom_ga import CustomGARunner
 
-    class FastLayoutProblem(Problem):
-        def __init__(self, n_positions, n_shortcuts, frozen_mask, manager=None, layout=None, evaluator=None, batch_evaluator=None, use_surrogate=True):
-            self.manager = manager
-            self.frozen_mask = frozen_mask
-            self.layout = layout
-            self.evaluator = evaluator
-            self.batch_evaluator = batch_evaluator
-            self.use_surrogate = use_surrogate
-            super().__init__(n_var=n_positions, n_obj=1, n_constr=0,
-                           xl=-1, xu=n_shortcuts-1, vtype=int)
-
-        def _evaluate(self, x, out, *args, **kwargs):
-            t_eval = time.perf_counter()
-            if self.use_surrogate and self.manager is not None:
-                try:
-                    F = self.manager.trainer.predict(x)
-                except Exception:
-                    F = np.zeros((x.shape[0], 1), dtype=np.float32)
-                out["F"] = F
-                perf.add("surrogate_predict", time.perf_counter() - t_eval)
-            else:
-                # Exact evaluation via Numba batch evaluator (every generation, no surrogate)
-                scores = evaluate_exact_batch(
-                    x, self.layout, self.evaluator,
-                    batch_evaluator=self.batch_evaluator, perf=perf, label="exact_eval",
-                )
-                # Single-objective: sum of effort + adjacency + violations
-                total = scores.sum(axis=1, keepdims=True)
-                out["F"] = total
-                perf.add("exact_eval", time.perf_counter() - t_eval)
-
-    problem = FastLayoutProblem(
-        n_positions=layout.n_positions,
-        n_shortcuts=layout.n_shortcuts,
+    mutation = SwapMutation(
+        prob=config.get("evolution.mutation_prob", 0.15),
         frozen_mask=layout.frozen_mask,
-        manager=manager if surrogate_enabled else None,
         layout=layout,
-        evaluator=evaluator,
-        batch_evaluator=normalized_batch_evaluator,
-        use_surrogate=surrogate_enabled,
     )
-
-    algorithm = create_algorithm(
-        n_positions=layout.n_positions,
+    sanitizer = StructuralGenomeSanitizer(
         n_shortcuts=layout.n_shortcuts,
         frozen_mask=layout.frozen_mask,
         seed_genome=layout.genome,
-        inject_seed=config.get("evolution.inject_seed", True),
-        pop_size=config.get("evolution.pop_size", 100),
-        crossover_prob=config.get("evolution.crossover_prob", 0.7),
-        mutation_prob=config.get("evolution.mutation_prob", 0.15),
-        eliminate_duplicates=config.get("evolution.eliminate_duplicates", False),
+        layout=layout,
     )
+    crossover_prob = config.get("evolution.crossover_prob", 0.7)
 
-    # The custom sampler injects the pre-seeded genome as the first initial individual.
-    inject_seed = config.get("evolution.inject_seed", True)
-    if inject_seed and layout.n_assigned > 0:
-        print("  Seed genome will be injected as initial population individual 0.", flush=True)
-    elif not inject_seed:
-        print("  Seed injection DISABLED — starting from fresh random population.", flush=True)
-
-    n_gen = config.get("evolution.n_generations", 999999)
-    print(f"\nRunning evolution: pop={algorithm.pop_size}, gens={n_gen}", flush=True)
+    print("  All individuals start from fully random shortcut assignment (L0 thumb gets one random momentary hold).", flush=True)
+    print(f"\nRunning evolution (CustomGA): pop={pop_size}, gens={n_gen}", flush=True)
     t0 = time.time()
 
-    if surrogate_enabled:
-        callback = SurrogateCallback(
-            layout,
-            evaluator,
-            manager,
-            build_dir,
-            exact_eval_batch=config.get("exact_eval.batch_size", 5),
-            checkpoint_every=config.get("output.checkpoint_interval", 500),
-            batch_evaluator=normalized_batch_evaluator,
-            perf=perf,
-        )
-    else:
-        callback = ExactEvalCallback(
-            layout,
-            evaluator,
-            build_dir,
-            checkpoint_every=config.get("output.checkpoint_interval", 500),
-            batch_evaluator=normalized_batch_evaluator,
-            perf=perf,
-        )
-    res = minimize(problem, algorithm, ("n_gen", n_gen), seed=seed, verbose=False, callback=callback)
+    runner = CustomGARunner(
+        layout=layout,
+        evaluator=evaluator,
+        surrogate_manager=surrogate_manager if surrogate_enabled else None,
+        mutation=mutation,
+        sanitizer=sanitizer,
+        analyze_duplicates_fn=analyze_duplicates,
+        pop_size=pop_size,
+        crossover_prob=crossover_prob,
+        n_shortcuts=layout.n_shortcuts,
+        checkpoint_every=config.get("output.checkpoint_interval", 500),
+        build_dir=args.output_dir,
+        perf=perf,
+        hard_constraints=hard_constraints,
+    )
+    ga_result = runner.run(n_gen)
 
     t1 = time.time()
     print(f"\nEvolution completed in {t1-t0:.1f}s", flush=True)
 
     # Show best results
-    if res.X.ndim == 1:
-        # Single solution returned (1D array)
-        best_genome = res.X.copy()
-        best_f = res.F
+    if ga_result["global_best_genome"] is not None and ga_result["global_best_exact"] is not None:
+        best_genome = ga_result["global_best_genome"].copy()
+        best_f = np.asarray(ga_result["global_best_exact"]["objectives"], dtype=np.float32)
+        print(
+            f"Best layout from global exact archive: gen={ga_result['global_best_generation']}, "
+            f"objectives={best_f.tolist()}",
+            flush=True,
+        )
     else:
-        best_idx = np.argmin(res.F.ravel())
-        best_genome = res.X[best_idx]
-        best_f = res.F[best_idx]
-    best_label = "surrogate" if surrogate_enabled else "exact"
-    print(f"Best layout ({best_label}): total={float(best_f.ravel()[0]):.2f}", flush=True)
+        print("Warning: no global best found; falling back to seed genome.", flush=True)
+        best_genome = layout.genome.copy()
+        best_f = seed_result.objectives.copy()
+    print(f"Best layout (exact): objectives={best_f.tolist()}", flush=True)
 
     # Exact evaluation of best
     best_layout = layout.clone_with(genome=best_genome.astype(np.int32))
@@ -1024,6 +856,9 @@ def main():
     print(f"Exact eval (raw):        effort={raw_effort:.0f}, adj={raw_adj:.0f}, viol={raw_viol:.0f}", flush=True)
 
     # Save results
+    duplicate_report = analyze_duplicates(best_layout)
+    completion_report = analyze_completion_cluster(best_layout)
+    arrow_report = analyze_arrows(best_layout)
     results = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "config": config.raw,
@@ -1033,12 +868,10 @@ def main():
             "adjacency": float(seed_result.objectives[1]),
             "violations": float(seed_result.objectives[2]),
         },
-        "best_surrogate": {
-            "total": float(best_f.ravel()[0]),
-        } if surrogate_enabled else None,
         "best_objective": {
-            "source": best_label,
-            "total": float(best_f.ravel()[0]),
+            "source": "exact",
+            "objectives": [float(x) for x in best_f],
+            "total": float(best_f.sum()),
         },
         "best_exact": {
             "effort": float(exact_result.effort),
@@ -1049,43 +882,32 @@ def main():
             "raw_violations": float(raw_viol),
             "factor_scores": {k: float(v) for k, v in exact_result.factor_scores.items()},
             "genome": [int(x) for x in best_genome],
+            "duplicate_report": duplicate_report,
+            "completion_cluster_report": completion_report,
+            "arrow_report": arrow_report,
+            "acceptance_report": build_acceptance_report(
+                best_layout,
+                duplicate_report=duplicate_report,
+                completion_cluster_report=completion_report,
+                arrow_report=arrow_report,
+            ),
         },
-        "surrogate_enabled": bool(surrogate_enabled),
-        "surrogate_r2_initial": r2_mean,
-        "surrogate_r2_history": manager.accuracy_history if surrogate_enabled else [],
-        "exact_eval_history": [(int(g), [float(x) for x in s]) for g, s in callback.exact_history],
-        "evolved_surrogate_accuracy_history": [
-            {"generation": int(g), **metrics} for g, metrics in callback.evolved_accuracy_history
-        ],
-        "pareto_front": (
-            [{
-                "genome": [int(x) for x in res.X],
-                "objectives": [float(res.F.ravel()[0])],
-            }] if res.X.ndim == 1 else [
-                {
-                    "genome": [int(x) for x in g],
-                    "objectives": [float(obj)] if np.ndim(obj) == 0 else [float(o) for o in obj],
-                }
-                for g, obj in zip(res.X, res.F)
-            ]
-        ),
-        "generation": n_gen,
-        "population_size": algorithm.pop_size,
+        "exact_eval_history": runner.exact_history,
+        "pareto_front": [],
+        "generation": ga_result["gens_run"],
+        "population_size": pop_size,
         "elapsed_seconds": t1 - t0,
         "perf": perf.summary(),
-        "numba_exact_enabled": bool(normalized_batch_evaluator and normalized_batch_evaluator.enabled),
-        "numba_parity": (
-            normalized_batch_evaluator.parity.__dict__
-            if normalized_batch_evaluator is not None and normalized_batch_evaluator.parity is not None
-            else None
-        ),
+        "compiled_exact_enabled": True,
+        "compiled_exact_parity": getattr(evaluator.model, "parity", None),
+        "training_path": "cuda_surrogate_primary" if surrogate_enabled else "cpu_exact",
     }
     
-    results_path = os.path.join(build_dir, "v2_evolution_results.json")
+    results_path = os.path.join(args.output_dir, "v2_evolution_results.json")
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, default=str)
     print(f"\nResults saved to {results_path}", flush=True)
-    perf_path = os.path.join(build_dir, "v2_perf_report.json")
+    perf_path = os.path.join(args.output_dir, "v2_perf_report.json")
     with open(perf_path, "w", encoding="utf-8") as f:
         json.dump({
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -1093,7 +915,10 @@ def main():
             "cuda_available": torch.cuda.is_available(),
             "cuda_device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
             "numba_available": NUMBA_AVAILABLE,
-            "profile_fast": profile_fast or config.get("profiling.enabled", False),
+            "training_path": "cuda_surrogate_primary" if surrogate_enabled else "cpu_exact",
+            "surrogate_enabled": surrogate_enabled,
+            "surrogate_device": getattr(getattr(surrogate_manager, "trainer", None), "device", None) if surrogate_manager else None,
+            "profile_fast": args.profile_fast or config.get("profiling.enabled", False),
             "events": perf.summary(),
         }, f, indent=2, default=str)
     print(f"Performance report saved to {perf_path}", flush=True)
@@ -1102,17 +927,17 @@ def main():
 
 
 if __name__ == "__main__":
-    if "--profile-fast" in sys.argv:
+    args = _parse_args()
+    if args.profile_fast:
         profile = cProfile.Profile()
         try:
             profile.enable()
             main()
         finally:
             profile.disable()
-            args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
-            build_dir = args[0] if args else "."
-            stats_path = os.path.join(build_dir, "v2_profile_fast.pstats")
-            txt_path = os.path.join(build_dir, "v2_profile_fast.txt")
+            os.makedirs(args.output_dir, exist_ok=True)
+            stats_path = os.path.join(args.output_dir, "v2_profile_fast.pstats")
+            txt_path = os.path.join(args.output_dir, "v2_profile_fast.txt")
             profile.dump_stats(stats_path)
             with open(txt_path, "w", encoding="utf-8") as f:
                 stats = pstats.Stats(profile, stream=f).sort_stats("cumtime")

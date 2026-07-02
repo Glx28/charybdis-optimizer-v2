@@ -1,9 +1,14 @@
 """Violation factor: aggregates all constraint violations."""
 from collections import defaultdict
+import math
 from core import Layout
+from config import DEFAULT_CONFIG
 from fitness import FitnessFactor
 
-# Static key groups that should stay together on the same layer
+# Static key groups that should be spatially close when multiple members appear
+# on the same layer. They must not force members onto the same layer. Scroll is
+# intentionally absent: it is modeled as trackball scroll-mode access, not
+# ScrollUp/ScrollDown keys.
 KEY_GROUPS = [
     {"name": "arrows", "params": ["Left", "Right", "Up", "Down", "LeftArrow", "RightArrow", "UpArrow", "DownArrow"], "protected": True},
     {"name": "win_directions", "params": ["Left", "Right", "Up", "Down"], "mods_required": "win", "protected": True},
@@ -31,24 +36,55 @@ def shortcut_matches_group(shortcut, group):
     return True
 
 
+def _exception_score(importance: float, support: float, is_mouse: bool = False) -> float:
+    """Sigmoid-like gate for repeats that are worth preserving."""
+    raw = float(importance) + float(support) * 10.0 - 16.0
+    if is_mouse:
+        raw -= 4.0
+    return 1.0 / (1.0 + math.exp(-raw * 0.45))
+
+
+def _novelty_cost(importance: float, support: float, is_mouse: bool = False) -> float:
+    """High cost for ordinary repeats, low cost for exceptional repeats."""
+    score = _exception_score(importance, support, is_mouse=is_mouse)
+    return 0.15 + (1.0 - score) * (1.0 - score)
+
+
+def _allowed_raw_arrow_shape(type_positions: dict) -> bool:
+    if set(type_positions) != {"LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW"}:
+        return False
+    lx, ly = type_positions["LEFTARROW"]
+    rx, ry = type_positions["RIGHTARROW"]
+    ux, uy = type_positions["UPARROW"]
+    dx, dy = type_positions["DOWNARROW"]
+    same_line = (
+        abs(ly - uy) <= 0.25
+        and abs(uy - dy) <= 0.25
+        and abs(dy - ry) <= 0.25
+        and lx < ux < dx < rx
+        and (rx - lx) <= 4.5
+    )
+    split_cluster = (
+        abs(ly - dy) <= 0.25
+        and abs(dy - ry) <= 0.25
+        and lx < dx < rx
+        and uy < dy
+        and abs(ux - dx) <= 0.25
+        and (dy - uy) <= 2.0
+        and (rx - lx) <= 3.5
+    )
+    return same_line or split_cluster
+
+
 class ViolationFactor(FitnessFactor):
     """Aggregates constraint violations. Lower is better."""
     name = "violations"
     
     def __init__(self, weights: dict = None, threshold: float = 6.0):
-        self.sub_weights = weights or {
-            "duplicate": 10.0,
-            "l0_displacement": 50.0,
-            "missing_important": 5000000.0,
-            "cross_layer_duplicate": 8.0,
-            "group_split": 200.0,
-            "thumb_occupancy": 200.0,
-            "arrow_order": 500000.0,
-            "hand_bias": 2000.0,
-            "mouse_layer_access": 5000.0,
-            "arrow_scattered": 5000000.0,
-            "layer7_unreachable": 50000000.0,
-        }
+        defaults = DEFAULT_CONFIG["fitness"]["violation_sub_weights"]
+        self.sub_weights = dict(defaults)
+        if weights:
+            self.sub_weights.update(weights)
         self.threshold = threshold
     
     def compute(self, layout: Layout) -> float:
@@ -63,25 +99,40 @@ class ViolationFactor(FitnessFactor):
         total += self._hand_bias(layout) * self.sub_weights["hand_bias"]
         total += self._mouse_layer_access(layout) * self.sub_weights["mouse_layer_access"]
         total += self._arrow_scattered(layout) * self.sub_weights["arrow_scattered"]
-        total += self._layer7_unreachable(layout) * self.sub_weights["layer7_unreachable"]
+        total += self._layer7_access(layout) * self.sub_weights["layer7_access"]
+        total += self._duplicate_value_gap(layout) * self.sub_weights["duplicate_value_gap"]
+        total += self._access_layout(layout) * self.sub_weights["access_layout"]
         return total
     
     def _duplicate_penalty(self, layout: Layout) -> float:
+        from fitness.kernel import _shortcut_duplicate_support
+
+        support = _shortcut_duplicate_support(layout)
         penalty = 0.0
         layer_base_keys = defaultdict(lambda: defaultdict(list))
         for i, sid in enumerate(layout.genome):
             if sid < 0:
                 continue
             sc = layout.shortcuts[sid]
-            if not sc.base_key:
+            if not sc.base_key or sc.is_l0_only:
                 continue
             layer = layout.positions[i].layer
-            layer_base_keys[layer][sc.base_key.upper()].append(sid)
+            layer_base_keys[layer][sc.base_key.upper()].append((sid, i))
         
         for layer, base_map in layer_base_keys.items():
-            for base_key, sids in base_map.items():
-                if len(sids) > 1:
-                    penalty += (len(sids) - 1) ** 2
+            for base_key, placements in base_map.items():
+                if len(placements) > 1:
+                    support_sum = sum(float(support[int(sid)]) for sid, _ in placements)
+                    unsupported = (len(placements) - 1) - support_sum
+                    if unsupported > 0:
+                        value = 0.0
+                        for sid, pos_idx in placements:
+                            pos = layout.positions[pos_idx]
+                            sc = layout.shortcuts[int(sid)]
+                            value += max(0.25, 2.0 - pos.effort) * sc.importance
+                        avg_value = value / len(placements)
+                        is_mouse = any(layout.shortcuts[int(sid)].category == "mouse" for sid, _ in placements)
+                        penalty += (unsupported ** 2) * _novelty_cost(avg_value, support_sum, is_mouse=is_mouse) * (1.0 + avg_value * 0.1)
         return penalty
     
     def _l0_displacement(self, layout: Layout) -> float:
@@ -105,24 +156,70 @@ class ViolationFactor(FitnessFactor):
         return penalty
     
     def _cross_layer_duplicate(self, layout: Layout) -> float:
+        from fitness.kernel import _shortcut_duplicate_support
+
+        support = _shortcut_duplicate_support(layout)
         sid_layers = defaultdict(set)
         for i, sid in enumerate(layout.genome):
             if sid < 0:
+                continue
+            if layout.shortcuts[int(sid)].is_l0_only:
                 continue
             sid_layers[sid].add(layout.positions[i].layer)
         
         penalty = 0.0
         for sid, layers in sid_layers.items():
-            if len(layers) >= 3:
-                extra = len(layers) - 2
-                penalty += extra * extra
+            if len(layers) >= 2:
+                extra = (len(layers) - 1) - float(support[int(sid)])
+                if extra > 0:
+                    shortcut = layout.shortcuts[int(sid)]
+                    penalty += extra * extra * _novelty_cost(
+                        shortcut.importance,
+                        float(support[int(sid)]),
+                        is_mouse=shortcut.category == "mouse",
+                    )
+        return penalty
+
+    def _duplicate_value_gap(self, layout: Layout) -> float:
+        """Penalize duplicate slots unless they clearly beat missing shortcuts."""
+        from fitness.kernel import _shortcut_duplicate_support
+
+        support = _shortcut_duplicate_support(layout)
+        assigned = {int(sid) for sid in layout.genome if sid >= 0}
+        missing_importance = [
+            sc.importance
+            for sc in layout.shortcuts
+            if sc.sid not in assigned and sc.importance >= self.threshold
+        ]
+        if not missing_importance:
+            return 0.0
+
+        best_missing = max(missing_importance)
+        counts = defaultdict(int)
+        for sid in layout.genome:
+            if sid >= 0:
+                counts[int(sid)] += 1
+
+        penalty = 0.0
+        for sid, count in counts.items():
+            if count <= 1:
+                continue
+            shortcut = layout.shortcuts[sid]
+            if shortcut.is_l0_only:
+                continue
+            gap = best_missing * 1.5 - shortcut.importance
+            if gap > 0:
+                unsupported = (count - 1) - float(support[int(sid)])
+                if unsupported > 0:
+                    penalty += unsupported * gap * _novelty_cost(
+                        shortcut.importance,
+                        float(support[int(sid)]),
+                        is_mouse=shortcut.category == "mouse",
+                    )
         return penalty
     
     def _group_split(self, layout: Layout) -> float:
-        """Penalize splitting protected groups across multiple layers.
-        
-        Each protected group should have all its members on the same layer.
-        """
+        """Penalize same-layer group scatter, never cross-layer separation."""
         penalty = 0.0
         
         all_groups = list(KEY_GROUPS) + list(layout.dynamic_groups)
@@ -131,7 +228,6 @@ class ViolationFactor(FitnessFactor):
             if not group.get("protected"):
                 continue
             
-            # Find all shortcuts in this group and their layers
             group_layers = defaultdict(list)
             group_sids = set(group.get("sids", []))
             
@@ -145,58 +241,38 @@ class ViolationFactor(FitnessFactor):
                     if shortcut_matches_group(sc, group):
                         group_layers[layout.positions[i].layer].append(i)
             
-            if len(group_layers) <= 1:
-                continue  # All on one layer (or not found) — good
-            
-            # Penalize based on how split the group is
-            # The more layers the group is split across, the higher the penalty
-            n_layers = len(group_layers)
-            total_members = sum(len(v) for v in group_layers.values())
-            
-            # Penalty: each extra layer beyond 1 adds a large penalty
-            # Plus smaller penalty for uneven distribution
-            penalty += (n_layers - 1) * 100.0
-            
-            # Bonus for having the group mostly on one layer
-            max_on_layer = max(len(v) for v in group_layers.values())
-            cohesion = max_on_layer / total_members if total_members > 0 else 0
-            penalty += (1.0 - cohesion) * 50.0
+            for indices in group_layers.values():
+                if len(indices) < 2:
+                    continue
+                mean_x = sum(layout.positions[i].x for i in indices) / len(indices)
+                mean_y = sum(layout.positions[i].y for i in indices) / len(indices)
+                for i in indices:
+                    pos = layout.positions[i]
+                    spread = ((pos.x - mean_x) ** 2 + (pos.y - mean_y) ** 2) ** 0.5
+                    if spread > 1.5:
+                        penalty += (spread - 1.5) * 20.0
         
         return penalty
     
     def _thumb_occupancy(self, layout: Layout) -> float:
-        """Penalize shortcuts placed on thumb positions that are occupied by the layer access mechanism.
-        
-        If a layer is accessed via a momentary hold on a thumb, that thumb cannot be used
-        to press other keys while the layer is active. Any shortcut placed on an occupied
-        thumb position is effectively unreachable.
-        """
+        """Penalize thumb slots occupied by assigned momentary access paths."""
         penalty = 0.0
-        
-        for access in layout.layer_access:
-            if not access.is_momentary:
-                continue  # Toggle access doesn't occupy the thumb
-            
-            target_layer = access.target_layer
-            occupied_hand = access.hand
-            
-            # Find all thumb positions on the occupied hand for this layer
-            for i, sid in enumerate(layout.genome):
-                if sid < 0:
-                    continue
-                pos = layout.positions[i]
-                if pos.layer != target_layer:
-                    continue
-                if not pos.is_thumb:
-                    continue
-                if pos.hand != occupied_hand:
-                    continue
-                
-                # This shortcut is on an occupied thumb position
-                sc = layout.shortcuts[sid]
-                # Penalty proportional to importance - wasting a high-importance slot is worse
+        occupied_by_layer = defaultdict(set)
+        for i, sid in enumerate(layout.genome):
+            if sid < 0:
+                continue
+            access = layout.shortcuts[int(sid)]
+            if not access.is_layer_access or not access.access_is_momentary:
+                continue
+            occupied_by_layer[access.access_target_layer].add(layout.positions[i].hand)
+
+        for i, sid in enumerate(layout.genome):
+            if sid < 0:
+                continue
+            pos = layout.positions[i]
+            if pos.is_thumb and pos.hand in occupied_by_layer.get(pos.layer, set()):
+                sc = layout.shortcuts[int(sid)]
                 penalty += 1.0 + sc.importance * 0.5
-        
         return penalty
 
     def _arrow_order(self, layout: Layout) -> float:
@@ -209,20 +285,22 @@ class ViolationFactor(FitnessFactor):
         ARROW_KEYS = {"LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW"}
         
         # Group assigned arrow keys by layer
-        layer_arrows = defaultdict(list)  # layer -> [(base_key, x)]
+        layer_arrows = defaultdict(list)  # layer -> [(base_key, x, y)]
         for i, sid in enumerate(layout.genome):
             if sid < 0:
                 continue
             sc = layout.shortcuts[sid]
-            if sc.base_key.upper() in ARROW_KEYS:
-                layer_arrows[layout.positions[i].layer].append((sc.base_key.upper(), layout.positions[i].x))
+            if sc.base_key.upper() in ARROW_KEYS and not sc.modifiers and layout.positions[i].layer != 7:
+                pos = layout.positions[i]
+                layer_arrows[pos.layer].append((sc.base_key.upper(), pos.x, pos.y))
         
         penalty = 0.0
         for layer, arrows in layer_arrows.items():
             if len(arrows) < 2:
                 continue
             
-            x_by_key = {k: x for k, x in arrows}
+            x_by_key = {k: x for k, x, _ in arrows}
+            y_by_key = {k: y for k, _, y in arrows}
             
             # LeftArrow must be to the left of RightArrow
             if "LEFTARROW" in x_by_key and "RIGHTARROW" in x_by_key:
@@ -245,6 +323,20 @@ class ViolationFactor(FitnessFactor):
                             penalty += (min_x - x + 1.0) * 60.0
                         elif x > max_x:
                             penalty += (x - max_x + 1.0) * 60.0
+
+            if "UPARROW" in y_by_key and "DOWNARROW" in y_by_key:
+                up_y = y_by_key["UPARROW"]
+                down_y = y_by_key["DOWNARROW"]
+                if up_y >= down_y:
+                    penalty += (up_y - down_y + 1.0) * 100.0
+
+            if all(k in x_by_key for k in ("LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW")):
+                type_positions = {
+                    key: (x_by_key[key], y_by_key[key])
+                    for key in ("LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW")
+                }
+                if not _allowed_raw_arrow_shape(type_positions):
+                    penalty += 500.0
         
         return penalty
 
@@ -275,23 +367,16 @@ class ViolationFactor(FitnessFactor):
         return penalty
 
     def _mouse_layer_access(self, layout: Layout) -> float:
-        """Penalize mouse shortcuts placed on layers that require right-hand momentary access.
-        
-        The right hand operates the trackball. If the mouse layer requires holding a
-        momentary button on the right side to access it directly, the right thumb is 
-        occupied and cannot move the trackball. Toggle/lock access on the right side is fine.
-        
-        Uses get_occupied_thumbs which traces only momentary accesses TO the target layer.
-        """
+        """Penalize mouse shortcuts on layers reached through right-hand momentary access."""
         penalty = 0.0
-        
-        # Precompute which layers have right-hand momentary access directly TO them
         right_required_layers = set()
-        for layer in set(p.layer for p in layout.positions):
-            occupied = layout.get_occupied_thumbs(layer)
-            if "right" in occupied:
-                right_required_layers.add(layer)
-        
+        for i, sid in enumerate(layout.genome):
+            if sid < 0:
+                continue
+            access = layout.shortcuts[int(sid)]
+            if access.is_layer_access and access.access_is_momentary and layout.positions[i].hand == "right":
+                right_required_layers.add(access.access_target_layer)
+
         for i, sid in enumerate(layout.genome):
             if sid < 0:
                 continue
@@ -305,69 +390,116 @@ class ViolationFactor(FitnessFactor):
         
         return penalty
 
-    def _arrow_l0(self, layout: Layout) -> float:
-        """Penalize ANY arrow key on layer 0 (base layer).
-        
-        Arrows do not belong on the base typing layer. L7 already provides
-        arrow access. Any arrow on L0 is wasting a base-layer slot.
-        """
-        ARROW_KEYS = {"LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW"}
-        penalty = 0.0
-        for i, sid in enumerate(layout.genome):
-            if sid < 0:
-                continue
-            sc = layout.shortcuts[sid]
-            if sc.base_key.upper() in ARROW_KEYS:
-                if layout.positions[i].layer == 0:
-                    penalty += 1.0
-        return penalty
-
     def _arrow_scattered(self, layout: Layout) -> float:
         """Penalize arrows split across multiple non-L7 layers.
         
-        Arrows should be grouped on ONE layer (L7 is preferred, but one
-        other layer is acceptable). Being scattered across 2+ layers is
-        worse than having them all on one layer or not at all.
+        L7 already owns frozen RPG/navigation arrows, so mutable raw arrows are
+        less important. If they appear outside L7, they should either form a
+        complete justified cluster or be absent.
         """
         ARROW_KEYS = {"LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW"}
-        layers_with_arrows = set()
+        layer_arrow_types = defaultdict(lambda: defaultdict(int))
         for i, sid in enumerate(layout.genome):
             if sid < 0:
                 continue
             sc = layout.shortcuts[sid]
-            if sc.base_key.upper() in ARROW_KEYS:
+            if sc.base_key.upper() in ARROW_KEYS and not sc.modifiers:
                 layer = layout.positions[i].layer
                 if layer != 7:
-                    layers_with_arrows.add(layer)
+                    layer_arrow_types[layer][sc.base_key.upper()] += 1
         
-        n_layers = len(layers_with_arrows)
-        if n_layers <= 1:
-            return 0.0
-        return float(n_layers - 1)
+        penalty = 0.0
+        n_layers = len(layer_arrow_types)
+        if n_layers > 1:
+            penalty += float(n_layers - 1) * 100.0
+        for layer, type_counts in layer_arrow_types.items():
+            type_count = len(type_counts)
+            placement_count = sum(type_counts.values())
+            duplicate_count = sum(max(0, c - 1) for c in type_counts.values())
+            if type_count < 4:
+                penalty += float(4 - type_count) * 25.0
+                penalty += float(placement_count) * 10.0
+            elif placement_count == 4:
+                type_positions = {}
+                for i, sid in enumerate(layout.genome):
+                    if sid < 0:
+                        continue
+                    sc = layout.shortcuts[int(sid)]
+                    pos = layout.positions[i]
+                    key = sc.base_key.upper()
+                    if pos.layer == layer and key in ARROW_KEYS and not sc.modifiers:
+                        type_positions[key] = (pos.x, pos.y)
+                if not _allowed_raw_arrow_shape(type_positions):
+                    penalty += 500.0
+                # Even valid mutable raw arrows are less desirable than relying
+                # on frozen L7 unless workflow pressure clearly earns them.
+                penalty += 20.0
+            penalty += float(duplicate_count) * 20.0
+        return penalty
 
-    def _layer7_unreachable(self, layout: Layout) -> float:
-        """Penalize if layer 7 is not reachable from layer 0.
-        
-        Layer 7 must be accessible from L0 either directly or via intermediate
-        layers. If unreachable, the keyboard layout is effectively invalid.
-        """
-        # Build directed access graph: source -> list of targets
+    def _layer7_access(self, layout: Layout) -> float:
+        """Penalize if frozen L7 lacks reachable momentary or toggle access."""
+        access_rows = []
         access_graph = {}
-        for access in layout.layer_access:
-            if access.source_layer not in access_graph:
-                access_graph[access.source_layer] = []
-            access_graph[access.source_layer].append(access.target_layer)
+        for i, sid in enumerate(layout.genome):
+            if sid < 0:
+                continue
+            shortcut = layout.shortcuts[int(sid)]
+            if not shortcut.is_layer_access or shortcut.access_target_layer < 0:
+                continue
+            source_layer = layout.positions[i].layer
+            target_layer = shortcut.access_target_layer
+            access_rows.append((source_layer, target_layer, shortcut.access_is_momentary))
+            access_graph.setdefault(source_layer, []).append(target_layer)
         
-        # BFS from L0
         visited = {0}
         queue = [0]
         while queue:
             current = queue.pop(0)
-            if current == 7:
-                return 0.0
             for neighbor in access_graph.get(current, []):
                 if neighbor not in visited:
                     visited.add(neighbor)
                     queue.append(neighbor)
-        
-        return 1.0
+
+        has_momentary = any(
+            target == 7 and is_momentary and source in visited
+            for source, target, is_momentary in access_rows
+        )
+        has_toggle = any(
+            target == 7 and not is_momentary and source in visited
+            for source, target, is_momentary in access_rows
+        )
+        return float((0 if has_momentary else 1) + (0 if has_toggle else 1))
+
+    def _access_layout(self, layout: Layout) -> float:
+        """Soft score for access-button quality.
+
+        WARNING: this reads assigned access shortcuts from the genome. Do not
+        replace it with layout.layer_access; canonical access metadata is only a
+        seed/source, not fixed structure.
+        """
+        penalty = 0.0
+        layer_demand = defaultdict(float)
+        direct_thumb = set()
+        for i, sid in enumerate(layout.genome):
+            if sid < 0:
+                continue
+            pos = layout.positions[i]
+            shortcut = layout.shortcuts[int(sid)]
+            if shortcut.is_layer_access:
+                if shortcut.access_target_layer >= 0:
+                    if not pos.is_thumb:
+                        penalty += 2.0 + shortcut.importance * 0.2
+                    if pos.layer != 0:
+                        penalty += 3.0 + (8.0 if shortcut.access_is_momentary else 0.0)
+                    if pos.layer == 0 and pos.is_thumb:
+                        direct_thumb.add(shortcut.access_target_layer)
+                continue
+            layer_demand[pos.layer] += shortcut.importance
+
+        for layer, demand in layer_demand.items():
+            if layer == 0 or demand < 30.0:
+                continue
+            if layer not in direct_thumb:
+                penalty += 12.0
+        return penalty

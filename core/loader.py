@@ -2,10 +2,15 @@
 import json
 import os
 import re
+from dataclasses import replace
 from typing import Optional, Tuple, List, Dict
 import numpy as np
 
 from core import Position, Shortcut, Layout, UsageData, LayerAccess
+from core.norwegian_keys import canonical_hid_parameter, parse_shortcut_keys_norwegian
+
+
+RAW_ARROW_BASE_KEYS = {"LeftArrow", "RightArrow", "UpArrow", "DownArrow"}
 
 
 RAW_KEY_ALIASES = {
@@ -48,6 +53,7 @@ RAW_KEY_ALIASES = {
 }
 
 L0_FROZEN_THUMB_RAW_KEYS = {"spacebar", "returnenter"}
+NON_GROUPABLE_KEYS = {"ScrollUp", "ScrollDown"}
 
 
 def _normalize_raw_key_id(value: str) -> Optional[str]:
@@ -71,81 +77,51 @@ def _normalize_raw_key_id(value: str) -> Optional[str]:
     return None
 
 
-def _permanent_l0_raw_keys(canonical_data: dict) -> Dict[str, str]:
-    """Return raw keys permanently present on L0 rows y=0..3 plus frozen thumb exceptions."""
-    permanent = {}
-    l0_keys = canonical_data.get("layers", {}).get("0", {}).get("keys", {})
-    for key_data in l0_keys.values():
-        if key_data.get("behavior", "").lower() != "key press":
+def _permanent_l0_raw_keys(layout_data: dict) -> Dict[str, str]:
+    """Return raw keys permanently present on L0 (frozen finger + frozen thumb keys)."""
+    result = {}
+    l0_frozen = layout_data.get("l0_frozen", {})
+    for coord, kd in l0_frozen.items():
+        behavior = kd.get("behavior", "").lower()
+        if "key press" not in behavior and "key" not in behavior:
             continue
-        if key_data.get("modifiers"):
+        if kd.get("modifiers"):
             continue
-        key_id = _normalize_raw_key_id(key_data.get("parameter", ""))
-        if key_id is None:
-            key_id = _normalize_raw_key_id(key_data.get("label", ""))
-        try:
-            y = float(key_data.get("y", 0))
-        except (TypeError, ValueError):
-            continue
-        is_main_l0_key = 0 <= y <= 3
-        is_frozen_thumb_exception = key_id in L0_FROZEN_THUMB_RAW_KEYS
-        if not is_main_l0_key and not is_frozen_thumb_exception:
-            continue
-        if key_id is not None:
-            permanent[key_id] = key_data.get("label") or key_data.get("parameter") or key_id
-    return permanent
+        param = kd.get("parameter", "")
+        key_id = _normalize_raw_key_id(param)
+        if key_id:
+            result[key_id] = kd.get("label") or param or key_id
+    return result
 
 
 def _parse_layer_from_behavior(label: str, behavior: str, parameter: str) -> Optional[int]:
-    """Extract target layer number from a layer access key."""
-    # Check parameter first (most reliable)
+    """Extract target layer number from explicit firmware metadata only.
+
+    Only L0 and L7 have predetermined roles. All other layers are assigned by
+    evolution. Behaviors must use coach_lN_hold/toggle/lock (numeric) to
+    reference non-L0/non-L7 layers — function names like coach_mouse_lock are
+    not valid and will return None (ignored as non-layer-access).
+    """
     if parameter:
         if parameter.isdigit():
             return int(parameter)
         m = re.search(r'Layer::(\d+)', parameter)
         if m:
             return int(m.group(1))
-    
-    # Check behavior patterns
-    if 'coach_l1_hold' in behavior:
-        return 1
-    if 'coach_l2_hold' in behavior:
-        return 2
-    if 'coach_l3_hold' in behavior:
-        return 3
-    if 'coach_l4_hold' in behavior:
-        return 4
-    if 'coach_travel_toggle' in behavior:
-        return 8  # Speed/Travel layer
+
+    # Numeric coach names — the only valid non-L0/non-L7 layer references.
+    m = re.search(r'coach_l(\d+)_(?:hold|toggle|lock)', behavior or "", re.IGNORECASE)
+    if m:
+        return int(m.group(1))
+
+    # coach_travel_off kept for legacy compatibility (= coach_base = return to L0)
     if 'coach_travel_off' in behavior:
-        return 0  # return to base
+        return 0
     if 'coach_base' in behavior:
-        return 0  # return to base
-    if 'coach_game_lock' in behavior:
-        return 7  # Game/RPG layer
-    if 'coach_mouse_lock' in behavior:
-        return 2  # Mouse QoL layer
-    
-    # Check label for hints
-    if 'Nav' in label:
-        return 1
-    if 'Mouse' in label:
-        return 2
-    if 'Window' in label:
-        return 3
-    if 'System' in label:
-        return 4
-    if 'Code' in label:
-        return 5
-    if 'Scroll' in label:
-        return 6
-    if 'Speed' in label or 'Travel' in label:
-        return 8
-    if 'DMS' in label or 'M-Files' in label:
-        return 9
-    if 'Excel' in label:
-        return 10
-    
+        return 0
+    if 'coach_game_lock' in behavior or 'coach_game_hold' in behavior:
+        return 7  # L7 is the game layer — the only predetermined non-base layer.
+
     return None
 
 
@@ -177,163 +153,127 @@ def _hand_from_x(x: float) -> str:
     return "left" if x < 6 else "right"
 
 
-def _build_layer_access(canonical_data: dict) -> List[LayerAccess]:
-    """Build layer access mappings from canonical.json.
-    
-    For each target layer, traces the access chain from L0 and determines
-    which thumb(s) are occupied while the layer is active.
-    
-    Thumb occupancy rule: if a layer is accessed via a momentary hold on a thumb,
-    that thumb cannot be used to press other keys while the layer is active.
-    Toggle/lock accesses do NOT occupy the thumb (the user can release the
-    previous momentary after toggling).
-    """
-    access_list = []
-    
-    # Step 1: Find direct access keys on L0
-    l0_keys = canonical_data.get('layers', {}).get('0', {}).get('keys', {})
-    for coord, key_data in l0_keys.items():
-        behavior = key_data.get('behavior', '')
-        parameter = key_data.get('parameter', '')
-        label = key_data.get('label', '')
-        x = key_data.get('x', 0)
-        y = key_data.get('y', 0)
-        
-        target_layer = _parse_layer_from_behavior(label, behavior, parameter)
-        if target_layer is not None and target_layer != 0:
-            is_momentary = _is_momentary_access(behavior)
-            access_list.append(LayerAccess(
-                target_layer=target_layer,
-                source_layer=0,
-                source_x=float(x),
-                source_y=float(y),
-                hand=_hand_from_x(x),
-                is_momentary=is_momentary,
-                access_key_label=label,
-            ))
-    
-    # Step 2: Find access keys on intermediate layers (for depth-2 layers)
-    layers = canonical_data.get('layers', {})
-    for layer_id, layer_data in layers.items():
-        if not layer_id or layer_id == '0':
-            continue
-        source_layer = int(layer_id)
-        keys = layer_data.get('keys', {})
-        
-        for coord, key_data in keys.items():
-            behavior = key_data.get('behavior', '')
-            parameter = key_data.get('parameter', '')
-            label = key_data.get('label', '')
-            x = key_data.get('x', 0)
-            y = key_data.get('y', 0)
-            
-            target_layer = _parse_layer_from_behavior(label, behavior, parameter)
-            if target_layer is not None and target_layer not in (0, source_layer):
-                is_momentary = _is_momentary_access(behavior)
-                # Determine which hand is used for this access key
-                hand = _hand_from_x(x)
-                
-                # For intermediate layers, if the access key is on a non-thumb
-                # position, the thumb occupancy is determined by the source layer's
-                # access path. But for simplicity, we use the key's hand.
-                access_list.append(LayerAccess(
-                    target_layer=target_layer,
-                    source_layer=source_layer,
-                    source_x=float(x),
-                    source_y=float(y),
-                    hand=hand,
-                    is_momentary=is_momentary,
-                    access_key_label=label,
-                ))
-    
-    return access_list
+def _access_shortcut_key(source_layer: int, target_layer: int, is_momentary: bool, label: str) -> str:
+    mode = "hold" if is_momentary else "toggle"
+    clean = re.sub(r"[^A-Za-z0-9]+", "_", label or f"L{target_layer}").strip("_") or f"L{target_layer}"
+    return f"@access:L{source_layer}->L{target_layer}:{mode}:{clean}"
 
 
-def load_canonical(path: str) -> Tuple[List[Position], np.ndarray, List[LayerAccess]]:
-    """Load canonical.json and extract positions with frozen info and layer access."""
+def _is_plain_keypress_shortcut(keys: str, sc_data: dict) -> bool:
+    """False for shortcuts that need sequence/chord/scroll modeling instead of Key Press export."""
+    clean = str(keys or "").strip()
+    lowered = clean.lower()
+    category = str(sc_data.get("category", "")).lower()
+    action = str(sc_data.get("action", "")).lower()
+    behavior = str(sc_data.get("behavior", "")).lower()
+    parameter = str(sc_data.get("parameter", "")).lower()
+    if _is_structural_system_key(clean, behavior, parameter, action):
+        return False
+    if clean in NON_GROUPABLE_KEYS:
+        return False
+    if clean in {"Ctrl+K S", "gg", "gi", "yy"}:
+        return False
+    if "vimium" in category and "+" not in clean and len(clean) > 1:
+        return False
+    if "scroll" in action and clean in NON_GROUPABLE_KEYS:
+        return False
+    return True
+
+
+def _is_structural_system_key(label: str, behavior: str, parameter: str, action: str = "") -> bool:
+    """True for canonical system controls that must not enter the evolvable genome."""
+    text = f"{label} {behavior} {parameter} {action}".lower()
+    return (
+        "bluetooth" in text
+        or "bt_sel" in text
+        or "output selection" in text
+        or "out_sel" in text
+    )
+
+
+def _is_scroll_mode_access(label: str, behavior: str, parameter: str) -> bool:
+    """True for access keys that switch the trackball from pointer to wheel mode."""
+    text = f"{label} {behavior} {parameter}".lower()
+    return "scroll" in text
+
+
+def _build_layer_access() -> List[LayerAccess]:
+    """Layer access is fully evolved; there is no static access list."""
+    return []
+
+
+def load_layout(path: str) -> Tuple[List[Position], np.ndarray, List[LayerAccess]]:
+    """Load layout.json and build positions with frozen info."""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    
+
     positions = []
     frozen = []
-    
+
     physical_grid = data.get("physical_grid", {})
     position_metas = physical_grid.get("positions", [])
-    
-    layers = data.get("layers", {})
-    
-    # Build positions across all layers
-    for layer_key, layer_data in layers.items():
-        if not layer_key or not layer_key.strip():
-            continue
-        layer_num = int(layer_key)
-        layer_keys = layer_data.get("keys", [])
-        
-        for pos_idx, (coord, key_data) in enumerate(layer_keys.items()):
-            if pos_idx >= len(position_metas):
-                continue
-            
-            pos_meta = position_metas[pos_idx]
-            x = key_data.get('x', pos_meta.get('x', 0))
-            y = key_data.get('y', pos_meta.get('y', 0))
-            
-            # Parse finger info
-            finger_map = {
-                "thumb": 0, "index": 1, "middle": 2, "ring": 3, "pinky": 4,
-                "far_pinky": 4, "index_stretch": 1,
-            }
+    n_layers = data.get("n_layers", 11)
+
+    finger_map = {
+        "thumb": 0, "index": 1, "middle": 2, "ring": 3, "pinky": 4,
+        "far_pinky": 4, "index_stretch": 1,
+    }
+    effort_map = {
+        "top": 1.5, "upper": 1.2, "middle": 1.0, "home": 1.0,
+        "lower": 1.3, "bottom": 2.0, "thumb": 0.8, "thumb2": 1.1,
+    }
+
+    l0_frozen = data.get("l0_frozen", {})
+
+    for layer_num in range(n_layers):
+        for pos_meta in position_metas:
+            x = float(pos_meta.get("x", 0))
+            y = float(pos_meta.get("y", 0))
             finger_str = pos_meta.get("finger", "index")
             finger = finger_map.get(finger_str, 1)
-            
-            # Compute effort from row type
             row_type = pos_meta.get("row_type", "middle")
-            effort_map = {"top": 1.5, "upper": 1.2, "middle": 1.0, "lower": 1.3, "bottom": 2.0, "thumb": 0.8}
             effort = effort_map.get(row_type, 1.0)
-            
             is_thumb = pos_meta.get("zone") == "thumb" or finger == 0
-            is_frozen = layer_num == 7  # L7 is frozen
-            
-            # On L0, main typing area is frozen. Only Space and Return are
-            # frozen thumb raw inputs; the other thumb positions stay mutable.
-            if layer_num == 0 and not is_thumb and pos_meta.get("zone") == "finger":
+
+            coord = f"{int(x)}:{int(y)}"
+            if layer_num == 0:
+                is_frozen = coord in l0_frozen
+            elif layer_num == 7:
                 is_frozen = True
-            if layer_num == 0 and is_thumb:
-                raw_key_id = _normalize_raw_key_id(key_data.get("parameter", ""))
-                if raw_key_id in L0_FROZEN_THUMB_RAW_KEYS:
-                    is_frozen = True
-            
+            else:
+                is_frozen = False
+
             pos = Position(
                 gene_idx=len(positions),
                 layer=layer_num,
-                x=float(x),
-                y=float(y),
+                x=x,
+                y=y,
                 hand=pos_meta.get("hand", "left"),
                 finger=finger,
                 effort=effort,
                 is_thumb=is_thumb,
                 is_frozen=is_frozen,
                 row=0,
-                col=pos_idx,
+                col=len(positions) % len(position_metas),
             )
             positions.append(pos)
             frozen.append(is_frozen)
-    
+
     frozen_mask = np.array(frozen, dtype=bool)
-    
-    # Build layer access mapping
-    layer_access = _build_layer_access(data)
-    
-    return positions, frozen_mask, layer_access
+    return positions, frozen_mask, _build_layer_access()
 
 
-def load_shortcuts(path: str, canonical_data: Optional[dict] = None) -> List[Shortcut]:
+def load_shortcuts(path: str, layout_data: Optional[dict] = None) -> List[Shortcut]:
     """Load app_shortcut_scores.json and build Shortcut objects."""
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    
+
     shortcuts = []
     seen_keys = set()
-    permanent_l0_raw = _permanent_l0_raw_keys(canonical_data or {})
+    permanent_l0_raw = _permanent_l0_raw_keys(layout_data or {})
+    scroll_total = 0
+    if layout_data:
+        scroll_total = int((layout_data.get("_usage_stats") or {}).get("scroll_total", 0) or 0)
 
     for key_id, label in sorted(permanent_l0_raw.items()):
         shortcuts.append(Shortcut(
@@ -349,29 +289,121 @@ def load_shortcuts(path: str, canonical_data: Optional[dict] = None) -> List[Sho
             complexity=1,
             preferred_hand="either",
         ))
+
+    # Generate all possible layer-access shortcuts programmatically.
+    # No canonical bias — evolution places these freely anywhere.
+    n_layers = (layout_data or {}).get("n_layers", 11) if layout_data else 11
+    access_seen: set = set()
+    for tgt in range(n_layers):
+        if tgt == 0:
+            keys = "@access:L0:return"
+            if keys not in access_seen:
+                access_seen.add(keys)
+                shortcuts.append(Shortcut(
+                    sid=len(shortcuts), keys=keys,
+                    action="Return to Base", app="Layer Access",
+                    importance=10.0, category="layer_access",
+                    modifiers=tuple(), base_key="L0",
+                    is_capability=True, is_l0_only=False, complexity=1,
+                    preferred_hand="either", is_layer_access=True,
+                    access_target_layer=0, access_is_momentary=False,
+                ))
+            continue
+
+        is_game = (tgt == 7)
+        base_importance = 22.0 if is_game else 14.0
+
+        # Momentary hold
+        keys_hold = f"@access:L{tgt}:hold"
+        if keys_hold not in access_seen:
+            access_seen.add(keys_hold)
+            shortcuts.append(Shortcut(
+                sid=len(shortcuts), keys=keys_hold,
+                action=f"Momentary Layer {tgt}", app="Layer Access",
+                importance=base_importance, category="layer_access",
+                modifiers=tuple(), base_key=f"L{tgt}",
+                is_capability=True, is_l0_only=False, complexity=1,
+                preferred_hand="either", is_layer_access=True,
+                access_target_layer=tgt, access_is_momentary=True,
+            ))
+
+        # Toggle access is required for every generated/frozen target layer,
+        # including L7. L7 content is frozen, but its access mode is evolvable.
+        keys_toggle = f"@access:L{tgt}:toggle"
+        if keys_toggle not in access_seen:
+            access_seen.add(keys_toggle)
+            shortcuts.append(Shortcut(
+                sid=len(shortcuts), keys=keys_toggle,
+                action=f"Toggle Layer {tgt}", app="Layer Access",
+                importance=base_importance - 2.0, category="layer_access",
+                modifiers=tuple(), base_key=f"L{tgt}",
+                is_capability=True, is_l0_only=False, complexity=1,
+                preferred_hand="either", is_layer_access=True,
+                access_target_layer=tgt, access_is_momentary=False,
+            ))
+
+        # Scroll-mode hold: "scroll" in keys triggers shortcut_scroll_mode_access in kernel.
+        if not is_game:
+            keys_scroll = f"@scroll:L{tgt}:hold"
+            if keys_scroll not in access_seen:
+                access_seen.add(keys_scroll)
+                scroll_imp = base_importance + 6.0
+                if scroll_total > 0:
+                    scroll_imp += min(10.0, np.log1p(float(scroll_total)))
+                shortcuts.append(Shortcut(
+                    sid=len(shortcuts), keys=keys_scroll,
+                    action=f"Scroll Mode Layer {tgt}", app="Layer Access",
+                    importance=scroll_imp, category="layer_access",
+                    modifiers=tuple(), base_key=f"Scroll_L{tgt}",
+                    is_capability=True, is_l0_only=False, complexity=1,
+                    preferred_hand="right", is_layer_access=True,
+                    access_target_layer=tgt, access_is_momentary=True,
+                ))
     
+    raw_arrow_by_base: Dict[str, int] = {}
+
     for app_data in data.get("apps", []):
         app_name = app_data.get("name", "unknown")
         for sc_data in app_data.get("shortcuts", []):
             keys = sc_data.get("keys", "")
             if keys in seen_keys:
                 continue
+            if not _is_plain_keypress_shortcut(keys, sc_data):
+                continue
             seen_keys.add(keys)
             
-            # Extract base_key from keys if not provided
-            base_key = sc_data.get("base_key", "")
+            # Extract canonical HID base key from keys if not provided. Display
+            # symbols are Norwegian OS-layout results and must not become Studio
+            # parameters.
+            base_key = canonical_hid_parameter(sc_data.get("base_key", ""))
             if not base_key:
-                parts = keys.replace('+', ' ').split()
-                base_key = parts[-1] if parts else keys
+                _, base_key = parse_shortcut_keys_norwegian(keys)
             
             # Extract modifiers from keys
-            modifiers = []
-            for part in keys.replace('+', ' ').split()[:-1]:
-                modifiers.append(part)
+            modifiers, parsed_base = parse_shortcut_keys_norwegian(keys)
+            if parsed_base:
+                base_key = parsed_base
 
             raw_key_id = _normalize_raw_key_id(base_key) if not modifiers and "+" not in keys else None
             if raw_key_id is not None and raw_key_id in permanent_l0_raw:
                 continue
+
+            if not modifiers and base_key in RAW_ARROW_BASE_KEYS:
+                existing_idx = raw_arrow_by_base.get(base_key)
+                if existing_idx is not None:
+                    existing = shortcuts[existing_idx]
+                    new_importance = float(sc_data.get("importance", 5.0))
+                    if new_importance > existing.importance:
+                        shortcuts[existing_idx] = replace(
+                            existing,
+                            keys=base_key,
+                            action=sc_data.get("action", existing.action),
+                            app=app_name,
+                            importance=new_importance,
+                            category=sc_data.get("category", existing.category),
+                            preferred_hand=sc_data.get("preferred_hand", existing.preferred_hand),
+                        )
+                    continue
             
             sc = Shortcut(
                 sid=len(shortcuts),
@@ -388,8 +420,82 @@ def load_shortcuts(path: str, canonical_data: Optional[dict] = None) -> List[Sho
                 preferred_hand=sc_data.get("preferred_hand", "either"),
             )
             shortcuts.append(sc)
+            if not modifiers and base_key in RAW_ARROW_BASE_KEYS:
+                raw_arrow_by_base[base_key] = len(shortcuts) - 1
     
+    # Ensure the Norwegian raw completion-key family is always present as
+    # assignable capabilities, even if the usage logger has never recorded an
+    # unmodified PageUp/Home/End/etc.  Without these base shortcuts the
+    # completion cluster cannot form because there is nothing to cluster.
+    _ensure_raw_completion_shortcuts(shortcuts)
+
     return shortcuts
+
+
+def _ensure_raw_completion_shortcuts(shortcuts: List[Shortcut]):
+    """Add missing unmodified raw completion-family keys synthesized from demand.
+
+    The Norwegian extra-key family: the 5 physical keys that differ between
+    Norwegian and US International keyboards, using US International HID names.
+    Every family member must have a bare (no-modifier) shortcut so the optimizer
+    can place it as part of the atomic group.  Members without demand are still
+    synthesised so the group always has exactly 5 slots to move as a unit.
+    """
+    family = {
+        "Dash and Underscore",
+        "Equals and Plus",
+        "Grave Accent and Tilde",
+        "Right Brace",
+        "Backslash and Pipe",
+    }
+    present_params = {
+        sc.base_key for sc in shortcuts
+        if sc.base_key in family and not sc.modifiers and sc.app != "Base"
+    }
+    seen_keys = {sc.keys.upper() for sc in shortcuts}
+
+    default_family_keys = {
+        "Dash and Underscore": "-",
+        "Equals and Plus": "=",
+        "Grave Accent and Tilde": "`",
+        "Right Brace": "]",
+        "Backslash and Pipe": "\\",
+    }
+    # Synthesise ALL missing family members (not just those with demand) so the
+    # 5-key group always has complete coverage for the atomic group mutation.
+    for param in sorted(family - present_params):
+        keys = default_family_keys[param]
+        keys = _unique_keys(keys, seen_keys)
+        _append_raw_completion_shortcut(shortcuts, keys, param)
+        present_params.add(param)
+
+
+def _unique_keys(keys: str, seen_keys: set) -> str:
+    """Return a keys string that does not collide with existing shortcut keys."""
+    original = keys
+    counter = 1
+    while keys.upper() in seen_keys:
+        counter += 1
+        keys = f"{original} ({counter})"
+    seen_keys.add(keys.upper())
+    return keys
+
+
+def _append_raw_completion_shortcut(shortcuts: List[Shortcut], keys: str, param: str):
+    """Append a low-importance raw completion capability to the shortcut list."""
+    shortcuts.append(Shortcut(
+        sid=len(shortcuts),
+        keys=keys,
+        action=f"Raw {param} completion key.",
+        app="Raw Keys",
+        importance=3.0,
+        category="raw_completion",
+        modifiers=tuple(),
+        base_key=param,
+        is_capability=True,
+        complexity=1,
+        preferred_hand="either",
+    ))
 
 
 def load_usage_stats(path: str) -> Optional[UsageData]:
@@ -400,11 +506,29 @@ def load_usage_stats(path: str) -> Optional[UsageData]:
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     
+    shortcut_sequences = data.get("shortcut_sequences") or data.get("sequences", {})
+    shortcut_workflows = data.get("shortcut_workflows") or data.get("workflows", {})
+    chains = data.get("chains", {})
+    if not chains and shortcut_workflows:
+        chains = shortcut_workflows
+
     return UsageData(
-        sequences=data.get("sequences", {}),
-        chains=data.get("chains", {}),
-        workflows=data.get("workflows", {}),
+        sequences=shortcut_sequences,
+        chains=chains,
+        workflows=shortcut_workflows,
+        shortcut_sequences=shortcut_sequences,
+        shortcut_workflows=shortcut_workflows,
+        app_sequences=data.get("app_sequences", {}),
+        app_workflows=data.get("app_workflows", {}),
+        shortcuts=data.get("shortcuts", {}),
+        mouse_session_shortcuts=data.get("mouse_session_shortcuts", {}),
+        mouse_clicks=data.get("mouse_clicks", {}),
+        scroll_total=int(data.get("scroll_total", 0) or 0),
+        scroll_by_layer=data.get("scroll_by_layer", {}),
+        raw_completion_keys=data.get("raw_completion_keys", {}),
+        raw_completion_total=int(data.get("raw_completion_total", 0) or 0),
         by_layer_shortcut=data.get("by_layer_shortcut", {}),
+        layer_shortcuts=data.get("layer_shortcuts", {}),
         by_app=data.get("by_app", {}),
         app_time_seconds=data.get("app_time_seconds", {}),
         total_events=data.get("total_events", 0),
@@ -412,116 +536,33 @@ def load_usage_stats(path: str) -> Optional[UsageData]:
     )
 
 
-def build_scratch_genome(canonical_data: dict, positions: List[Position], shortcuts: List[Shortcut]) -> np.ndarray:
-    """Build a pre-seeded genome from canonical layout + greedy importance fill.
-    
-    Ported from v1 evolve/representation.py build_scratch_genome()."""
+def build_frozen_genome(layout_data: dict, positions: List[Position], shortcuts: List[Shortcut]) -> np.ndarray:
+    """Build genome with only frozen positions assigned. Mutable positions are -1.
+
+    L0 frozen positions get their base key sids.
+    L7 is frozen firmware/export structure, but it is not represented as
+    assigned shortcut SIDs during training.
+    All non-L0 positions are left -1 for random assignment by the sampler.
+    """
     n_pos = len(positions)
     genome = np.full(n_pos, -1, dtype=np.int32)
-    
-    # Build lookups
-    keys_to_sid = {}
-    base_keys_to_sid = {}
-    for s in shortcuts:
-        if s.keys.startswith("_base_"):
-            base_keys_to_sid[s.keys] = s.sid
-        else:
-            keys_to_sid[s.keys.upper()] = s.sid
-    
-    # Access keys that should always be preserved
-    access_key_patterns = {
-        "_base_coach_l1_hold", "_base_coach_l2_hold",
-        "_base_coach_l3_hold", "_base_coach_l4_hold",
-        "_base_coach_mouse_lock", "_base_coach_game_lock",
-        "_base_coach_travel_toggle", "_base_coach_travel_off",
-        "_base_coach_base", "_base_coach_recover_base",
-    }
-    
-    # Step 1: Encode current canonical assignments
-    layers = canonical_data.get("layers", {})
+
+    base_keys_to_sid = {s.keys: s.sid for s in shortcuts if s.keys.startswith("_base_")}
+
+    # L0 frozen positions
+    l0_frozen = layout_data.get("l0_frozen", {})
     for pos in positions:
-        layer_data = layers.get(str(pos.layer), {})
-        binding = layer_data.get("keys", {}).get(f"{int(pos.x)}:{int(pos.y)}", {})
-        behavior = binding.get("behavior", "")
-        param = binding.get("parameter", "")
-        modifiers = binding.get("modifiers", [])
-        
-        # Skip transparent/empty slots
-        if behavior.lower() in ("transparent", "none", ""):
+        if pos.layer != 0 or not pos.is_frozen:
             continue
-        
-        # Skip structural layer controls (but not coach keys — those are movable)
-        if behavior in ("Momentary Layer", "Toggle Layer", "To Layer"):
-            if not param.lower().startswith("layer::") and not param.isdigit():
-                continue
-        
-        # Try base key lookup first
-        base_key_id = _extract_base_key_id(param, behavior, modifiers)
-        if base_key_id is not None:
-            label = f"_base_{base_key_id}"
-            sid = base_keys_to_sid.get(label)
+        coord = f"{int(pos.x)}:{int(pos.y)}"
+        kd = l0_frozen.get(coord, {})
+        param = kd.get("parameter", "")
+        key_id = _normalize_raw_key_id(param)
+        if key_id:
+            sid = base_keys_to_sid.get(f"_base_{key_id}")
             if sid is not None:
                 genome[pos.gene_idx] = sid
-                continue
-        
-        # Try standard shortcut lookup
-        mod_names = []
-        for m in modifiers:
-            ml = m.lower()
-            if "gui" in ml:
-                mod_names.append("Win")
-            elif "ctrl" in ml:
-                mod_names.append("Ctrl")
-            elif "shift" in ml:
-                mod_names.append("Shift")
-            elif "alt" in ml:
-                mod_names.append("Alt")
-        
-        # Sort: Win, Ctrl, Shift, Alt
-        MOD_ORDER = {"Win": 0, "Ctrl": 1, "Shift": 2, "Alt": 3}
-        mod_names.sort(key=lambda m: MOD_ORDER.get(m, 9))
-        
-        # Extract base key from parameter
-        base = param.upper().replace("KEYBOARD ", "").split(" AND ")[0].split(" ")[0]
-        for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-            if param.upper() == f"KEYBOARD {letter}":
-                base = letter
-                break
-        
-        shortcut_key = "+".join(mod_names + [base]) if mod_names else base
-        sid = keys_to_sid.get(shortcut_key.upper())
-        if sid is not None:
-            genome[pos.gene_idx] = sid
-    
-    # Step 2: Preserve access keys on non-L0 layers (structural keys)
-    for i, pos in enumerate(positions):
-        if genome[i] >= 0:
-            sid = int(genome[i])
-            skey = shortcuts[sid].keys
-            if skey in access_key_patterns or skey.startswith(("_base_toggle_layer_", "_base_momentary_layer_", "_base_to_layer_")):
-                # Keep access keys on their layer
-                pass
-    
-    # Step 3: Greedy fill remaining positions with high-importance shortcuts
-    assigned_sids = set(int(g) for g in genome if g >= 0)
-    unplaced = [s for s in shortcuts if s.sid not in assigned_sids and s.importance >= 1.0]
-    unplaced.sort(key=lambda s: -s.importance)
-    
-    # Empty mutable positions: all non-L0 + open L0 thumbs
-    empty_positions = [(i, positions[i]) for i in range(n_pos)
-                       if genome[i] < 0 and not positions[i].is_frozen]
-    empty_positions.sort(key=lambda x: x[1].effort)
-    
-    placed = set()
-    for s in unplaced:
-        if s.sid in placed:
-            continue
-        for idx, pos in empty_positions:
-            if genome[idx] < 0:
-                genome[idx] = s.sid
-                placed.add(s.sid)
-                break
-    
+
     return genome
 
 
@@ -533,8 +574,8 @@ def _extract_base_key_id(param: str, behavior: str, modifiers: List[str]) -> Opt
     # Coach behaviors
     coach_keys = {
         "coach_l1_hold", "coach_l2_hold", "coach_l3_hold", "coach_l4_hold",
-        "coach_mouse_lock", "coach_game_lock", "coach_base",
-        "coach_travel_toggle", "coach_travel_off", "coach_recover_base",
+        "coach_game_lock", "coach_game_hold", "coach_base",
+        "coach_travel_off", "coach_recover_base",
     }
     if b in coach_keys:
         return b
@@ -575,32 +616,44 @@ def _extract_base_key_id(param: str, behavior: str, modifiers: List[str]) -> Opt
     return None
 
 
-def build_layout(build_dir: str, config: dict = None) -> Layout:
-    """Build a Layout from v1 data files.
-    
-    Optional config dict can contain 'shortcut_importance_overrides' to
-    adjust shortcut importance without editing the source data.
-    """
-    canonical_path = os.path.join(build_dir, "canonical.json")
-    with open(canonical_path, "r", encoding="utf-8") as f:
-        canonical_data = json.load(f)
+def build_layout(data_dir: str, config: dict = None) -> Layout:
+    """Build a Layout from data files in ``data_dir``.
 
-    positions, frozen_mask, layer_access = load_canonical(canonical_path)
-    shortcuts = load_shortcuts(os.path.join(build_dir, "app_shortcut_scores.json"), canonical_data)
-    
+    Reads layout.json (positions + L0/L7 frozen firmware structure) and
+    app_shortcut_scores.json (shortcut corpus). No placement seed is loaded for
+    mutable layers or L7.
+    """
+    layout_path = os.path.join(data_dir, "layout.json")
+    with open(layout_path, "r", encoding="utf-8") as f:
+        layout_data = json.load(f)
+
+    usage = load_usage_stats(os.path.join(data_dir, "usage_stats.json"))
+    layout_data["_usage_stats"] = {
+        "scroll_total": usage.scroll_total if usage else 0,
+        "scroll_by_layer": usage.scroll_by_layer if usage else {},
+    }
+
+    positions, frozen_mask, layer_access = load_layout(layout_path)
+    shortcuts = load_shortcuts(os.path.join(data_dir, "app_shortcut_scores.json"), layout_data)
+
     # Apply importance overrides from config
     if config:
         overrides = config.get("shortcut_importance_overrides", {})
         if overrides:
             updated = []
             for sc in shortcuts:
+                override_key = None
                 if sc.keys in overrides:
+                    override_key = sc.keys
+                elif sc.base_key in overrides:
+                    override_key = sc.base_key
+                if override_key is not None:
                     updated.append(Shortcut(
                         sid=sc.sid,
                         keys=sc.keys,
                         action=sc.action,
                         app=sc.app,
-                        importance=float(overrides[sc.keys]),
+                        importance=float(overrides[override_key]),
                         category=sc.category,
                         modifiers=sc.modifiers,
                         base_key=sc.base_key,
@@ -610,21 +663,22 @@ def build_layout(build_dir: str, config: dict = None) -> Layout:
                         preferred_hand=sc.preferred_hand,
                         primary_app=sc.primary_app,
                         app_demand=sc.app_demand,
+                        is_layer_access=sc.is_layer_access,
+                        access_target_layer=sc.access_target_layer,
+                        access_is_momentary=sc.access_is_momentary,
                     ))
                 else:
                     updated.append(sc)
             shortcuts = updated
-    
-    usage = load_usage_stats(os.path.join(build_dir, "usage_stats.json"))
-    
+
     # Build layer_to_indices mapping
     layer_to_indices = {}
     for layer in set(p.layer for p in positions):
         indices = [p.gene_idx for p in positions if p.layer == layer]
         layer_to_indices[layer] = np.array(indices, dtype=np.int32)
     
-    # Build pre-seeded genome from canonical + greedy fill
-    genome = build_scratch_genome(canonical_data, positions, shortcuts)
+    # Frozen-only genome — mutable positions are -1 for random sampler assignment.
+    genome = build_frozen_genome(layout_data, positions, shortcuts)
     
     # Discover dynamic groups from usage data
     dynamic_groups = _discover_dynamic_groups(usage, shortcuts) if usage else []
@@ -648,7 +702,7 @@ def _discover_dynamic_groups(usage: UsageData, shortcuts: List[Shortcut]) -> Lis
     
     Ported from v1 evolve/representation.py discover_dynamic_groups().
     """
-    sid_lookup = {s.keys: s.sid for s in shortcuts}
+    sid_lookup = {s.keys: s.sid for s in shortcuts if s.keys not in NON_GROUPABLE_KEYS}
     pair_weights = {}
     
     # Build pair weights from usage sequences

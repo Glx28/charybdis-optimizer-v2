@@ -1,7 +1,8 @@
-"""App coherence factor: rewards shortcuts from the same app being on the same layer.
+"""App/workflow coherence factor: weakly rewards useful app clustering.
 
-Higher is better. If an app like Kimi or VS Code has many shortcuts, they should
-cluster on a layer so the user can access them together during that app's workflow.
+Higher is better. This is not an app-pure-layer rule. Apps are only one signal
+for workflow discovery; layers may share app focus while containing different
+shortcut sets when usage sequences and workflow windows support that split.
 """
 import numpy as np
 from collections import defaultdict
@@ -29,7 +30,7 @@ APP_ALIASES = {
 
 
 class AppCoherenceFactor(RewardFactor):
-    """Rewards same-app shortcuts being clustered on the same layer."""
+    """Rewards app clustering as a weak workflow prior, not as app purity."""
     name = "app_coherence"
     
     def __init__(self, min_cluster_size: int = 2, weight: float = 10.0):

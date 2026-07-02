@@ -1,4 +1,4 @@
-"""Adjacency factor: rewards related shortcuts being close together."""
+"""Adjacency factor: rewards workflow-related shortcuts being close together."""
 import numpy as np
 from collections import defaultdict
 from core import Layout
@@ -7,9 +7,9 @@ from fitness import RewardFactor
 class AdjacencyFactor(RewardFactor):
     """Rewards shortcuts being close together based on usage co-occurrence.
     
-    Uses both:
-    - Same-app/category proximity (baseline)
-    - Cross-app usage sequence proximity (workflow-aware)
+    Uses app/category proximity as a baseline, then gives stronger signal to
+    shortcut sequences and chains observed in usage data. Same app does not
+    imply same layer when the shortcut workflows are different.
     """
     name = "adjacency"
     

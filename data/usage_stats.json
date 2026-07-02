@@ -1,0 +1,5470 @@
+{
+  "timestamp": "2026-06-30T01:09:55.434Z",
+  "total_events": 3398,
+  "period_days": 1,
+  "shortcuts": {
+    "Logger_init": {
+      "count": 1,
+      "apps": {
+        "charybdis_helpers": 1
+      },
+      "by_layer": {
+        "0": 1
+      },
+      "per_day": 1
+    },
+    "Space": {
+      "count": 1998,
+      "apps": {
+        "Kimi.exe": 1740,
+        "claude.exe": 226,
+        "Codex.exe": 32
+      },
+      "by_layer": {
+        "0": 1998
+      },
+      "per_day": 1998
+    },
+    "Backspace": {
+      "count": 592,
+      "apps": {
+        "Kimi.exe": 492,
+        "claude.exe": 98,
+        "Codex.exe": 2
+      },
+      "by_layer": {
+        "0": 592
+      },
+      "per_day": 592
+    },
+    "Ctrl+Backspace": {
+      "count": 197,
+      "apps": {
+        "Kimi.exe": 169,
+        "Codex.exe": 11,
+        "claude.exe": 17
+      },
+      "by_layer": {
+        "0": 197
+      },
+      "per_day": 197
+    },
+    "Ctrl+V": {
+      "count": 65,
+      "apps": {
+        "Kimi.exe": 48,
+        "claude.exe": 15,
+        "Codex.exe": 1,
+        "WindowsTerminal.exe": 1
+      },
+      "by_layer": {
+        "0": 65
+      },
+      "per_day": 65
+    },
+    "Enter": {
+      "count": 107,
+      "apps": {
+        "Kimi.exe": 78,
+        "claude.exe": 25,
+        "unknown": 1,
+        "WindowsTerminal.exe": 1,
+        "Codex.exe": 2
+      },
+      "by_layer": {
+        "0": 107
+      },
+      "per_day": 107
+    },
+    "Ctrl+C": {
+      "count": 52,
+      "apps": {
+        "Kimi.exe": 16,
+        "claude.exe": 30,
+        "Code.exe": 5,
+        "Codex.exe": 1
+      },
+      "by_layer": {
+        "0": 52
+      },
+      "per_day": 52
+    },
+    "Tab": {
+      "count": 2,
+      "apps": {
+        "claude.exe": 2
+      },
+      "by_layer": {
+        "0": 2
+      },
+      "per_day": 2
+    },
+    "Shift+Tab": {
+      "count": 1,
+      "apps": {
+        "Codex.exe": 1
+      },
+      "by_layer": {
+        "0": 1
+      },
+      "per_day": 1
+    },
+    "Ctrl+A": {
+      "count": 7,
+      "apps": {
+        "Code.exe": 5,
+        "claude.exe": 2
+      },
+      "by_layer": {
+        "0": 7
+      },
+      "per_day": 7
+    },
+    "Shift+Enter": {
+      "count": 99,
+      "apps": {
+        "Kimi.exe": 96,
+        "claude.exe": 3
+      },
+      "by_layer": {
+        "0": 99
+      },
+      "per_day": 99
+    },
+    "Ctrl+S": {
+      "count": 4,
+      "apps": {
+        "Code.exe": 2,
+        "claude.exe": 2
+      },
+      "by_layer": {
+        "0": 4
+      },
+      "per_day": 4
+    },
+    "Ctrl+Enter": {
+      "count": 6,
+      "apps": {
+        "Kimi.exe": 6
+      },
+      "by_layer": {
+        "0": 6
+      },
+      "per_day": 6
+    },
+    "Ctrl+X": {
+      "count": 4,
+      "apps": {
+        "claude.exe": 4
+      },
+      "by_layer": {
+        "0": 4
+      },
+      "per_day": 4
+    },
+    "Ctrl+Q": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 1
+      },
+      "by_layer": {
+        "0": 1
+      },
+      "per_day": 1
+    }
+  },
+  "sequences": {
+    "Ctrl+C -> Ctrl+V": {
+      "count": 27,
+      "avg_gap_ms": 2133
+    },
+    "Ctrl+Backspace -> Ctrl+V": {
+      "count": 1,
+      "avg_gap_ms": 2547
+    },
+    "Ctrl+A -> Ctrl+C": {
+      "count": 5,
+      "avg_gap_ms": 906
+    },
+    "Ctrl+V -> Tab": {
+      "count": 1,
+      "avg_gap_ms": 1719
+    },
+    "Ctrl+V -> Shift+Enter": {
+      "count": 9,
+      "avg_gap_ms": 1154
+    },
+    "Shift+Enter -> Shift+Enter": {
+      "count": 2,
+      "avg_gap_ms": 3094
+    },
+    "Shift+Enter -> Ctrl+V": {
+      "count": 15,
+      "avg_gap_ms": 1018
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 9,
+      "avg_gap_ms": 3323
+    },
+    "Ctrl+S -> Ctrl+A": {
+      "count": 3,
+      "avg_gap_ms": 2156
+    },
+    "Shift+Enter -> Ctrl+S": {
+      "count": 1,
+      "avg_gap_ms": 3922
+    },
+    "Ctrl+V -> Ctrl+Enter": {
+      "count": 1,
+      "avg_gap_ms": 829
+    },
+    "Shift+Enter -> Ctrl+Backspace": {
+      "count": 1,
+      "avg_gap_ms": 4656
+    },
+    "Ctrl+Backspace -> Shift+Enter": {
+      "count": 2,
+      "avg_gap_ms": 3320
+    },
+    "Ctrl+V -> Ctrl+X": {
+      "count": 1,
+      "avg_gap_ms": 1625
+    },
+    "Ctrl+X -> Ctrl+S": {
+      "count": 1,
+      "avg_gap_ms": 1422
+    },
+    "Ctrl+S -> Ctrl+Q": {
+      "count": 1,
+      "avg_gap_ms": 641
+    },
+    "Ctrl+Q -> Ctrl+C": {
+      "count": 1,
+      "avg_gap_ms": 3609
+    },
+    "Shift+Enter -> Ctrl+A": {
+      "count": 1,
+      "avg_gap_ms": 3203
+    },
+    "Ctrl+A -> Ctrl+X": {
+      "count": 2,
+      "avg_gap_ms": 1165
+    },
+    "Ctrl+X -> Ctrl+V": {
+      "count": 1,
+      "avg_gap_ms": 1719
+    },
+    "Ctrl+C -> Ctrl+X": {
+      "count": 1,
+      "avg_gap_ms": 1656
+    },
+    "Ctrl+X -> Shift+Enter": {
+      "count": 2,
+      "avg_gap_ms": 4024
+    },
+    "Ctrl+C -> Ctrl+C": {
+      "count": 1,
+      "avg_gap_ms": 4359
+    }
+  },
+  "shortcut_sequences": {
+    "Ctrl+C -> Ctrl+V": {
+      "count": 27,
+      "same_app_count": 27,
+      "cross_app_count": 0,
+      "apps": {
+        "Kimi.exe": 38,
+        "claude.exe": 16
+      },
+      "avg_gap_ms": 2133,
+      "p50_gap_ms": 1891,
+      "confidence": 0.57
+    },
+    "Ctrl+Backspace -> Ctrl+V": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "Kimi.exe": 2
+      },
+      "avg_gap_ms": 2547,
+      "p50_gap_ms": 2547,
+      "confidence": 0.1
+    },
+    "Ctrl+A -> Ctrl+C": {
+      "count": 5,
+      "same_app_count": 5,
+      "cross_app_count": 0,
+      "apps": {
+        "Code.exe": 10
+      },
+      "avg_gap_ms": 906,
+      "p50_gap_ms": 938,
+      "confidence": 0.85
+    },
+    "Ctrl+V -> Tab": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "claude.exe": 2
+      },
+      "avg_gap_ms": 1719,
+      "p50_gap_ms": 1719,
+      "confidence": 0.1
+    },
+    "Ctrl+V -> Shift+Enter": {
+      "count": 9,
+      "same_app_count": 9,
+      "cross_app_count": 0,
+      "apps": {
+        "Kimi.exe": 18
+      },
+      "avg_gap_ms": 1154,
+      "p50_gap_ms": 1079,
+      "confidence": 0.75
+    },
+    "Shift+Enter -> Shift+Enter": {
+      "count": 2,
+      "same_app_count": 2,
+      "cross_app_count": 0,
+      "apps": {
+        "Kimi.exe": 4
+      },
+      "avg_gap_ms": 3094,
+      "p50_gap_ms": 2422,
+      "confidence": 0.3
+    },
+    "Shift+Enter -> Ctrl+V": {
+      "count": 15,
+      "same_app_count": 15,
+      "cross_app_count": 0,
+      "apps": {
+        "Kimi.exe": 24,
+        "claude.exe": 6
+      },
+      "avg_gap_ms": 1018,
+      "p50_gap_ms": 969,
+      "confidence": 0.54
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 9,
+      "same_app_count": 9,
+      "cross_app_count": 0,
+      "apps": {
+        "Kimi.exe": 18
+      },
+      "avg_gap_ms": 3323,
+      "p50_gap_ms": 3000,
+      "confidence": 0.71
+    },
+    "Ctrl+S -> Ctrl+A": {
+      "count": 3,
+      "same_app_count": 3,
+      "cross_app_count": 0,
+      "apps": {
+        "Code.exe": 4,
+        "claude.exe": 2
+      },
+      "avg_gap_ms": 2156,
+      "p50_gap_ms": 1875,
+      "confidence": 0.45
+    },
+    "Shift+Enter -> Ctrl+S": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "Code.exe": 2
+      },
+      "avg_gap_ms": 3922,
+      "p50_gap_ms": 3922,
+      "confidence": 0.08
+    },
+    "Ctrl+V -> Ctrl+Enter": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "Kimi.exe": 2
+      },
+      "avg_gap_ms": 829,
+      "p50_gap_ms": 829,
+      "confidence": 0.1
+    },
+    "Shift+Enter -> Ctrl+Backspace": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "Kimi.exe": 2
+      },
+      "avg_gap_ms": 4656,
+      "p50_gap_ms": 4656,
+      "confidence": 0.06
+    },
+    "Ctrl+Backspace -> Shift+Enter": {
+      "count": 2,
+      "same_app_count": 2,
+      "cross_app_count": 0,
+      "apps": {
+        "Kimi.exe": 4
+      },
+      "avg_gap_ms": 3320,
+      "p50_gap_ms": 2656,
+      "confidence": 0.29
+    },
+    "Ctrl+V -> Ctrl+X": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "claude.exe": 2
+      },
+      "avg_gap_ms": 1625,
+      "p50_gap_ms": 1625,
+      "confidence": 0.1
+    },
+    "Ctrl+X -> Ctrl+S": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "claude.exe": 2
+      },
+      "avg_gap_ms": 1422,
+      "p50_gap_ms": 1422,
+      "confidence": 0.1
+    },
+    "Ctrl+S -> Ctrl+Q": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "claude.exe": 2
+      },
+      "avg_gap_ms": 641,
+      "p50_gap_ms": 641,
+      "confidence": 0.1
+    },
+    "Ctrl+Q -> Ctrl+C": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "Kimi.exe": 2
+      },
+      "avg_gap_ms": 3609,
+      "p50_gap_ms": 3609,
+      "confidence": 0.08
+    },
+    "Shift+Enter -> Ctrl+A": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "claude.exe": 2
+      },
+      "avg_gap_ms": 3203,
+      "p50_gap_ms": 3203,
+      "confidence": 0.09
+    },
+    "Ctrl+A -> Ctrl+X": {
+      "count": 2,
+      "same_app_count": 2,
+      "cross_app_count": 0,
+      "apps": {
+        "claude.exe": 4
+      },
+      "avg_gap_ms": 1165,
+      "p50_gap_ms": 1063,
+      "confidence": 0.37
+    },
+    "Ctrl+X -> Ctrl+V": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "Kimi.exe": 2
+      },
+      "avg_gap_ms": 1719,
+      "p50_gap_ms": 1719,
+      "confidence": 0.1
+    },
+    "Ctrl+C -> Ctrl+X": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "claude.exe": 2
+      },
+      "avg_gap_ms": 1656,
+      "p50_gap_ms": 1656,
+      "confidence": 0.1
+    },
+    "Ctrl+X -> Shift+Enter": {
+      "count": 2,
+      "same_app_count": 2,
+      "cross_app_count": 0,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 2
+      },
+      "avg_gap_ms": 4024,
+      "p50_gap_ms": 3875,
+      "confidence": 0.29
+    },
+    "Ctrl+C -> Ctrl+C": {
+      "count": 1,
+      "same_app_count": 1,
+      "cross_app_count": 0,
+      "apps": {
+        "claude.exe": 2
+      },
+      "avg_gap_ms": 4359,
+      "p50_gap_ms": 4359,
+      "confidence": 0.07
+    }
+  },
+  "by_app": {
+    "charybdis_helpers": {
+      "total": 1,
+      "mouse_clicks": 0,
+      "scroll_total": 0,
+      "top": [
+        "Logger_init"
+      ]
+    },
+    "Kimi.exe": {
+      "total": 2645,
+      "mouse_clicks": 749,
+      "scroll_total": 4362,
+      "top": [
+        "Space",
+        "Backspace",
+        "Ctrl+Backspace",
+        "Shift+Enter",
+        "Enter",
+        "Ctrl+V",
+        "Ctrl+C",
+        "Ctrl+Enter"
+      ]
+    },
+    "Codex.exe": {
+      "total": 50,
+      "mouse_clicks": 46,
+      "scroll_total": 119,
+      "top": [
+        "Space",
+        "Ctrl+Backspace",
+        "Backspace",
+        "Enter",
+        "Shift+Tab",
+        "Ctrl+V",
+        "Ctrl+C"
+      ]
+    },
+    "claude.exe": {
+      "total": 425,
+      "mouse_clicks": 159,
+      "scroll_total": 161,
+      "top": [
+        "Space",
+        "Backspace",
+        "Ctrl+C",
+        "Enter",
+        "Ctrl+Backspace",
+        "Ctrl+V",
+        "Ctrl+X",
+        "Shift+Enter",
+        "Tab",
+        "Ctrl+S"
+      ]
+    },
+    "Code.exe": {
+      "total": 12,
+      "mouse_clicks": 16,
+      "scroll_total": 30,
+      "top": [
+        "Ctrl+A",
+        "Ctrl+C",
+        "Ctrl+S"
+      ]
+    },
+    "SearchHost.exe": {
+      "total": 0,
+      "mouse_clicks": 1,
+      "scroll_total": 0,
+      "top": []
+    },
+    "unknown": {
+      "total": 1,
+      "mouse_clicks": 2,
+      "scroll_total": 0,
+      "top": [
+        "Enter"
+      ]
+    },
+    "WindowsTerminal.exe": {
+      "total": 2,
+      "mouse_clicks": 3,
+      "scroll_total": 4,
+      "top": [
+        "Ctrl+V",
+        "Enter"
+      ]
+    },
+    "explorer.exe": {
+      "total": 0,
+      "mouse_clicks": 1,
+      "scroll_total": 0,
+      "top": []
+    }
+  },
+  "by_layer": {
+    "0": 439
+  },
+  "by_layer_shortcut": {
+    "Logger_init": {
+      "0": 1
+    },
+    "Space": {
+      "0": 1998
+    },
+    "Backspace": {
+      "0": 592
+    },
+    "Ctrl+Backspace": {
+      "0": 197
+    },
+    "Ctrl+V": {
+      "0": 65
+    },
+    "Enter": {
+      "0": 107
+    },
+    "Ctrl+C": {
+      "0": 52
+    },
+    "Tab": {
+      "0": 2
+    },
+    "Shift+Tab": {
+      "0": 1
+    },
+    "Ctrl+A": {
+      "0": 7
+    },
+    "Shift+Enter": {
+      "0": 99
+    },
+    "Ctrl+S": {
+      "0": 4
+    },
+    "Ctrl+Enter": {
+      "0": 6
+    },
+    "Ctrl+X": {
+      "0": 4
+    },
+    "Ctrl+Q": {
+      "0": 1
+    }
+  },
+  "chains": {
+    "Ctrl+Backspace -> Ctrl+V": {
+      "count": 3,
+      "avg_total_ms": 5000
+    },
+    "Ctrl+C -> Ctrl+V": {
+      "count": 34,
+      "avg_total_ms": 3059
+    },
+    "Ctrl+C -> Ctrl+Backspace": {
+      "count": 2,
+      "avg_total_ms": 8500
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 55,
+      "avg_total_ms": 2927
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 34,
+      "avg_total_ms": 5588
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 12,
+      "avg_total_ms": 7500
+    },
+    "Ctrl+A -> Ctrl+C": {
+      "count": 5,
+      "avg_total_ms": 800
+    },
+    "Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 6,
+      "avg_total_ms": 4000
+    },
+    "Ctrl+V -> Tab": {
+      "count": 1,
+      "avg_total_ms": 1000
+    },
+    "Ctrl+C -> Ctrl+V -> Tab": {
+      "count": 2,
+      "avg_total_ms": 4000
+    },
+    "Ctrl+V -> Shift+Enter": {
+      "count": 10,
+      "avg_total_ms": 1800
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter": {
+      "count": 12,
+      "avg_total_ms": 4833
+    },
+    "Shift+Enter -> Shift+Enter": {
+      "count": 23,
+      "avg_total_ms": 2130
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter": {
+      "count": 14,
+      "avg_total_ms": 3571
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Shift+Enter": {
+      "count": 6,
+      "avg_total_ms": 3333
+    },
+    "Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 14,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 6,
+      "avg_total_ms": 7333
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 2,
+      "avg_total_ms": 7000
+    },
+    "Shift+Enter -> Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 6,
+      "avg_total_ms": 8000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 4,
+      "avg_total_ms": 8000
+    },
+    "Shift+Enter -> Ctrl+V": {
+      "count": 15,
+      "avg_total_ms": 533
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 10,
+      "avg_total_ms": 1400
+    },
+    "Ctrl+Backspace -> Shift+Enter": {
+      "count": 7,
+      "avg_total_ms": 5571
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace -> Shift+Enter": {
+      "count": 10,
+      "avg_total_ms": 7000
+    },
+    "Shift+Enter -> Ctrl+C": {
+      "count": 3,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 5000
+    },
+    "Ctrl+S -> Ctrl+A": {
+      "count": 3,
+      "avg_total_ms": 2333
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+C": {
+      "count": 4,
+      "avg_total_ms": 3000
+    },
+    "Ctrl+C -> Ctrl+C": {
+      "count": 3,
+      "avg_total_ms": 6667
+    },
+    "Ctrl+A -> Ctrl+C -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 9000
+    },
+    "Ctrl+C -> Ctrl+C -> Ctrl+V": {
+      "count": 6,
+      "avg_total_ms": 8667
+    },
+    "Ctrl+A -> Ctrl+C -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 10000
+    },
+    "Shift+Enter -> Ctrl+S": {
+      "count": 1,
+      "avg_total_ms": 3000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+S": {
+      "count": 2,
+      "avg_total_ms": 3000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+S": {
+      "count": 2,
+      "avg_total_ms": 5000
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+S": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Shift+Enter -> Ctrl+S -> Ctrl+A": {
+      "count": 2,
+      "avg_total_ms": 5000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+S -> Ctrl+A": {
+      "count": 2,
+      "avg_total_ms": 5000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+S -> Ctrl+A": {
+      "count": 2,
+      "avg_total_ms": 7000
+    },
+    "Shift+Enter -> Ctrl+S -> Ctrl+A -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+S -> Ctrl+A -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 5000
+    },
+    "Shift+Enter -> Ctrl+S -> Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 8000
+    },
+    "Ctrl+V -> Ctrl+C": {
+      "count": 1,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+C -> Ctrl+V -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 8000
+    },
+    "Ctrl+A -> Ctrl+C -> Ctrl+V -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 9000
+    },
+    "Ctrl+V -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 9000
+    },
+    "Ctrl+C -> Shift+Enter": {
+      "count": 2,
+      "avg_total_ms": 7500
+    },
+    "Ctrl+C -> Shift+Enter -> Ctrl+V": {
+      "count": 4,
+      "avg_total_ms": 7500
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 2000
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 3000
+    },
+    "Ctrl+V -> Ctrl+A": {
+      "count": 1,
+      "avg_total_ms": 7000
+    },
+    "Shift+Enter -> Ctrl+V -> Ctrl+A": {
+      "count": 2,
+      "avg_total_ms": 7000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+V -> Ctrl+A": {
+      "count": 2,
+      "avg_total_ms": 8000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+V -> Ctrl+A": {
+      "count": 2,
+      "avg_total_ms": 9000
+    },
+    "Ctrl+V -> Ctrl+A -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 7000
+    },
+    "Shift+Enter -> Ctrl+V -> Ctrl+A -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 7000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+V -> Ctrl+A -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 8000
+    },
+    "Ctrl+V -> Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 9000
+    },
+    "Shift+Enter -> Ctrl+V -> Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 9000
+    },
+    "Ctrl+V -> Ctrl+Enter": {
+      "count": 1,
+      "avg_total_ms": 1000
+    },
+    "Ctrl+C -> Ctrl+V -> Ctrl+Enter": {
+      "count": 2,
+      "avg_total_ms": 4000
+    },
+    "Ctrl+Enter -> Ctrl+Enter": {
+      "count": 2,
+      "avg_total_ms": 2000
+    },
+    "Ctrl+V -> Ctrl+Enter -> Ctrl+Enter": {
+      "count": 2,
+      "avg_total_ms": 3000
+    },
+    "Ctrl+C -> Ctrl+V -> Ctrl+Enter -> Ctrl+Enter": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+Enter -> Ctrl+C": {
+      "count": 1,
+      "avg_total_ms": 4000
+    },
+    "Ctrl+Enter -> Ctrl+Enter -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+V -> Ctrl+Enter -> Ctrl+Enter -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 7000
+    },
+    "Ctrl+C -> Ctrl+V -> Ctrl+Enter -> Ctrl+Enter -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 10000
+    },
+    "Ctrl+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 5000
+    },
+    "Ctrl+Enter -> Ctrl+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 7000
+    },
+    "Ctrl+V -> Ctrl+Enter -> Ctrl+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 8000
+    },
+    "Shift+Enter -> Ctrl+Backspace": {
+      "count": 4,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+V -> Shift+Enter -> Ctrl+Backspace": {
+      "count": 4,
+      "avg_total_ms": 6500
+    },
+    "Shift+Enter -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+V -> Shift+Enter -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 2,
+      "avg_total_ms": 7000
+    },
+    "Ctrl+Backspace -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 8000
+    },
+    "Ctrl+Backspace -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 7000
+    },
+    "Ctrl+V -> Ctrl+X": {
+      "count": 1,
+      "avg_total_ms": 2000
+    },
+    "Ctrl+X -> Ctrl+S": {
+      "count": 1,
+      "avg_total_ms": 1000
+    },
+    "Ctrl+V -> Ctrl+X -> Ctrl+S": {
+      "count": 2,
+      "avg_total_ms": 3000
+    },
+    "Ctrl+S -> Ctrl+Q": {
+      "count": 1,
+      "avg_total_ms": 1000
+    },
+    "Ctrl+X -> Ctrl+S -> Ctrl+Q": {
+      "count": 2,
+      "avg_total_ms": 2000
+    },
+    "Ctrl+V -> Ctrl+X -> Ctrl+S -> Ctrl+Q": {
+      "count": 2,
+      "avg_total_ms": 4000
+    },
+    "Ctrl+Q -> Ctrl+C": {
+      "count": 1,
+      "avg_total_ms": 4000
+    },
+    "Ctrl+S -> Ctrl+Q -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 5000
+    },
+    "Ctrl+X -> Ctrl+S -> Ctrl+Q -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+V -> Ctrl+X -> Ctrl+S -> Ctrl+Q -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 8000
+    },
+    "Ctrl+Q -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 9000
+    },
+    "Ctrl+S -> Ctrl+Q -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 10000
+    },
+    "Shift+Enter -> Ctrl+A": {
+      "count": 1,
+      "avg_total_ms": 3000
+    },
+    "Ctrl+A -> Ctrl+X": {
+      "count": 2,
+      "avg_total_ms": 1000
+    },
+    "Shift+Enter -> Ctrl+A -> Ctrl+X": {
+      "count": 2,
+      "avg_total_ms": 4000
+    },
+    "Ctrl+X -> Ctrl+V": {
+      "count": 1,
+      "avg_total_ms": 2000
+    },
+    "Ctrl+A -> Ctrl+X -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 3000
+    },
+    "Shift+Enter -> Ctrl+A -> Ctrl+X -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Shift+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 4,
+      "avg_total_ms": 6500
+    },
+    "Shift+Enter -> Ctrl+C -> Ctrl+V -> Shift+Enter": {
+      "count": 2,
+      "avg_total_ms": 10000
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Ctrl+Backspace": {
+      "count": 2,
+      "avg_total_ms": 10000
+    },
+    "Ctrl+C -> Ctrl+X": {
+      "count": 1,
+      "avg_total_ms": 1000
+    },
+    "Ctrl+X -> Shift+Enter": {
+      "count": 2,
+      "avg_total_ms": 4500
+    },
+    "Ctrl+C -> Ctrl+X -> Shift+Enter": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+X -> Shift+Enter -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 5000
+    },
+    "Ctrl+C -> Ctrl+X -> Shift+Enter -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Shift+Enter -> Ctrl+V -> Shift+Enter": {
+      "count": 2,
+      "avg_total_ms": 3000
+    },
+    "Shift+Enter -> Ctrl+V -> Shift+Enter -> Shift+Enter": {
+      "count": 2,
+      "avg_total_ms": 5000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+C": {
+      "count": 2,
+      "avg_total_ms": 7000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 7000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 8000
+    },
+    "Ctrl+C -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 2,
+      "avg_total_ms": 9000
+    },
+    "Ctrl+Backspace -> Shift+Enter -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 10000
+    },
+    "Ctrl+V -> Ctrl+S": {
+      "count": 1,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+V -> Ctrl+S -> Ctrl+A": {
+      "count": 2,
+      "avg_total_ms": 9000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+X": {
+      "count": 2,
+      "avg_total_ms": 4000
+    },
+    "Ctrl+V -> Ctrl+S -> Ctrl+A -> Ctrl+X": {
+      "count": 2,
+      "avg_total_ms": 10000
+    },
+    "Ctrl+A -> Ctrl+X -> Shift+Enter": {
+      "count": 2,
+      "avg_total_ms": 5000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+X -> Shift+Enter": {
+      "count": 2,
+      "avg_total_ms": 8000
+    },
+    "Ctrl+X -> Shift+Enter -> Shift+Enter": {
+      "count": 2,
+      "avg_total_ms": 5000
+    },
+    "Ctrl+A -> Ctrl+X -> Shift+Enter -> Shift+Enter": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+X -> Shift+Enter -> Shift+Enter": {
+      "count": 2,
+      "avg_total_ms": 9000
+    },
+    "Ctrl+X -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 5000
+    },
+    "Ctrl+A -> Ctrl+X -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 6000
+    },
+    "Shift+Enter -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 9000
+    },
+    "Shift+Enter -> Shift+Enter -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 2,
+      "avg_total_ms": 10000
+    }
+  },
+  "workflows": {
+    "Ctrl+Backspace -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 43,
+      "apps": {
+        "Kimi.exe": 70,
+        "Codex.exe": 6,
+        "claude.exe": 1
+      },
+      "app_count": 3,
+      "layer_count": 1,
+      "avg_span_ms": 2209
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 16,
+      "apps": {
+        "Kimi.exe": 33,
+        "Codex.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 2813
+    },
+    "Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 3,
+      "apps": {
+        "Code.exe": 6,
+        "Kimi.exe": 2,
+        "Codex.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+C -> Ctrl+V -> Tab": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter": {
+      "count": 6,
+      "apps": {
+        "Kimi.exe": 13,
+        "claude.exe": 5
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 4833
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter": {
+      "count": 14,
+      "apps": {
+        "Kimi.exe": 28
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 1786
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Shift+Enter": {
+      "count": 3,
+      "apps": {
+        "Kimi.exe": 9,
+        "claude.exe": 3
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 3333
+    },
+    "Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 15,
+      "apps": {
+        "Kimi.exe": 29
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 2800
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 6,
+      "apps": {
+        "Kimi.exe": 15
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 3667
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Shift+Enter -> Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 6,
+      "apps": {
+        "Kimi.exe": 15
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 2,
+      "apps": {
+        "Kimi.exe": 10
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 10,
+      "apps": {
+        "Kimi.exe": 20
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 700
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace -> Shift+Enter": {
+      "count": 11,
+      "apps": {
+        "Kimi.exe": 21
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 3182
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+C": {
+      "count": 2,
+      "apps": {
+        "Code.exe": 6
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Ctrl+A -> Ctrl+C -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+C -> Ctrl+C -> Ctrl+V": {
+      "count": 3,
+      "apps": {
+        "claude.exe": 5,
+        "Kimi.exe": 3,
+        "Code.exe": 1
+      },
+      "app_count": 3,
+      "layer_count": 1,
+      "avg_span_ms": 8667
+    },
+    "Ctrl+A -> Ctrl+C -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 2,
+        "claude.exe": 1,
+        "Kimi.exe": 1
+      },
+      "app_count": 3,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+S": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "Code.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+S": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "Code.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+S": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1,
+        "Code.exe": 1
+      },
+      "app_count": 3,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Shift+Enter -> Ctrl+S -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+S -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "Code.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+S -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "Code.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Shift+Enter -> Ctrl+S -> Ctrl+A -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 3,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+S -> Ctrl+A -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 3,
+        "Kimi.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 3,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Shift+Enter -> Ctrl+S -> Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 3,
+        "Kimi.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+C -> Ctrl+V -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 1,
+        "Kimi.exe": 1,
+        "claude.exe": 1
+      },
+      "app_count": 3,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+A -> Ctrl+C -> Ctrl+V -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 2,
+        "Kimi.exe": 1,
+        "claude.exe": 1
+      },
+      "app_count": 3,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+V -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+C -> Shift+Enter -> Ctrl+V": {
+      "count": 2,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 3
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7500
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 2000
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Shift+Enter -> Ctrl+V -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "Code.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+V -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "Code.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+V -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4,
+        "Code.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+V -> Ctrl+A -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Shift+Enter -> Ctrl+V -> Ctrl+A -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "Code.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+V -> Ctrl+A -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "Code.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+V -> Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "Code.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Shift+Enter -> Ctrl+V -> Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "Code.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+C -> Ctrl+V -> Ctrl+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+V -> Ctrl+Enter -> Ctrl+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Ctrl+C -> Ctrl+V -> Ctrl+Enter -> Ctrl+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+Enter -> Ctrl+Enter -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+V -> Ctrl+Enter -> Ctrl+Enter -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Ctrl+C -> Ctrl+V -> Ctrl+Enter -> Ctrl+Enter -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Ctrl+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+Enter -> Ctrl+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Ctrl+V -> Ctrl+Enter -> Ctrl+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+V -> Shift+Enter -> Ctrl+Backspace": {
+      "count": 2,
+      "apps": {
+        "Kimi.exe": 6
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 6500
+    },
+    "Shift+Enter -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+V -> Shift+Enter -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Ctrl+Backspace -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Ctrl+V -> Ctrl+X -> Ctrl+S": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Ctrl+X -> Ctrl+S -> Ctrl+Q": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 2000
+    },
+    "Ctrl+V -> Ctrl+X -> Ctrl+S -> Ctrl+Q": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+S -> Ctrl+Q -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+X -> Ctrl+S -> Ctrl+Q -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+V -> Ctrl+X -> Ctrl+S -> Ctrl+Q -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 4,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+Q -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+S -> Ctrl+Q -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Shift+Enter -> Ctrl+A -> Ctrl+X": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+A -> Ctrl+X -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Shift+Enter -> Ctrl+A -> Ctrl+X -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Shift+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "apps": {
+        "Kimi.exe": 4,
+        "claude.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6500
+    },
+    "Shift+Enter -> Ctrl+C -> Ctrl+V -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Ctrl+Backspace": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Ctrl+C -> Ctrl+X -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+X -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+C -> Ctrl+X -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Shift+Enter -> Ctrl+V -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Shift+Enter -> Ctrl+V -> Shift+Enter -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+C -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+Backspace -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Ctrl+V -> Ctrl+S -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+X": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+V -> Ctrl+S -> Ctrl+A -> Ctrl+X": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Ctrl+A -> Ctrl+X -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+X -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+X -> Shift+Enter -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+A -> Ctrl+X -> Shift+Enter -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+X -> Shift+Enter -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3,
+        "Kimi.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+X -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+A -> Ctrl+X -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Shift+Enter -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Shift+Enter -> Shift+Enter -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 5
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    }
+  },
+  "shortcut_workflows": {
+    "Ctrl+Backspace -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 43,
+      "apps": {
+        "Kimi.exe": 70,
+        "Codex.exe": 6,
+        "claude.exe": 1
+      },
+      "app_count": 3,
+      "layer_count": 1,
+      "avg_span_ms": 2209
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 16,
+      "apps": {
+        "Kimi.exe": 33,
+        "Codex.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 2813
+    },
+    "Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 3,
+      "apps": {
+        "Code.exe": 6,
+        "Kimi.exe": 2,
+        "Codex.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+C -> Ctrl+V -> Tab": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter": {
+      "count": 6,
+      "apps": {
+        "Kimi.exe": 13,
+        "claude.exe": 5
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 4833
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter": {
+      "count": 14,
+      "apps": {
+        "Kimi.exe": 28
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 1786
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Shift+Enter": {
+      "count": 3,
+      "apps": {
+        "Kimi.exe": 9,
+        "claude.exe": 3
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 3333
+    },
+    "Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 15,
+      "apps": {
+        "Kimi.exe": 29
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 2800
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 6,
+      "apps": {
+        "Kimi.exe": 15
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 3667
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Shift+Enter -> Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 6,
+      "apps": {
+        "Kimi.exe": 15
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Shift+Enter -> Shift+Enter": {
+      "count": 2,
+      "apps": {
+        "Kimi.exe": 10
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 10,
+      "apps": {
+        "Kimi.exe": 20
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 700
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace -> Shift+Enter": {
+      "count": 11,
+      "apps": {
+        "Kimi.exe": 21
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 3182
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+C": {
+      "count": 2,
+      "apps": {
+        "Code.exe": 6
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Ctrl+A -> Ctrl+C -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+C -> Ctrl+C -> Ctrl+V": {
+      "count": 3,
+      "apps": {
+        "claude.exe": 5,
+        "Kimi.exe": 3,
+        "Code.exe": 1
+      },
+      "app_count": 3,
+      "layer_count": 1,
+      "avg_span_ms": 8667
+    },
+    "Ctrl+A -> Ctrl+C -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 2,
+        "claude.exe": 1,
+        "Kimi.exe": 1
+      },
+      "app_count": 3,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+S": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "Code.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+S": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "Code.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+S": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1,
+        "Code.exe": 1
+      },
+      "app_count": 3,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Shift+Enter -> Ctrl+S -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+S -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "Code.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+S -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "Code.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Shift+Enter -> Ctrl+S -> Ctrl+A -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 3,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+S -> Ctrl+A -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 3,
+        "Kimi.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 3,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Shift+Enter -> Ctrl+S -> Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 3,
+        "Kimi.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+C -> Ctrl+V -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 1,
+        "Kimi.exe": 1,
+        "claude.exe": 1
+      },
+      "app_count": 3,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+A -> Ctrl+C -> Ctrl+V -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 2,
+        "Kimi.exe": 1,
+        "claude.exe": 1
+      },
+      "app_count": 3,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+V -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+C -> Shift+Enter -> Ctrl+V": {
+      "count": 2,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 3
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7500
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 2000
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Shift+Enter -> Ctrl+V -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "Code.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+V -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "Code.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+V -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4,
+        "Code.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+V -> Ctrl+A -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Code.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Shift+Enter -> Ctrl+V -> Ctrl+A -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "Code.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+V -> Ctrl+A -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "Code.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+V -> Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "Code.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Shift+Enter -> Ctrl+V -> Ctrl+A -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "Code.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+C -> Ctrl+V -> Ctrl+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+V -> Ctrl+Enter -> Ctrl+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Ctrl+C -> Ctrl+V -> Ctrl+Enter -> Ctrl+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+Enter -> Ctrl+Enter -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+V -> Ctrl+Enter -> Ctrl+Enter -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Ctrl+C -> Ctrl+V -> Ctrl+Enter -> Ctrl+Enter -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Ctrl+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+Enter -> Ctrl+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Ctrl+V -> Ctrl+Enter -> Ctrl+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+V -> Shift+Enter -> Ctrl+Backspace": {
+      "count": 2,
+      "apps": {
+        "Kimi.exe": 6
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 6500
+    },
+    "Shift+Enter -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+V -> Shift+Enter -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Ctrl+Backspace -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Ctrl+V -> Ctrl+X -> Ctrl+S": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Ctrl+X -> Ctrl+S -> Ctrl+Q": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 2000
+    },
+    "Ctrl+V -> Ctrl+X -> Ctrl+S -> Ctrl+Q": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+S -> Ctrl+Q -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+X -> Ctrl+S -> Ctrl+Q -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+V -> Ctrl+X -> Ctrl+S -> Ctrl+Q -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 4,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+Q -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+S -> Ctrl+Q -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Shift+Enter -> Ctrl+A -> Ctrl+X": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+A -> Ctrl+X -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Shift+Enter -> Ctrl+A -> Ctrl+X -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Shift+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 2,
+      "apps": {
+        "Kimi.exe": 4,
+        "claude.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6500
+    },
+    "Shift+Enter -> Ctrl+C -> Ctrl+V -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Ctrl+C -> Ctrl+V -> Shift+Enter -> Ctrl+Backspace": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Ctrl+C -> Ctrl+X -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+X -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+C -> Ctrl+X -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Shift+Enter -> Ctrl+V -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 3000
+    },
+    "Shift+Enter -> Ctrl+V -> Shift+Enter -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+C": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Shift+Enter -> Shift+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 7000
+    },
+    "Ctrl+V -> Shift+Enter -> Shift+Enter -> Ctrl+C -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+C -> Ctrl+Backspace -> Ctrl+Backspace": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+Backspace -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Ctrl+V -> Ctrl+S -> Ctrl+A": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+X": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 4000
+    },
+    "Ctrl+V -> Ctrl+S -> Ctrl+A -> Ctrl+X": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    },
+    "Ctrl+A -> Ctrl+X -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+X -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3,
+        "Kimi.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 8000
+    },
+    "Ctrl+X -> Shift+Enter -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 2,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+A -> Ctrl+X -> Shift+Enter -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 2,
+        "Kimi.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Ctrl+S -> Ctrl+A -> Ctrl+X -> Shift+Enter -> Shift+Enter": {
+      "count": 1,
+      "apps": {
+        "claude.exe": 3,
+        "Kimi.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Ctrl+X -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 1
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 5000
+    },
+    "Ctrl+A -> Ctrl+X -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 3,
+        "claude.exe": 2
+      },
+      "app_count": 2,
+      "layer_count": 1,
+      "avg_span_ms": 6000
+    },
+    "Shift+Enter -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 4
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 9000
+    },
+    "Shift+Enter -> Shift+Enter -> Shift+Enter -> Shift+Enter -> Ctrl+V": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 5
+      },
+      "app_count": 1,
+      "layer_count": 1,
+      "avg_span_ms": 10000
+    }
+  },
+  "app_sequences": {},
+  "app_workflows": {
+    "code.exe + codex.exe": {
+      "count": 1,
+      "switch_count": 1,
+      "shortcut_count": 3,
+      "avg_span_ms": 7000
+    },
+    "claude.exe + kimi.exe": {
+      "count": 48,
+      "switch_count": 58,
+      "shortcut_count": 176,
+      "avg_span_ms": 6542
+    },
+    "claude.exe + code.exe": {
+      "count": 1,
+      "switch_count": 1,
+      "shortcut_count": 3,
+      "avg_span_ms": 9000
+    },
+    "claude.exe + code.exe + kimi.exe": {
+      "count": 5,
+      "switch_count": 10,
+      "shortcut_count": 19,
+      "avg_span_ms": 8400
+    },
+    "code.exe + kimi.exe": {
+      "count": 19,
+      "switch_count": 22,
+      "shortcut_count": 76,
+      "avg_span_ms": 6263
+    }
+  },
+  "app_time_seconds": {
+    "codex.exe": 920,
+    "kimi.exe": 20561,
+    "claude.exe": 1617,
+    "windowsterminal.exe": 102,
+    "explorer.exe": 4,
+    "code.exe": 59,
+    "searchhost.exe": 5,
+    "shellexperiencehost.exe": 5
+  },
+  "blind_spots": [
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Shift+P",
+      "action": "Command palette",
+      "importance": 9,
+      "time_in_app_min": 1,
+      "blind_spot_score": 6.2,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+P",
+      "action": "Quick open file",
+      "importance": 9,
+      "time_in_app_min": 1,
+      "blind_spot_score": 6.2,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+`",
+      "action": "Toggle terminal",
+      "importance": 9,
+      "time_in_app_min": 1,
+      "blind_spot_score": 6.2,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+W",
+      "action": "Close editor",
+      "importance": 9,
+      "time_in_app_min": 1,
+      "blind_spot_score": 6.2,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "importance": 9,
+      "time_in_app_min": 1,
+      "blind_spot_score": 6.2,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+D",
+      "action": "Select next occurrence",
+      "importance": 9,
+      "time_in_app_min": 1,
+      "blind_spot_score": 6.2,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+/",
+      "action": "Toggle line comment",
+      "importance": 9,
+      "time_in_app_min": 1,
+      "blind_spot_score": 6.2,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "F12",
+      "action": "Go to definition",
+      "importance": 9,
+      "time_in_app_min": 1,
+      "blind_spot_score": 6.2,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Tab",
+      "action": "Switch editor tab",
+      "importance": 9,
+      "time_in_app_min": 1,
+      "blind_spot_score": 6.2,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Alt+Left",
+      "action": "Navigate back",
+      "importance": 9,
+      "time_in_app_min": 1,
+      "blind_spot_score": 6.2,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+F",
+      "action": "Find",
+      "importance": 9,
+      "time_in_app_min": 1,
+      "blind_spot_score": 6.2,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+2",
+      "action": "Chat",
+      "importance": 10,
+      "time_in_app_min": 0,
+      "blind_spot_score": 5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+E",
+      "action": "Search / command bar",
+      "importance": 10,
+      "time_in_app_min": 0,
+      "blind_spot_score": 5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+Shift+M",
+      "action": "Toggle mute",
+      "importance": 10,
+      "time_in_app_min": 0,
+      "blind_spot_score": 5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Alt+Tab",
+      "action": "Switch apps",
+      "importance": 10,
+      "time_in_app_min": 0,
+      "blind_spot_score": 5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+Left",
+      "action": "Snap window left",
+      "importance": 10,
+      "time_in_app_min": 0,
+      "blind_spot_score": 5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+Right",
+      "action": "Snap window right",
+      "importance": 10,
+      "time_in_app_min": 0,
+      "blind_spot_score": 5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+S",
+      "action": "Search",
+      "importance": 10,
+      "time_in_app_min": 0,
+      "blind_spot_score": 5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+1",
+      "action": "Open/switch pinned app 1",
+      "importance": 10,
+      "time_in_app_min": 0,
+      "blind_spot_score": 5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Ctrl+T",
+      "action": "New tab",
+      "importance": 9.5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Ctrl+W",
+      "action": "Close tab",
+      "importance": 9.5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Ctrl+Tab",
+      "action": "Next tab",
+      "importance": 9.5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Alt+Left",
+      "action": "Back",
+      "importance": 9.5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Ctrl+L",
+      "action": "Focus address bar",
+      "importance": 9.5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Ctrl+Shift+L",
+      "action": "Autofill login",
+      "importance": 9.5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Mouse",
+      "keys": "MB1",
+      "action": "Left click",
+      "importance": 9,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Mouse",
+      "keys": "MB2",
+      "action": "Right click",
+      "importance": 9,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "Ctrl+F",
+      "action": "Quick search",
+      "importance": 8.5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4.3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "Ctrl+E",
+      "action": "Check out document",
+      "importance": 8.5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4.3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "Ctrl+Shift+E",
+      "action": "Check in document",
+      "importance": 8.5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4.3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "Alt+Enter",
+      "action": "Properties / metadata card",
+      "importance": 8.5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4.3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows Terminal / PowerShell",
+      "keys": "Up",
+      "action": "Previous command",
+      "importance": 4,
+      "time_in_app_min": 2,
+      "blind_spot_score": 4,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Mouse",
+      "keys": "UpArrow",
+      "action": "Up arrow",
+      "importance": 8,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Mouse",
+      "keys": "DownArrow",
+      "action": "Down arrow",
+      "importance": 8,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Mouse",
+      "keys": "LeftArrow",
+      "action": "Left arrow",
+      "importance": 8,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Mouse",
+      "keys": "RightArrow",
+      "action": "Right arrow",
+      "importance": 8,
+      "time_in_app_min": 0,
+      "blind_spot_score": 4,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Shift+`",
+      "action": "New terminal",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+B",
+      "action": "Toggle sidebar",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+J",
+      "action": "Toggle bottom panel",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Shift+Z",
+      "action": "Redo",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Y",
+      "action": "Redo (alt)",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Shift+L",
+      "action": "Select all occurrences",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Alt+Up",
+      "action": "Move line up",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Alt+Down",
+      "action": "Move line down",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Shift+Alt+Down",
+      "action": "Copy line down",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Shift+K",
+      "action": "Delete line",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Shift+F",
+      "action": "Format document",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+G",
+      "action": "Go to line",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Alt+F12",
+      "action": "Peek definition",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Shift+O",
+      "action": "Go to symbol in file",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Alt+Right",
+      "action": "Navigate forward",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Shift+M",
+      "action": "Toggle problems panel",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Shift+E",
+      "action": "Explorer panel",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Shift+F",
+      "action": "Search across files",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Shift+G",
+      "action": "Source control panel",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Alt+Click",
+      "action": "Add cursor at position",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Alt+Up",
+      "action": "Add cursor above",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+Alt+Down",
+      "action": "Add cursor below",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+H",
+      "action": "Find and replace",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "F3",
+      "action": "Find next",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "F5",
+      "action": "Start/continue debugging",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "F9",
+      "action": "Toggle breakpoint",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "F10",
+      "action": "Step over",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "F11",
+      "action": "Step into",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Shift+F11",
+      "action": "Step out",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Visual Studio Code",
+      "keys": "Ctrl+L",
+      "action": "Select current line",
+      "importance": 5.4,
+      "time_in_app_min": 1,
+      "blind_spot_score": 3.7,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Ctrl+E",
+      "action": "Search",
+      "importance": 7,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Ctrl+N",
+      "action": "New mail",
+      "importance": 7,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Ctrl+R",
+      "action": "Reply",
+      "importance": 7,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Mouse",
+      "keys": "MB3",
+      "action": "Middle click",
+      "importance": 7,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Mouse",
+      "keys": "MB4",
+      "action": "Back button",
+      "importance": 7,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Mouse",
+      "keys": "MB5",
+      "action": "Forward button",
+      "importance": 7,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Mouse",
+      "keys": "ScrollUp",
+      "action": "Scroll up",
+      "importance": 7,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Mouse",
+      "keys": "ScrollDown",
+      "action": "Scroll down",
+      "importance": 7,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+1",
+      "action": "Activity",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+3",
+      "action": "Teams/channels",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+4",
+      "action": "Calendar",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Alt+Left",
+      "action": "Go back",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+N",
+      "action": "New chat",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+B",
+      "action": "Bold",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Up",
+      "action": "Edit last sent message",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+Shift+O",
+      "action": "Toggle camera",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+Shift+E",
+      "action": "Toggle screen share",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+Shift+H",
+      "action": "Hang up / end call",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+Shift+A",
+      "action": "Accept call",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Escape",
+      "action": "Close / go back",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Teams",
+      "keys": "Ctrl+F",
+      "action": "Find in conversation",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Alt+F4",
+      "action": "Close window",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+D",
+      "action": "Show/hide desktop",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+Tab",
+      "action": "Task View",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+Up",
+      "action": "Maximize window",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+Down",
+      "action": "Minimize / restore",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+Shift+Left",
+      "action": "Move to left monitor",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+Shift+Right",
+      "action": "Move to right monitor",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+E",
+      "action": "File Explorer",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+V",
+      "action": "Clipboard history",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+Shift+S",
+      "action": "Screenshot (Snip)",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+2",
+      "action": "Open/switch pinned app 2",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+3",
+      "action": "Open/switch pinned app 3",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+H",
+      "action": "Voice typing",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+Space",
+      "action": "Switch input language",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Win+C",
+      "action": "Open Copilot",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "Delete",
+      "action": "Delete",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Windows 11",
+      "keys": "F2",
+      "action": "Rename",
+      "importance": 6,
+      "time_in_app_min": 0,
+      "blind_spot_score": 3,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Ctrl+Shift+Tab",
+      "action": "Previous tab",
+      "importance": 5.699999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Ctrl+Shift+T",
+      "action": "Reopen closed tab",
+      "importance": 5.699999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Alt+Right",
+      "action": "Forward",
+      "importance": 5.699999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "F5",
+      "action": "Refresh page",
+      "importance": 5.699999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Escape",
+      "action": "Stop loading / close suggestion",
+      "importance": 5.699999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Ctrl+F",
+      "action": "Find on page",
+      "importance": 5.699999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "F12",
+      "action": "Open DevTools",
+      "importance": 5.699999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Ctrl+Shift+C",
+      "action": "Inspect element",
+      "importance": 5.699999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "importance": 5.699999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "Ctrl+Shift+V",
+      "action": "Paste without formatting",
+      "importance": 5.699999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Browser (Chrome/Edge)",
+      "keys": "/",
+      "action": "Enter find mode",
+      "importance": 5.699999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.8,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "Alt+Left",
+      "action": "Navigate back",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "F5",
+      "action": "Refresh view",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "Ctrl+N",
+      "action": "New document/object",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "Ctrl+O",
+      "action": "Open document",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "F2",
+      "action": "Rename object",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "Ctrl+Shift+C",
+      "action": "Copy object link",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "Ctrl+Shift+H",
+      "action": "Version history",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "Ctrl+Shift+W",
+      "action": "Change workflow state",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Desktop Client",
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Admin",
+      "keys": "Ctrl+F",
+      "action": "Search/filter",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Admin",
+      "keys": "F5",
+      "action": "Refresh",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Admin",
+      "keys": "Escape",
+      "action": "Close dialog / cancel",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Admin",
+      "keys": "Ctrl+Z",
+      "action": "Undo change",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Admin",
+      "keys": "Ctrl+N",
+      "action": "New item/object",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Admin",
+      "keys": "F2",
+      "action": "Rename",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "M-Files Admin",
+      "keys": "Alt+Enter",
+      "action": "Properties",
+      "importance": 5.1,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.6,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Excel",
+      "keys": "Ctrl+Left",
+      "action": "Jump to left edge of data",
+      "importance": 5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Excel",
+      "keys": "Ctrl+Right",
+      "action": "Jump to right edge of data",
+      "importance": 5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Excel",
+      "keys": "F2",
+      "action": "Edit cell",
+      "importance": 5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Excel",
+      "keys": "Escape",
+      "action": "Cancel edit",
+      "importance": 5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Excel",
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "importance": 5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Excel",
+      "keys": "=",
+      "action": "Start formula",
+      "importance": 5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Excel",
+      "keys": "F4",
+      "action": "Toggle absolute ref ($)",
+      "importance": 5,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.5,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Ctrl+1",
+      "action": "Switch to Mail",
+      "importance": 4.199999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.1,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Ctrl+2",
+      "action": "Switch to Calendar",
+      "importance": 4.199999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.1,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Ctrl+Shift+I",
+      "action": "Go to Inbox",
+      "importance": 4.199999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.1,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Ctrl+Shift+R",
+      "action": "Reply all",
+      "importance": 4.199999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.1,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Ctrl+F",
+      "action": "Forward",
+      "importance": 4.199999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.1,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Delete",
+      "action": "Delete message",
+      "importance": 4.199999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.1,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Ctrl+U",
+      "action": "Mark as unread",
+      "importance": 4.199999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.1,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "importance": 4.199999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.1,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Ctrl+B",
+      "action": "Bold",
+      "importance": 4.199999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.1,
+      "reason": "High-importance shortcut not observed in usage data"
+    },
+    {
+      "app": "Microsoft Outlook",
+      "keys": "Ctrl+Shift+V",
+      "action": "Paste as plain text",
+      "importance": 4.199999999999999,
+      "time_in_app_min": 0,
+      "blind_spot_score": 2.1,
+      "reason": "High-importance shortcut not observed in usage data"
+    }
+  ],
+  "mouse_clicks": {
+    "MB1": {
+      "count": 966,
+      "apps": {
+        "Kimi.exe": 741,
+        "Codex.exe": 45,
+        "claude.exe": 157,
+        "Code.exe": 16,
+        "SearchHost.exe": 1,
+        "WindowsTerminal.exe": 3,
+        "explorer.exe": 1,
+        "unknown": 2
+      },
+      "with_modifier": {}
+    },
+    "MB4": {
+      "count": 2,
+      "apps": {
+        "Codex.exe": 1,
+        "Kimi.exe": 1
+      },
+      "with_modifier": {}
+    },
+    "MB5": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 1
+      },
+      "with_modifier": {}
+    },
+    "MB2": {
+      "count": 7,
+      "apps": {
+        "Kimi.exe": 5,
+        "claude.exe": 2
+      },
+      "with_modifier": {}
+    },
+    "MB3": {
+      "count": 1,
+      "apps": {
+        "Kimi.exe": 1
+      },
+      "with_modifier": {}
+    }
+  },
+  "mouse_by_layer": {
+    "MB1": {
+      "0": 966
+    },
+    "MB4": {
+      "0": 2
+    },
+    "MB5": {
+      "0": 1
+    },
+    "MB2": {
+      "0": 7
+    },
+    "MB3": {
+      "0": 1
+    }
+  },
+  "scroll_events": {
+    "kimi.exe": {
+      "up": 1409,
+      "down": 2953,
+      "left": 0,
+      "right": 0
+    },
+    "claude.exe": {
+      "up": 46,
+      "down": 115,
+      "left": 0,
+      "right": 0
+    },
+    "codex.exe": {
+      "up": 17,
+      "down": 102,
+      "left": 0,
+      "right": 0
+    },
+    "code.exe": {
+      "up": 0,
+      "down": 30,
+      "left": 0,
+      "right": 0
+    },
+    "windowsterminal.exe": {
+      "up": 0,
+      "down": 4,
+      "left": 0,
+      "right": 0
+    }
+  },
+  "scroll_total": 4676,
+  "scroll_by_layer": {
+    "0": 4676
+  },
+  "layer_sessions": {},
+  "layer_switch_activations": {},
+  "hold_heavy": {},
+  "modifier_taps": {
+    "Ctrl": 8
+  },
+  "mouse_sessions": [
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 8968,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 17875,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 13704,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+Backspace"
+      ],
+      "duration_ms": 5203,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 7844,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 12969,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Shift+Tab"
+      ],
+      "duration_ms": 5437,
+      "app": "Codex.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+A",
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 20719,
+      "app": "Codex.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 9313,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 5000,
+      "app": "WindowsTerminal.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+Backspace"
+      ],
+      "duration_ms": 5813,
+      "app": "Codex.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 9015,
+      "app": "claude.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V",
+        "Shift+Enter"
+      ],
+      "duration_ms": 37250,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Shift+Enter"
+      ],
+      "duration_ms": 7453,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 17922,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 11812,
+      "app": "Codex.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+Backspace"
+      ],
+      "duration_ms": 5016,
+      "app": "Codex.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 7735,
+      "app": "Codex.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 13531,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+A",
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 26250,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 13578,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V",
+        "Shift+Enter"
+      ],
+      "duration_ms": 25718,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 17688,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Shift+Enter",
+        "Ctrl+V"
+      ],
+      "duration_ms": 9594,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 13078,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+Backspace"
+      ],
+      "duration_ms": 20875,
+      "app": "unknown",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+S",
+        "Ctrl+A",
+        "Ctrl+C",
+        "Ctrl+V",
+        "Shift+Enter"
+      ],
+      "duration_ms": 44828,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB2",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 24312,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 5750,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 7485,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 7610,
+      "app": "unknown",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V",
+        "Shift+Enter",
+        "Ctrl+A"
+      ],
+      "duration_ms": 18469,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 18688,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Shift+Enter",
+        "Ctrl+V"
+      ],
+      "duration_ms": 17312,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V",
+        "Ctrl+Enter"
+      ],
+      "duration_ms": 19062,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 20984,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 6734,
+      "app": "claude.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 15203,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 9735,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+Backspace"
+      ],
+      "duration_ms": 9672,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V",
+        "Ctrl+X",
+        "Ctrl+S",
+        "Ctrl+Q",
+        "Ctrl+C",
+        "Shift+Enter"
+      ],
+      "duration_ms": 21953,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+A",
+        "Ctrl+X",
+        "Ctrl+V"
+      ],
+      "duration_ms": 8766,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V",
+        "Shift+Enter"
+      ],
+      "duration_ms": 8953,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+Backspace"
+      ],
+      "duration_ms": 63297,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 5000,
+      "app": "claude.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+X"
+      ],
+      "duration_ms": 5406,
+      "app": "claude.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 10859,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Shift+Enter",
+        "Ctrl+V"
+      ],
+      "duration_ms": 14484,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 8828,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 10625,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 10141,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Shift+Enter",
+        "Ctrl+V"
+      ],
+      "duration_ms": 6156,
+      "app": "claude.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V",
+        "Shift+Enter",
+        "Ctrl+C"
+      ],
+      "duration_ms": 23172,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+Backspace"
+      ],
+      "duration_ms": 5000,
+      "app": "claude.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 5000,
+      "app": "claude.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 6437,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 7187,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 5000,
+      "app": "claude.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 5000,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+Backspace"
+      ],
+      "duration_ms": 7188,
+      "app": "claude.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C",
+        "Ctrl+V"
+      ],
+      "duration_ms": 15219,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 6563,
+      "app": "claude.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+Backspace"
+      ],
+      "duration_ms": 5859,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 14609,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 5000,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 5000,
+      "app": "claude.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 10563,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 6469,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 13500,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 9390,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+S",
+        "Ctrl+A",
+        "Ctrl+X"
+      ],
+      "duration_ms": 5000,
+      "app": "claude.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Shift+Enter",
+        "Ctrl+V"
+      ],
+      "duration_ms": 5703,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB3",
+      "keyboard_shortcuts": [
+        "Shift+Enter"
+      ],
+      "duration_ms": 13594,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 11984,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB4",
+      "keyboard_shortcuts": [
+        "Shift+Enter",
+        "Ctrl+V"
+      ],
+      "duration_ms": 11297,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+C"
+      ],
+      "duration_ms": 6062,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Ctrl+V"
+      ],
+      "duration_ms": 9406,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Shift+Enter"
+      ],
+      "duration_ms": 11781,
+      "app": "Kimi.exe",
+      "layer": "0"
+    },
+    {
+      "started_with": "MB1",
+      "keyboard_shortcuts": [
+        "Shift+Enter"
+      ],
+      "duration_ms": 11156,
+      "app": "Kimi.exe",
+      "layer": "0"
+    }
+  ],
+  "mouse_session_shortcuts": {
+    "Ctrl+V": {
+      "count": 46,
+      "started_with": {
+        "MB1": 45,
+        "MB4": 1
+      }
+    },
+    "Ctrl+C": {
+      "count": 41,
+      "started_with": {
+        "MB1": 40,
+        "MB2": 1
+      }
+    },
+    "Ctrl+Backspace": {
+      "count": 9,
+      "started_with": {
+        "MB1": 9
+      }
+    },
+    "Shift+Tab": {
+      "count": 1,
+      "started_with": {
+        "MB1": 1
+      }
+    },
+    "Ctrl+A": {
+      "count": 6,
+      "started_with": {
+        "MB1": 6
+      }
+    },
+    "Shift+Enter": {
+      "count": 17,
+      "started_with": {
+        "MB1": 15,
+        "MB3": 1,
+        "MB4": 1
+      }
+    },
+    "Ctrl+S": {
+      "count": 3,
+      "started_with": {
+        "MB1": 3
+      }
+    },
+    "Ctrl+Enter": {
+      "count": 1,
+      "started_with": {
+        "MB1": 1
+      }
+    },
+    "Ctrl+X": {
+      "count": 4,
+      "started_with": {
+        "MB1": 4
+      }
+    },
+    "Ctrl+Q": {
+      "count": 1,
+      "started_with": {
+        "MB1": 1
+      }
+    }
+  },
+  "corrections": [
+    {
+      "attempted": "Ctrl+Backspace",
+      "corrected_with": "Backspace",
+      "gap_ms": 1766,
+      "app": "Kimi.exe"
+    },
+    {
+      "attempted": "Ctrl+Backspace",
+      "corrected_with": "Backspace",
+      "gap_ms": 890,
+      "app": "Kimi.exe"
+    },
+    {
+      "attempted": "Ctrl+Backspace",
+      "corrected_with": "Backspace",
+      "gap_ms": 1734,
+      "app": "Kimi.exe"
+    },
+    {
+      "attempted": "Ctrl+V",
+      "corrected_with": "Backspace",
+      "gap_ms": 1688,
+      "app": "Kimi.exe"
+    },
+    {
+      "attempted": "Ctrl+Backspace",
+      "corrected_with": "Backspace",
+      "gap_ms": 1609,
+      "app": "Kimi.exe"
+    },
+    {
+      "attempted": "Ctrl+Backspace",
+      "corrected_with": "Backspace",
+      "gap_ms": 1656,
+      "app": "claude.exe"
+    },
+    {
+      "attempted": "Ctrl+Backspace",
+      "corrected_with": "Backspace",
+      "gap_ms": 1797,
+      "app": "claude.exe"
+    },
+    {
+      "attempted": "Ctrl+Backspace",
+      "corrected_with": "Backspace",
+      "gap_ms": 1719,
+      "app": "Kimi.exe"
+    },
+    {
+      "attempted": "Ctrl+Backspace",
+      "corrected_with": "Backspace",
+      "gap_ms": 1672,
+      "app": "Kimi.exe"
+    },
+    {
+      "attempted": "Shift+Enter",
+      "corrected_with": "Backspace",
+      "gap_ms": 1578,
+      "app": "Kimi.exe"
+    },
+    {
+      "attempted": "Ctrl+Backspace",
+      "corrected_with": "Backspace",
+      "gap_ms": 1110,
+      "app": "claude.exe"
+    },
+    {
+      "attempted": "Ctrl+Backspace",
+      "corrected_with": "Backspace",
+      "gap_ms": 1250,
+      "app": "claude.exe"
+    },
+    {
+      "attempted": "Ctrl+Backspace",
+      "corrected_with": "Backspace",
+      "gap_ms": 1360,
+      "app": "claude.exe"
+    },
+    {
+      "attempted": "Shift+Enter",
+      "corrected_with": "Backspace",
+      "gap_ms": 718,
+      "app": "Kimi.exe"
+    }
+  ],
+  "modifier_errors": [],
+  "layer_transitions": [],
+  "layer_bounces": [],
+  "layer_sticky": [],
+  "shortcut_retries": {},
+  "shortcut_noop_hints": {
+    "Shift+Enter": {
+      "count": 1,
+      "followed_by": {
+        "Ctrl+V": 1
+      }
+    }
+  },
+  "by_context": {},
+  "by_hand": {},
+  "shortcut_first_seen": {
+    "Ctrl+Backspace": "2026-06-28T20:56:32Z",
+    "Ctrl+V": "2026-06-28T20:56:41Z",
+    "Ctrl+C": "2026-06-28T20:58:14Z",
+    "Shift+Tab": "2026-06-28T21:21:08Z",
+    "Ctrl+A": "2026-06-28T21:21:30Z",
+    "Shift+Enter": "2026-06-28T21:26:29Z",
+    "Ctrl+S": "2026-06-28T22:29:12Z",
+    "Ctrl+Enter": "2026-06-28T23:08:52Z",
+    "Ctrl+X": "2026-06-28T23:38:05Z",
+    "Ctrl+Q": "2026-06-28T23:38:07Z"
+  },
+  "shortcut_confidence": {
+    "Ctrl+C -> Ctrl+V": {
+      "avg_gap_ms": 2133,
+      "cv": 0.43,
+      "sample_count": 27
+    },
+    "Ctrl+A -> Ctrl+C": {
+      "avg_gap_ms": 906,
+      "cv": 0.15,
+      "sample_count": 5
+    },
+    "Ctrl+V -> Shift+Enter": {
+      "avg_gap_ms": 1154,
+      "cv": 0.25,
+      "sample_count": 9
+    },
+    "Shift+Enter -> Ctrl+V": {
+      "avg_gap_ms": 1018,
+      "cv": 0.46,
+      "sample_count": 15
+    },
+    "Ctrl+Backspace -> Ctrl+Backspace": {
+      "avg_gap_ms": 3323,
+      "cv": 0.22,
+      "sample_count": 9
+    },
+    "Ctrl+S -> Ctrl+A": {
+      "avg_gap_ms": 2156,
+      "cv": 0.24,
+      "sample_count": 3
+    }
+  }
+}

@@ -1,4 +1,8 @@
-"""Workflow coherence factor: penalizes splitting workflows across layers."""
+"""Workflow coherence factor: penalizes high-friction workflow splits.
+
+Workflows are inferred from shortcuts and apps used together. This factor is
+about reducing friction in real usage chains, not forcing app-pure layers.
+"""
 import numpy as np
 from collections import defaultdict
 from core import Layout
@@ -9,8 +13,9 @@ MOD_ORDER = {"ctrl": 0, "control": 0, "shift": 1, "alt": 2, "win": 3, "gui": 3, 
 class WorkflowCoherenceFactor(FitnessFactor):
     """Penalizes splitting multi-step workflows across layers with high switching costs.
     
-    If a user frequently does Ctrl+C -> Alt+Tab -> Ctrl+V, these three shortcuts
-    should be on the same layer or layers with minimal switching cost.
+    If a user frequently performs a sequence of shortcut A -> shortcut B ->
+    shortcut C, those actions should be on the same layer or layers with minimal
+    switching cost.
     
     Lower is better (it's a penalty factor).
     """

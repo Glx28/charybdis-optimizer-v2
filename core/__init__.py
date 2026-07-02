@@ -32,7 +32,14 @@ class Position:
 
 @dataclass(frozen=True, slots=True)
 class LayerAccess:
-    """Describes how a layer is accessed from the base layer."""
+    """Legacy static snapshot of a layer-access position.
+
+    NOT authoritative for evolved layouts.  The optimizer treats layer-access
+    buttons as first-class genome capabilities: any shortcut with
+    ``is_layer_access=True`` can be placed anywhere in the mutable genome.
+    Scoring and acceptance always infer access from the live genome, never from
+    this static record.  New layouts should leave ``Layout.layer_access`` empty.
+    """
     target_layer: int
     source_layer: int
     source_x: float
@@ -59,6 +66,9 @@ class Shortcut:
     preferred_hand: str = "either"  # "left", "right", or "either"
     primary_app: Optional[str] = None
     app_demand: Dict[str, float] = field(default_factory=dict)
+    is_layer_access: bool = False
+    access_target_layer: int = -1
+    access_is_momentary: bool = False
 
     @property
     def is_mod_tap(self) -> bool:
@@ -75,7 +85,19 @@ class UsageData:
     sequences: Dict[str, dict] = field(default_factory=dict)
     chains: Dict[str, dict] = field(default_factory=dict)
     workflows: Dict[str, dict] = field(default_factory=dict)
+    shortcut_sequences: Dict[str, dict] = field(default_factory=dict)
+    shortcut_workflows: Dict[str, dict] = field(default_factory=dict)
+    app_sequences: Dict[str, dict] = field(default_factory=dict)
+    app_workflows: Dict[str, dict] = field(default_factory=dict)
+    shortcuts: Dict[str, dict] = field(default_factory=dict)
+    mouse_session_shortcuts: Dict[str, dict] = field(default_factory=dict)
+    mouse_clicks: Dict[str, dict] = field(default_factory=dict)
+    scroll_total: int = 0
+    scroll_by_layer: Dict[str, int] = field(default_factory=dict)
+    raw_completion_keys: Dict[str, dict] = field(default_factory=dict)
+    raw_completion_total: int = 0
     by_layer_shortcut: Dict[str, Dict[str, int]] = field(default_factory=dict)
+    layer_shortcuts: Dict[str, dict] = field(default_factory=dict)
     by_app: Dict[str, int] = field(default_factory=dict)
     app_time_seconds: Dict[str, float] = field(default_factory=dict)
     total_events: int = 0
@@ -91,6 +113,8 @@ class Layout:
     frozen_mask: NDArray[np.bool_]
     layer_to_indices: Dict[int, NDArray[np.int32]] = field(default_factory=dict)
     usage_data: UsageData = field(default_factory=UsageData)
+    # Legacy static access list — normally empty and NOT authoritative.
+    # Scoring and acceptance use genome shortcuts (shortcut.is_layer_access) instead.
     layer_access: Tuple[LayerAccess, ...] = field(default_factory=tuple)
     dynamic_groups: Tuple[Dict, ...] = field(default_factory=tuple)
     
@@ -134,42 +158,44 @@ class Layout:
         indices = np.array([i for i, p in enumerate(self.positions) if p.layer == layer], dtype=np.int32)
         return indices
     
-    def get_occupied_thumbs(self, layer: int, visited: set = None) -> List[str]:
-        """Return list of occupied thumb hands for a given layer.
-        
-        Traces the access chain back to L0 to determine which thumbs are
-        occupied by momentary layer access keys. For intermediate accesses,
-        the hand of EACH momentary access button is included (not just the
-        bottom-most one).
+    def get_occupied_thumbs_from_genome(self, layer: int, visited: set = None) -> List[str]:
+        """Infer occupied thumb hands from the evolved genome bindings.
+
+        Iterates over assigned shortcuts with ``is_layer_access=True`` to find
+        which thumb buttons must be held to reach ``layer``.  This is the
+        authoritative path for evolved candidates; it always reflects the
+        current genome, not any static access list.
         """
         if visited is None:
             visited = set()
         if layer in visited:
-            return []  # prevent cycles
+            return []
         visited.add(layer)
-        
-        occupied = set()
-        for access in self.layer_access:
-            if access.target_layer != layer:
+
+        occupied: set = set()
+        for idx, sid in enumerate(self.genome):
+            sid = int(sid)
+            if sid < 0 or sid >= len(self.shortcuts):
                 continue
-            if not access.is_momentary:
+            shortcut = self.shortcuts[sid]
+            if not shortcut.is_layer_access or shortcut.access_target_layer != layer:
                 continue
-            # The hand holding THIS access button is occupied
-            occupied.add(access.hand)
-            # Also trace back to the source layer for nested accesses
-            if access.source_layer != 0:
-                source_occupied = self.get_occupied_thumbs(access.source_layer, visited.copy())
-                occupied.update(source_occupied)
+            if not shortcut.access_is_momentary:
+                continue
+            pos = self.positions[idx]
+            occupied.add(pos.hand)
+            source_layer = pos.layer
+            if source_layer != 0:
+                occupied.update(self.get_occupied_thumbs_from_genome(source_layer, visited.copy()))
         return list(occupied)
-    
-    def get_full_access_occupancy(self, layer: int, visited: set = None) -> List[str]:
-        """Return which hands are occupied by momentary access buttons along ANY path from L0.
-        
-        Unlike get_occupied_thumbs, this traces through ALL access types (toggle, lock, etc.)
-        to determine if a right-hand momentary button must be held to reach this layer.
-        
-        Example: L9 is toggled from L4, but L4 requires a right-hand momentary from L0.
-        So get_full_access_occupancy(9) returns ["right"].
+
+    def get_full_access_occupancy_from_genome(self, layer: int, visited: set = None) -> List[str]:
+        """Infer hand occupancy for ALL access types from evolved genome bindings.
+
+        Traces through toggle and momentary access to determine if any
+        right-hand momentary button must be held along any path to ``layer``.
+        Authoritative for evolved candidates; reads the genome, not the
+        static access list.
         """
         if visited is None:
             visited = set()
@@ -178,16 +204,71 @@ class Layout:
         if layer in visited:
             return []
         visited.add(layer)
-        
+
+        occupied: set = set()
+        for idx, sid in enumerate(self.genome):
+            sid = int(sid)
+            if sid < 0 or sid >= len(self.shortcuts):
+                continue
+            shortcut = self.shortcuts[sid]
+            if not shortcut.is_layer_access or shortcut.access_target_layer != layer:
+                continue
+            pos = self.positions[idx]
+            source_layer = pos.layer
+            if source_layer != 0:
+                occupied.update(self.get_full_access_occupancy_from_genome(source_layer, visited.copy()))
+            if shortcut.access_is_momentary:
+                occupied.add(pos.hand)
+        return list(occupied)
+
+    def get_occupied_thumbs(self, layer: int, visited: set = None) -> List[str]:
+        """Legacy/static fallback only. Not authoritative for evolved dynamic access.
+
+        Reads ``self.layer_access`` which is a legacy static fallback.  An
+        evolved candidate may have placed access shortcuts in completely
+        different positions or to different layers.  Call
+        ``get_occupied_thumbs_from_genome`` instead for scoring/reporting.
+        """
+        if visited is None:
+            visited = set()
+        if layer in visited:
+            return []
+        visited.add(layer)
+
         occupied = set()
         for access in self.layer_access:
             if access.target_layer != layer:
                 continue
-            # Trace back to source layer regardless of access type
+            if not access.is_momentary:
+                continue
+            occupied.add(access.hand)
+            if access.source_layer != 0:
+                source_occupied = self.get_occupied_thumbs(access.source_layer, visited.copy())
+                occupied.update(source_occupied)
+        return list(occupied)
+
+    def get_full_access_occupancy(self, layer: int, visited: set = None) -> List[str]:
+        """Legacy/static fallback only. Not authoritative for evolved dynamic access.
+
+        Reads ``self.layer_access`` which is a legacy static fallback.  Call
+        ``get_full_access_occupancy_from_genome`` instead for scoring/reporting
+        of evolved candidates.
+        """
+        if visited is None:
+            visited = set()
+        if layer == 0:
+            return []
+        if layer in visited:
+            return []
+        visited.add(layer)
+
+        occupied = set()
+        for access in self.layer_access:
+            if access.target_layer != layer:
+                continue
             if access.source_layer != 0:
                 source_occupied = self.get_full_access_occupancy(access.source_layer, visited.copy())
                 occupied.update(source_occupied)
-            # If this specific access is momentary, add its hand
             if access.is_momentary:
                 occupied.add(access.hand)
         return list(occupied)
@@ -215,6 +296,7 @@ class FitnessResult:
     objectives: NDArray[np.float32]
     factor_scores: Dict[str, float]
     total_score: float
+    constraints: NDArray[np.float32] = field(default_factory=lambda: np.zeros(0, dtype=np.float32))
     
     @property
     def effort(self) -> float:

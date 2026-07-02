@@ -1,157 +1,135 @@
-# Codex Task Assignment: Charybdis V2 Surrogate Removal & Exact Eval Mode
+# Charybdis Optimizer V2 Goal Prompt
 
-## Context
+Work only in `/home/nos/charybdis/charybdis-optimizer-v2`.
 
-The Charybdis V2 keyboard layout optimizer is stuck. The surrogate model has collapsed (R² = -0.1 to 0.5, corr = nan). The population has been frozen at the same genome for 3,800+ generations. The root cause is clear: a neural network trained on ~1 sample per dimension cannot learn a meaningful fitness landscape.
+Non-negotiable GPU rule:
 
-**The fix:** Disable the surrogate entirely. Use exact evaluation via Numba batch evaluator for every generation. With Numba at ~0.5ms per layout and pop=500, exact eval of the full population takes ~250ms per generation — fast enough for real search.
+- Production training must be GPU-primary.
+- Do not start or continue `run_evolution.py` if CUDA is unavailable or if the
+  active training path is CPU/Numba-primary.
+- CPU is allowed only for tests, static checks, diagnostics, or an explicitly
+  requested CPU-only smoke test.
+- If GPU-primary training is not implemented, stop and implement/report that
+  blocker instead of running CPU training.
+- Preserve `GPU_TRAINING_POLICY.md` in every future agent/handoff update.
 
-## Your Tasks (Codex)
+The optimizer must discover a coherent keyboard layout from real usage data:
+apps, shortcut sequences, shortcut workflow windows, app transitions, mouse
+actions, scroll-mode actions, and access-path effort. The layout should feel
+like a natural power-user office workflow surface after a reasonable learning
+period with the coach app.
 
-### 1. Modify `run_evolution.py` to Support `surrogate.enabled: false` Mode
+Core framing:
 
-The current `main()` function unconditionally builds and trains the surrogate. You need to add a `surrogate_enabled` branch that:
+- The optimizer is workflow-focused first. A workflow is what the usage data
+  shows the user does together, not a fixed app or layer name.
+- Only L0 and L7 have stable roles. L0 is base typing/thumb access. L7 is
+  frozen RPG/arrows/navigation plus keyboard-system controls such as
+  Bluetooth/output selection.
+- All other layers are dynamically assigned. Do not hardcode a mouse layer,
+  scroll layer, travel layer, app layer, or system layer by number.
+- Generated layers should be distinct enough to improve real workflows. A
+  high-frequency "everything" layer should naturally emerge when usage data
+  supports it: this is the go-to layer when the user is unsure, concentrating
+  the globally most common/high-value actions. Additional layers must not
+  become redundant copies of it.
+- Layers may share app focus while serving different shortcut workflows.
+  Do not enforce app-pure layers.
+- Workflow coherence is primary. App coherence is backup only: when two
+  generated workflow layers become too similar, app coherence may help one
+  resolve toward an app-specific workflow while the other remains the stronger
+  workflow-specific layer. App coherence must not override logged workflow
+  sequences, workflow windows, or app workflow clusters.
+- Layer similarity is directly penalized. If two generated layers are too
+  similar, the optimizer should push them apart until each is unique enough to
+  be worth switching to. The one emergent everything layer may overlap broadly
+  because broad coverage is its job; specialized workflow layers still need
+  distinct purpose.
+- When the same shortcut appears across multiple layers, prefer the same
+  physical key or nearby region for familiarity. Familiarity is pairwise
+  Euclidean exponential attraction: the closer two placements are, the more
+  sharply the reward rises toward its maximum at the exact same coordinate.
+  Far-apart repeats get little or no useful attraction. This is a strong soft preference, not a hard
+  rule; a more important workflow action may earn that position. Gate this
+  familiarity reward by exceptionality so ordinary repeated shortcuts can be
+  displaced or receive worse placement when a layer-specific workflow shortcut
+  is more useful.
+- Cross-layer shortcut repetition should be exceptional, not default. Use a
+  sigmoid-weighted novelty style of pressure: keep the few shared shortcuts
+  that are genuinely high-value across workflows, then let layer similarity pressure
+  replace ordinary repeats with workflow-specific shortcuts so generated layers
+  become diverse and useful.
+- Apply that same novelty principle to duplicate scoring, familiarity, and
+  layer similarity as one balanced system. Non-exceptional duplicates should
+  be removed or become unlikely. Exceptional duplicates may stay and should
+  receive familiarity support, but they still lose prime positions when a
+  stronger workflow-specific shortcut earns that layer.
+- Group scoring means compactness on an existing layer, not forcing a group
+  onto one layer. If grouped shortcuts already coexist on a layer, keep them
+  close there. If they are on different layers, group scoring should not
+  penalize that or move them across layers. Group-aware mutation may move a
+  whole protected group as a unit when a large overwrite would replace half or
+  more of that group, then fill the old positions with the overwriting
+  shortcuts. Do not add post-hoc semantic repair for mouse, arrows,
+  completion, app, or workflow groups.
+- Norwegian/raw completion keys are backup physical keys missing from L0. They
+  should form a normal-keyboard-like, preferably far-right cluster, but not a
+  dedicated hardcoded layer. The cluster should share a mixed workflow/backup
+  layer, and its access priority should follow logged usage relative to real
+  workflows.
 
-**When `surrogate.enabled: false` in config:**
-- **Skip** all surrogate creation, training, and `SurrogateManager` setup
-- **Skip** the `n_initial_samples` random layout generation for surrogate training
-- **Still compute** `scale_factors` from a small sample (e.g., 100 random layouts) for normalization — this is needed for the objectives to be comparable
-- Create `FastLayoutProblem` with `use_surrogate=False`, passing `layout`, `evaluator`, and `batch_evaluator` so `_evaluate` calls `evaluate_exact_batch()` instead of `trainer.predict()`
-- Use `ExactEvalCallback` instead of `SurrogateCallback`
-- The `ExactEvalCallback` should handle:
-  - Adaptive mutation rate (increase on stagnation, restore on improvement)
-  - Group repair every 10 generations
-  - Checkpointing every N generations
-  - **No** surrogate drift metrics, no retraining, no exact eval batch (everything is already exact)
+Hard final-run rule:
 
-**When `surrogate.enabled: true` (default):**
-- Keep existing behavior unchanged
+At target generation, the whole run is invalid unless a generated non-L0/non-L7
+dynamic mouse workflow layer exists. That layer must contain MB1-MB2-MB3-MB4-MB5
+on the right side of the same layer, with no mouse button on the right-thumb
+area. It must also contain right-hand non-thumb momentary Scroll, no momentary
+mouse-layer access on the right thumb side, and a reachable toggle access path.
+L7 is excluded from generated mouse-layer candidates and cannot count as mouse
+success. Frozen L7 content is not acceptance-checked by the optimizer.
 
-### 2. Update `config_v2.yaml`
+L7 access is checked separately from L7 content. Frozen L7 must be reachable by
+both a momentary layer access capability and a toggle layer access capability.
+The optimizer must not inspect or fail L7 because of its frozen key contents.
 
-Add `surrogate.enabled: false` and clean up the config:
-```yaml
-evolution:
-  pop_size: 500
-  n_generations: 999999
-  crossover_prob: 0.7
-  mutation_prob: 0.15
-  seed: 42
-  inject_seed: false
-surrogate:
-  enabled: false  # <-- ADD THIS
-  hidden_dim: 256
-  # ... rest stays
-exact_eval:
-  use_numba: true
-  parity_tolerance: 1e-4
-fitness:
-  weights:
-    effort: 1.0
-    adjacency: 1.5
-    finger_balance: 0.8
-    same_finger: 2.0
-    violations: 50.0
-    workflow_coherence: 30.0
-    trackball_proximity: 5.0
-    app_coherence: 5.0
-    learning_curve: 0.5
-output:
-  build_dir: "build"
-  checkpoint_interval: 500
-  verbose: true
-```
+Mutable raw arrows are no longer strongly desirable because frozen L7 already
+provides fallback arrows. If workflow evidence earns raw arrows on a generated
+layer, they must be all four arrows on one layer in exactly one of two shapes:
+one row ordered `Left Up Down Right`, or two rows with `Left Down Right` on the
+bottom row and `Up` directly above `Down`. Partial or differently shaped raw
+arrow fragments should be penalized or cleared.
 
-### 3. Verify the `ExactEvalCallback` Class
+Momentary Scroll is part of the core mouse group. It is highly important
+because scrolling is a major trackball/mouse action. Toggle Scroll may exist,
+but it does not satisfy the generated dynamic mouse-layer condition; the
+required capability is momentary Scroll on the right side and off the
+right-thumb area.
 
-I already added a basic `ExactEvalCallback` class to `run_evolution.py`. Verify it:
-- Has `_adjust_mutation_rate`, `_repair_best_groups`, `_save_checkpoint`, `_cleanup_old_checkpoints`, and `notify` methods
-- `notify` correctly gets `gen = algorithm.n_iter` and calls the sub-methods
-- Works with pymoo's `Callback` interface
+Mouse placement inside the generated mouse layer is usage-weighted rather than
+coordinate-fixed. More-used mouse buttons should get better positions unless a
+more important workflow shortcut earns that position. Mouse duplicates outside
+the generated mouse layer are allowed only when usage/access support justifies
+them, and they are harder to justify than ordinary shortcut duplicates. Keep
+small soft relative biases: MB1 left/close/same-row with MB2, and MB4
+left/close/same-row with MB5.
 
-### 4. Verify `FastLayoutProblem._evaluate` for Exact Mode
+After a natural generated mouse layer exists, it should dominate mouse
+interactions and create natural cleanup pressure against mouse buttons scattered
+on other layers. Do not ban exceptions: if a workflow uses mouse buttons so
+heavily that switching to the mouse layer every time is more costly, usage data
+may justify copies on that workflow layer.
 
-I already modified `FastLayoutProblem` to accept `use_surrogate` flag. Verify:
-- When `use_surrogate=False`, it calls `evaluate_exact_batch(x, self.layout, self.evaluator, batch_evaluator=self.batch_evaluator, ...)`
-- It sums the 3 objectives into a single total: `total = scores.sum(axis=1, keepdims=True)`
-- The output shape is `(batch, 1)` for single-objective NSGA2
+This is a final acceptance constraint. Intermediate generations may explore
+without a complete mouse layer, but the target checkpoint must either pass this
+constraint or report precisely what is missing.
 
-### 5. Test the Changes
+Run discipline:
 
-Run these commands and verify they pass:
-```bash
-cd C:/Users/nos/charybdis-optimizer/charybdis-optimizer-v2
-../charybdis-optimizer/charybdis-optimizer-v2/.venv/Scripts/python.exe -m pytest tests/test_v2.py -v
-```
-
-And verify Numba parity:
-```bash
-cd C:/Users/nos/charybdis-optimizer/charybdis-optimizer-v2
-../charybdis-optimizer/charybdis-optimizer-v2/.venv/Scripts/python.exe -c "
-from core.loader import build_layout
-from fitness.evaluator import FitnessEvaluator
-from fitness.batch_evaluator import BatchExactEvaluator
-layout = build_layout('../charybdis-optimizer/build')
-evaluator = FitnessEvaluator()
-batch = BatchExactEvaluator(layout, evaluator, validate=True)
-print(f'Parity: {batch.parity.ok} (max_diff={batch.parity.max_abs_diff:.6g})')
-print(f'Enabled: {batch.enabled}')
-"
-```
-
-### 6. Copy Updated Files to Run Directory
-
-After all changes are verified, copy them to the actual run directory:
-```bash
-cp C:/Users/nos/charybdis-optimizer-v2/run_evolution.py C:/Users/nos/charybdis-optimizer/charybdis-optimizer-v2/run_evolution.py
-cp C:/Users/nos/charybdis-optimizer-v2/fitness/batch_evaluator.py C:/Users/nos/charybdis-optimizer/charybdis-optimizer-v2/fitness/batch_evaluator.py
-cp C:/Users/nos/charybdis-optimizer-v2/fitness/factors/effort.py C:/Users/nos/charybdis-optimizer/charybdis-optimizer-v2/fitness/factors/effort.py
-cp C:/Users/nos/charybdis-optimizer-v2/fitness/factors/violation.py C:/Users/nos/charybdis-optimizer/charybdis-optimizer-v2/fitness/factors/violation.py
-cp C:/Users/nos/charybdis-optimizer-v2/core/__init__.py C:/Users/nos/charybdis-optimizer/charybdis-optimizer-v2/core/__init__.py
-cp C:/Users/nos/charybdis-optimizer-v2/evolution/__init__.py C:/Users/nos/charybdis-optimizer/charybdis-optimizer-v2/evolution/__init__.py
-```
-
-And copy the config:
-```bash
-cp C:/Users/nos/charybdis-optimizer/build/config_v2.yaml C:/Users/nos/charybdis-optimizer/build/config_v2.yaml.bak
-cp C:/Users/nos/charybdis-optimizer-v2/build/config_v2.yaml C:/Users/nos/charybdis-optimizer/build/config_v2.yaml
-```
-
-## Important Notes
-
-### The Constraint "Wiring" Issue is Already Fixed
-
-The analysis file claims `hand_bias.py`, `arrow_order`, and `mouse_layer_access` are not wired. **This is incorrect for the current code.** These were all moved INTO `ViolationFactor` as sub-methods:
-- `ViolationFactor._hand_bias()` — weight 2000
-- `ViolationFactor._arrow_order()` — weight 200  
-- `ViolationFactor._mouse_layer_access()` — weight 5000
-
-All are called from `ViolationFactor.compute()` which IS called by `FitnessEvaluator.evaluate()`. The analysis was from the OLD running process (gen 1000), not from the updated code.
-
-**Do NOT create a separate `HandBiasFactor` class.** The constraints are already inside `ViolationFactor` where they belong (they are violation-type penalties, not separate objectives).
-
-### Numba is Already Fixed
-
-I already removed `fastmath=True` from the `@njit` decorator. The Numba batch evaluator is working (parity: True, max_diff=64). Do not change the Numba code.
-
-### Layer Access Cost is Already Implemented
-
-The `EffortFactor` now computes `layer_access_cost` for each position based on the access path from L0. This is already in the code. Do not change it.
-
-### What NOT to Do
-- Do NOT create new factor files (`hand_bias.py`, `arrow_order.py`, etc.)
-- Do NOT modify `ViolationFactor` — the sub-methods are already there
-- Do NOT modify `fitness/batch_evaluator.py` — Numba is already working
-- Do NOT modify `fitness/factors/effort.py` — layer access cost is already implemented
-- Do NOT modify `core/__init__.py` — `get_occupied_thumbs` is already fixed
-- Do NOT kill the running process — Kimi will handle that
-
-## Acceptance Criteria
-
-1. `run_evolution.py` runs without errors when `surrogate.enabled: false`
-2. `pytest tests/test_v2.py` passes all 10 tests
-3. Numba parity check shows `Parity: True`
-4. Config file has `surrogate.enabled: false`
-5. All updated files are copied to the nested run directory
-
-Report back when done. Kimi will then verify and start the actual run.
+- Use bounded generation targets appropriate to the change. Do not default to
+  extreme generation counts unless there is a documented reason.
+- Inspect runs sparingly: start, one meaningful middle checkpoint, and end are
+  usually enough.
+- If the target checkpoint fails the hard final-run rule, mark the whole run
+  invalid and explain which condition was missing.
+- Do not patch generated apply/verify JavaScript by hand. Fix generator or
+  optimizer logic.

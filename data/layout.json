@@ -1,0 +1,1101 @@
+{
+  "version": "2.0",
+  "n_layers": 11,
+  "physical_grid": {
+    "positions": [
+      {
+        "x": 0,
+        "y": 0,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "far_pinky",
+        "row_type": "top"
+      },
+      {
+        "x": 1,
+        "y": 0,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "pinky",
+        "row_type": "top"
+      },
+      {
+        "x": 2,
+        "y": 0,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "ring",
+        "row_type": "top"
+      },
+      {
+        "x": 3,
+        "y": 0,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "middle",
+        "row_type": "top"
+      },
+      {
+        "x": 4,
+        "y": 0,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "index",
+        "row_type": "top"
+      },
+      {
+        "x": 5,
+        "y": 0,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "index_stretch",
+        "row_type": "top"
+      },
+      {
+        "x": 7,
+        "y": 0,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "index_stretch",
+        "row_type": "top"
+      },
+      {
+        "x": 8,
+        "y": 0,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "index",
+        "row_type": "top"
+      },
+      {
+        "x": 9,
+        "y": 0,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "middle",
+        "row_type": "top"
+      },
+      {
+        "x": 10,
+        "y": 0,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "ring",
+        "row_type": "top"
+      },
+      {
+        "x": 11,
+        "y": 0,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "pinky",
+        "row_type": "top"
+      },
+      {
+        "x": 12,
+        "y": 0,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "far_pinky",
+        "row_type": "top"
+      },
+      {
+        "x": 0,
+        "y": 1,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "far_pinky",
+        "row_type": "upper"
+      },
+      {
+        "x": 1,
+        "y": 1,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "pinky",
+        "row_type": "upper"
+      },
+      {
+        "x": 2,
+        "y": 1,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "ring",
+        "row_type": "upper"
+      },
+      {
+        "x": 3,
+        "y": 1,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "middle",
+        "row_type": "upper"
+      },
+      {
+        "x": 4,
+        "y": 1,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "index",
+        "row_type": "upper"
+      },
+      {
+        "x": 5,
+        "y": 1,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "index_stretch",
+        "row_type": "upper"
+      },
+      {
+        "x": 7,
+        "y": 1,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "index_stretch",
+        "row_type": "upper"
+      },
+      {
+        "x": 8,
+        "y": 1,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "index",
+        "row_type": "upper"
+      },
+      {
+        "x": 9,
+        "y": 1,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "middle",
+        "row_type": "upper"
+      },
+      {
+        "x": 10,
+        "y": 1,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "ring",
+        "row_type": "upper"
+      },
+      {
+        "x": 11,
+        "y": 1,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "pinky",
+        "row_type": "upper"
+      },
+      {
+        "x": 12,
+        "y": 1,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "far_pinky",
+        "row_type": "upper"
+      },
+      {
+        "x": 0,
+        "y": 2,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "far_pinky",
+        "row_type": "home"
+      },
+      {
+        "x": 1,
+        "y": 2,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "pinky",
+        "row_type": "home"
+      },
+      {
+        "x": 2,
+        "y": 2,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "ring",
+        "row_type": "home"
+      },
+      {
+        "x": 3,
+        "y": 2,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "middle",
+        "row_type": "home"
+      },
+      {
+        "x": 4,
+        "y": 2,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "index",
+        "row_type": "home"
+      },
+      {
+        "x": 5,
+        "y": 2,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "index_stretch",
+        "row_type": "home"
+      },
+      {
+        "x": 7,
+        "y": 2,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "index_stretch",
+        "row_type": "home"
+      },
+      {
+        "x": 8,
+        "y": 2,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "index",
+        "row_type": "home"
+      },
+      {
+        "x": 9,
+        "y": 2,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "middle",
+        "row_type": "home"
+      },
+      {
+        "x": 10,
+        "y": 2,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "ring",
+        "row_type": "home"
+      },
+      {
+        "x": 11,
+        "y": 2,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "pinky",
+        "row_type": "home"
+      },
+      {
+        "x": 12,
+        "y": 2,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "far_pinky",
+        "row_type": "home"
+      },
+      {
+        "x": 0,
+        "y": 3,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "far_pinky",
+        "row_type": "bottom"
+      },
+      {
+        "x": 1,
+        "y": 3,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "pinky",
+        "row_type": "bottom"
+      },
+      {
+        "x": 2,
+        "y": 3,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "ring",
+        "row_type": "bottom"
+      },
+      {
+        "x": 3,
+        "y": 3,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "middle",
+        "row_type": "bottom"
+      },
+      {
+        "x": 4,
+        "y": 3,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "index",
+        "row_type": "bottom"
+      },
+      {
+        "x": 5,
+        "y": 3,
+        "hand": "left",
+        "zone": "finger",
+        "finger": "index_stretch",
+        "row_type": "bottom"
+      },
+      {
+        "x": 7,
+        "y": 3,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "index_stretch",
+        "row_type": "bottom"
+      },
+      {
+        "x": 8,
+        "y": 3,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "index",
+        "row_type": "bottom"
+      },
+      {
+        "x": 9,
+        "y": 3,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "middle",
+        "row_type": "bottom"
+      },
+      {
+        "x": 10,
+        "y": 3,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "ring",
+        "row_type": "bottom"
+      },
+      {
+        "x": 11,
+        "y": 3,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "pinky",
+        "row_type": "bottom"
+      },
+      {
+        "x": 12,
+        "y": 3,
+        "hand": "right",
+        "zone": "finger",
+        "finger": "far_pinky",
+        "row_type": "bottom"
+      },
+      {
+        "x": 3,
+        "y": 4,
+        "hand": "left",
+        "zone": "thumb",
+        "finger": "middle",
+        "row_type": "thumb"
+      },
+      {
+        "x": 4,
+        "y": 4,
+        "hand": "left",
+        "zone": "thumb",
+        "finger": "index",
+        "row_type": "thumb"
+      },
+      {
+        "x": 5,
+        "y": 4,
+        "hand": "left",
+        "zone": "thumb",
+        "finger": "index_stretch",
+        "row_type": "thumb"
+      },
+      {
+        "x": 7,
+        "y": 4,
+        "hand": "right",
+        "zone": "thumb",
+        "finger": "index_stretch",
+        "row_type": "thumb"
+      },
+      {
+        "x": 8,
+        "y": 4,
+        "hand": "right",
+        "zone": "thumb",
+        "finger": "index",
+        "row_type": "thumb"
+      },
+      {
+        "x": 4,
+        "y": 5,
+        "hand": "left",
+        "zone": "thumb",
+        "finger": "index",
+        "row_type": "thumb2"
+      },
+      {
+        "x": 5,
+        "y": 5,
+        "hand": "left",
+        "zone": "thumb",
+        "finger": "index_stretch",
+        "row_type": "thumb2"
+      },
+      {
+        "x": 7,
+        "y": 5,
+        "hand": "right",
+        "zone": "thumb",
+        "finger": "index_stretch",
+        "row_type": "thumb2"
+      }
+    ],
+    "total": 56
+  },
+  "l0_frozen": {
+    "0:0": {
+      "x": 0,
+      "y": 0,
+      "behavior": "Key Press",
+      "parameter": "Escape",
+      "modifiers": [],
+      "label": "Esc"
+    },
+    "1:0": {
+      "x": 1,
+      "y": 0,
+      "behavior": "Key Press",
+      "parameter": "1 and Bang",
+      "modifiers": [],
+      "label": "1"
+    },
+    "2:0": {
+      "x": 2,
+      "y": 0,
+      "behavior": "Key Press",
+      "parameter": "2 and At",
+      "modifiers": [],
+      "label": "2"
+    },
+    "3:0": {
+      "x": 3,
+      "y": 0,
+      "behavior": "Key Press",
+      "parameter": "3 and Hash",
+      "modifiers": [],
+      "label": "3"
+    },
+    "4:0": {
+      "x": 4,
+      "y": 0,
+      "behavior": "Key Press",
+      "parameter": "4 and Dollar",
+      "modifiers": [],
+      "label": "4"
+    },
+    "5:0": {
+      "x": 5,
+      "y": 0,
+      "behavior": "Key Press",
+      "parameter": "5 and Percent",
+      "modifiers": [],
+      "label": "5"
+    },
+    "7:0": {
+      "x": 7,
+      "y": 0,
+      "behavior": "Key Press",
+      "parameter": "6 and Caret",
+      "modifiers": [],
+      "label": "6"
+    },
+    "8:0": {
+      "x": 8,
+      "y": 0,
+      "behavior": "Key Press",
+      "parameter": "7 and Ampersand",
+      "modifiers": [],
+      "label": "7"
+    },
+    "9:0": {
+      "x": 9,
+      "y": 0,
+      "behavior": "Key Press",
+      "parameter": "8 and Star",
+      "modifiers": [],
+      "label": "8"
+    },
+    "10:0": {
+      "x": 10,
+      "y": 0,
+      "behavior": "Key Press",
+      "parameter": "9 and Left Bracket",
+      "modifiers": [],
+      "label": "9"
+    },
+    "11:0": {
+      "x": 11,
+      "y": 0,
+      "behavior": "Key Press",
+      "parameter": "0 and Right Bracket",
+      "modifiers": [],
+      "label": "0"
+    },
+    "12:0": {
+      "x": 12,
+      "y": 0,
+      "behavior": "Key Press",
+      "parameter": "Delete",
+      "modifiers": [],
+      "label": "BkSp"
+    },
+    "0:1": {
+      "x": 0,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "Tab",
+      "modifiers": [],
+      "label": "Tab"
+    },
+    "1:1": {
+      "x": 1,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "Q",
+      "modifiers": [],
+      "label": "Q"
+    },
+    "2:1": {
+      "x": 2,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "W",
+      "modifiers": [],
+      "label": "W"
+    },
+    "3:1": {
+      "x": 3,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "E",
+      "modifiers": [],
+      "label": "E"
+    },
+    "4:1": {
+      "x": 4,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "R",
+      "modifiers": [],
+      "label": "R"
+    },
+    "5:1": {
+      "x": 5,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "T",
+      "modifiers": [],
+      "label": "T"
+    },
+    "7:1": {
+      "x": 7,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "Y",
+      "modifiers": [],
+      "label": "Y"
+    },
+    "8:1": {
+      "x": 8,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "U",
+      "modifiers": [],
+      "label": "U"
+    },
+    "9:1": {
+      "x": 9,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "I",
+      "modifiers": [],
+      "label": "I"
+    },
+    "10:1": {
+      "x": 10,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "O",
+      "modifiers": [],
+      "label": "O"
+    },
+    "11:1": {
+      "x": 11,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "P",
+      "modifiers": [],
+      "label": "P"
+    },
+    "12:1": {
+      "x": 12,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "Left Brace",
+      "modifiers": [],
+      "label": "\u00e5"
+    },
+    "0:2": {
+      "x": 0,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "LeftShift",
+      "modifiers": [],
+      "label": "Shft"
+    },
+    "1:2": {
+      "x": 1,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "A",
+      "modifiers": [],
+      "label": "A"
+    },
+    "2:2": {
+      "x": 2,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "S",
+      "modifiers": [],
+      "label": "S"
+    },
+    "3:2": {
+      "x": 3,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "D",
+      "modifiers": [],
+      "label": "D"
+    },
+    "4:2": {
+      "x": 4,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "F",
+      "modifiers": [],
+      "label": "F"
+    },
+    "5:2": {
+      "x": 5,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "G",
+      "modifiers": [],
+      "label": "G"
+    },
+    "7:2": {
+      "x": 7,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "H",
+      "modifiers": [],
+      "label": "H"
+    },
+    "8:2": {
+      "x": 8,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "J",
+      "modifiers": [],
+      "label": "J"
+    },
+    "9:2": {
+      "x": 9,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "K",
+      "modifiers": [],
+      "label": "K"
+    },
+    "10:2": {
+      "x": 10,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "L",
+      "modifiers": [],
+      "label": "L"
+    },
+    "11:2": {
+      "x": 11,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "SemiColon and Colon",
+      "modifiers": [],
+      "label": "\u00f8"
+    },
+    "12:2": {
+      "x": 12,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "Left Apos and Double",
+      "modifiers": [],
+      "label": "\u00e6"
+    },
+    "0:3": {
+      "x": 0,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "LeftControl",
+      "modifiers": [],
+      "label": "Ctrl"
+    },
+    "1:3": {
+      "x": 1,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "Z",
+      "modifiers": [],
+      "label": "Z"
+    },
+    "2:3": {
+      "x": 2,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "X",
+      "modifiers": [],
+      "label": "X"
+    },
+    "3:3": {
+      "x": 3,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "C",
+      "modifiers": [],
+      "label": "C"
+    },
+    "4:3": {
+      "x": 4,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "V",
+      "modifiers": [],
+      "label": "V"
+    },
+    "5:3": {
+      "x": 5,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "B",
+      "modifiers": [],
+      "label": "B"
+    },
+    "7:3": {
+      "x": 7,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "N",
+      "modifiers": [],
+      "label": "N"
+    },
+    "8:3": {
+      "x": 8,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "M",
+      "modifiers": [],
+      "label": "M"
+    },
+    "9:3": {
+      "x": 9,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "Comma and LessThan",
+      "modifiers": [],
+      "label": ","
+    },
+    "10:3": {
+      "x": 10,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "Period and GreaterThan",
+      "modifiers": [],
+      "label": "."
+    },
+    "11:3": {
+      "x": 11,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "ForwardSlash and QuestionMark",
+      "modifiers": [],
+      "label": "/"
+    },
+    "12:3": {
+      "x": 12,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "Backslash and Pipe",
+      "modifiers": [],
+      "label": "\\"
+    },
+    "4:4": {
+      "x": 4,
+      "y": 4,
+      "behavior": "Key Press",
+      "parameter": "Spacebar",
+      "modifiers": [],
+      "label": "\u2423"
+    },
+    "7:5": {
+      "x": 7,
+      "y": 5,
+      "behavior": "Key Press",
+      "parameter": "Return Enter",
+      "modifiers": [],
+      "label": "Ret"
+    }
+  },
+  "l7_frozen": {
+    "1:1": {
+      "x": 1,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "9 and PageUp",
+      "modifiers": [],
+      "label": "9 PU"
+    },
+    "2:1": {
+      "x": 2,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "UpArrow",
+      "modifiers": [],
+      "label": "\u2191"
+    },
+    "3:1": {
+      "x": 3,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "3 and PageDn",
+      "modifiers": [],
+      "label": "3 PD"
+    },
+    "9:1": {
+      "x": 9,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "3 and PageDn",
+      "modifiers": [],
+      "label": "3 PD"
+    },
+    "10:1": {
+      "x": 10,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "UpArrow",
+      "modifiers": [],
+      "label": "\u2191"
+    },
+    "11:1": {
+      "x": 11,
+      "y": 1,
+      "behavior": "Key Press",
+      "parameter": "9 and PageUp",
+      "modifiers": [],
+      "label": "9 PU"
+    },
+    "1:2": {
+      "x": 1,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "LeftArrow",
+      "modifiers": [],
+      "label": "\u2190"
+    },
+    "2:2": {
+      "x": 2,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "DownArrow",
+      "modifiers": [],
+      "label": "\u2193"
+    },
+    "3:2": {
+      "x": 3,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "RightArrow",
+      "modifiers": [],
+      "label": "\u2192"
+    },
+    "4:2": {
+      "x": 4,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "Z",
+      "modifiers": [],
+      "label": "Z"
+    },
+    "8:2": {
+      "x": 8,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "Z",
+      "modifiers": [],
+      "label": "Z"
+    },
+    "9:2": {
+      "x": 9,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "LeftArrow",
+      "modifiers": [],
+      "label": "\u2190"
+    },
+    "10:2": {
+      "x": 10,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "DownArrow",
+      "modifiers": [],
+      "label": "\u2193"
+    },
+    "11:2": {
+      "x": 11,
+      "y": 2,
+      "behavior": "Key Press",
+      "parameter": "RightArrow",
+      "modifiers": [],
+      "label": "\u2192"
+    },
+    "1:3": {
+      "x": 1,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "X",
+      "modifiers": [],
+      "label": "X"
+    },
+    "2:3": {
+      "x": 2,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "C",
+      "modifiers": [],
+      "label": "C"
+    },
+    "3:3": {
+      "x": 3,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "LeftShift",
+      "modifiers": [],
+      "label": "Shft"
+    },
+    "4:3": {
+      "x": 4,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "Escape",
+      "modifiers": [],
+      "label": "Esc"
+    },
+    "8:3": {
+      "x": 8,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "Escape",
+      "modifiers": [],
+      "label": "Esc"
+    },
+    "9:3": {
+      "x": 9,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "LeftShift",
+      "modifiers": [],
+      "label": "Shft"
+    },
+    "10:3": {
+      "x": 10,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "C",
+      "modifiers": [],
+      "label": "C"
+    },
+    "11:3": {
+      "x": 11,
+      "y": 3,
+      "behavior": "Key Press",
+      "parameter": "X",
+      "modifiers": [],
+      "label": "X"
+    },
+    "3:4": {
+      "x": 3,
+      "y": 4,
+      "behavior": "coach_base",
+      "parameter": "",
+      "modifiers": [],
+      "label": "Exit Base"
+    },
+    "4:4": {
+      "x": 4,
+      "y": 4,
+      "behavior": "Key Press",
+      "parameter": "Spacebar",
+      "modifiers": [],
+      "label": "\u2423"
+    },
+    "5:4": {
+      "x": 5,
+      "y": 4,
+      "behavior": "coach_base",
+      "parameter": "",
+      "modifiers": [],
+      "label": "Exit Base"
+    },
+    "7:4": {
+      "x": 7,
+      "y": 4,
+      "behavior": "coach_base",
+      "parameter": "",
+      "modifiers": [],
+      "label": "Exit Base"
+    },
+    "8:4": {
+      "x": 8,
+      "y": 4,
+      "behavior": "coach_base",
+      "parameter": "",
+      "modifiers": [],
+      "label": "Exit Base"
+    },
+    "4:5": {
+      "x": 4,
+      "y": 5,
+      "behavior": "Mouse Key Press",
+      "parameter": "default_transform",
+      "modifiers": [],
+      "label": "Click"
+    },
+    "5:5": {
+      "x": 5,
+      "y": 5,
+      "behavior": "Mouse Key Press",
+      "parameter": "default_transform",
+      "modifiers": [],
+      "label": "Right Click"
+    },
+    "7:5": {
+      "x": 7,
+      "y": 5,
+      "behavior": "Key Press",
+      "parameter": "Return Enter",
+      "modifiers": [],
+      "label": "Ret"
+    }
+  }
+}
