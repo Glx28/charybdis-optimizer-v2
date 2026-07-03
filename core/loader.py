@@ -54,6 +54,8 @@ RAW_KEY_ALIASES = {
 
 L0_FROZEN_THUMB_RAW_KEYS = {"spacebar", "returnenter"}
 NON_GROUPABLE_KEYS = {"ScrollUp", "ScrollDown"}
+NON_EXPORTABLE_SEQUENCE_KEYS = {"Ctrl+K S", "gg", "gi", "yy"}
+MOUSE_CLICK_BASE_KEYS = {"Click", "Left Click", "Right Click", "Middle Click"}
 
 
 def _normalize_raw_key_id(value: str) -> Optional[str]:
@@ -160,23 +162,41 @@ def _access_shortcut_key(source_layer: int, target_layer: int, is_momentary: boo
 
 
 def _is_plain_keypress_shortcut(keys: str, sc_data: dict) -> bool:
-    """False for shortcuts that need sequence/chord/scroll modeling instead of Key Press export."""
+    """True when the shortcut can be represented as one Studio binding.
+
+    Mouse-click shortcuts are valid, but they must later export as Mouse Key
+    Press bindings (MB1/MB2/MB3), not as keyboard parameters named Click.
+    Scroll wheel events and text sequences are usage signals only; they are not
+    assignable one-key ZMK Studio keypresses.
+    """
     clean = str(keys or "").strip()
-    lowered = clean.lower()
     category = str(sc_data.get("category", "")).lower()
     action = str(sc_data.get("action", "")).lower()
     behavior = str(sc_data.get("behavior", "")).lower()
     parameter = str(sc_data.get("parameter", "")).lower()
     if _is_structural_system_key(clean, behavior, parameter, action):
         return False
-    if clean in NON_GROUPABLE_KEYS:
+
+    modifiers, parsed_base = parse_shortcut_keys_norwegian(clean)
+    base_key = canonical_hid_parameter(sc_data.get("base_key", "")) or parsed_base
+
+    if clean in NON_EXPORTABLE_SEQUENCE_KEYS:
         return False
-    if clean in {"Ctrl+K S", "gg", "gi", "yy"}:
+    if clean in NON_GROUPABLE_KEYS or base_key in NON_GROUPABLE_KEYS:
         return False
+    if "scroll" in action and (clean in NON_GROUPABLE_KEYS or base_key in NON_GROUPABLE_KEYS):
+        return False
+
+    if base_key in MOUSE_CLICK_BASE_KEYS:
+        return True
+
+    # Multi-step text/editor sequences are useful usage data, but they are not
+    # one physical key binding. Modifier chords still pass because they contain +.
     if "vimium" in category and "+" not in clean and len(clean) > 1:
         return False
-    if "scroll" in action and clean in NON_GROUPABLE_KEYS:
+    if not modifiers and re.fullmatch(r"[A-Za-z]{2,}", clean):
         return False
+
     return True
 
 
@@ -218,9 +238,11 @@ def load_layout(path: str) -> Tuple[List[Position], np.ndarray, List[LayerAccess
         "thumb": 0, "index": 1, "middle": 2, "ring": 3, "pinky": 4,
         "far_pinky": 4, "index_stretch": 1,
     }
+    # Fallback only for old/minimal test fixtures missing explicit effort.
+    # Real keyboard data must provide per-coordinate effort in layout.json.
     effort_map = {
-        "top": 1.5, "upper": 1.2, "middle": 1.0, "home": 1.0,
-        "lower": 1.3, "bottom": 2.0, "thumb": 0.8, "thumb2": 1.1,
+        "top": 2.0, "upper": 1.0, "middle": 0.0, "home": 0.0,
+        "lower": 1.0, "bottom": 1.0, "thumb": 0.0, "thumb2": 1.0,
     }
 
     l0_frozen = data.get("l0_frozen", {})
@@ -232,7 +254,9 @@ def load_layout(path: str) -> Tuple[List[Position], np.ndarray, List[LayerAccess
             finger_str = pos_meta.get("finger", "index")
             finger = finger_map.get(finger_str, 1)
             row_type = pos_meta.get("row_type", "middle")
-            effort = effort_map.get(row_type, 1.0)
+            # Prefer explicit per-coordinate effort from layout.json. The row_type
+            # fallback exists only for old/minimal test fixtures.
+            effort = float(pos_meta.get("effort", effort_map.get(row_type, 1.0)))
             is_thumb = pos_meta.get("zone") == "thumb" or finger == 0
 
             coord = f"{int(x)}:{int(y)}"
@@ -347,9 +371,7 @@ def load_shortcuts(path: str, layout_data: Optional[dict] = None) -> List[Shortc
             keys_scroll = f"@scroll:L{tgt}:hold"
             if keys_scroll not in access_seen:
                 access_seen.add(keys_scroll)
-                scroll_imp = base_importance + 6.0
-                if scroll_total > 0:
-                    scroll_imp += min(10.0, np.log1p(float(scroll_total)))
+                scroll_imp = 12.0  # second after MB1 (15.0), above MB2 (9.0)
                 shortcuts.append(Shortcut(
                     sid=len(shortcuts), keys=keys_scroll,
                     action=f"Scroll Mode Layer {tgt}", app="Layer Access",
@@ -379,9 +401,14 @@ def load_shortcuts(path: str, layout_data: Optional[dict] = None) -> List[Shortc
             if not base_key:
                 _, base_key = parse_shortcut_keys_norwegian(keys)
             
-            # Extract modifiers from keys
+            # Extract modifiers from keys. Direct mouse-click names are mouse
+            # actions, not keyboard words/modifiers. Modifier+Click remains one
+            # mouse binding with held modifiers.
             modifiers, parsed_base = parse_shortcut_keys_norwegian(keys)
-            if parsed_base:
+            if keys in MOUSE_CLICK_BASE_KEYS:
+                modifiers = []
+                base_key = keys
+            elif parsed_base:
                 base_key = parsed_base
 
             raw_key_id = _normalize_raw_key_id(base_key) if not modifiers and "+" not in keys else None

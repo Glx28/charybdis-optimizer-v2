@@ -91,6 +91,41 @@ class TestDataStructures(unittest.TestCase):
         self.assertNotIn("Spacebar", keys)
         self.assertNotIn("Enter", keys)
 
+    def test_non_exportable_sequences_filtered_but_mouse_click_shortcuts_remain(self):
+        layout_data = {"n_layers": 1, "l0_frozen": {}}
+        app_scores = {
+            "apps": [{
+                "name": "Mixed",
+                "shortcuts": [
+                    {"keys": "ScrollUp", "action": "Scroll up", "importance": 8.0},
+                    {"keys": "ScrollDown", "action": "Scroll down", "importance": 8.0},
+                    {"keys": "yy", "action": "Yank line", "category": "vimium", "importance": 6.0},
+                    {"keys": "gg", "action": "Top", "category": "vimium", "importance": 6.0},
+                    {"keys": "gi", "action": "Focus input", "category": "vimium", "importance": 6.0},
+                    {"keys": "Ctrl+Click", "action": "Open in new tab", "importance": 9.0},
+                    {"keys": "Shift+Click", "action": "Range select", "importance": 8.0},
+                    {"keys": "Alt+Click", "action": "Alternate click", "importance": 7.0},
+                    {"keys": "Right Click", "action": "Context menu", "importance": 7.0},
+                ],
+            }]
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json", encoding="utf-8") as f:
+            json.dump(app_scores, f)
+            path = f.name
+        try:
+            shortcuts = load_shortcuts(path, layout_data)
+        finally:
+            os.unlink(path)
+
+        by_key = {s.keys: s for s in shortcuts}
+        for invalid in ("ScrollUp", "ScrollDown", "yy", "gg", "gi"):
+            self.assertNotIn(invalid, by_key)
+        for click_key in ("Ctrl+Click", "Shift+Click", "Alt+Click"):
+            self.assertIn(click_key, by_key)
+            self.assertEqual(by_key[click_key].base_key, "Click")
+        self.assertIn("Right Click", by_key)
+        self.assertEqual(by_key["Right Click"].base_key, "Right Click")
+
     def test_layer_access_positions_are_mutable_capabilities(self):
         layout_data = {
             "n_layers": 2,

@@ -9585,7 +9585,7 @@
           "category": "mouse",
           "frequency": "constant",
           "freq_weight": 10,
-          "importance": 9.0,
+          "importance": 15.0,
           "mapped": true,
           "match_count": 1,
           "best_match": {
@@ -9623,7 +9623,7 @@
           "category": "mouse",
           "frequency": "high",
           "freq_weight": 7,
-          "importance": 7.0,
+          "importance": 6.0,
           "mapped": true,
           "match_count": 1,
           "best_match": {
@@ -9642,7 +9642,7 @@
           "category": "mouse",
           "frequency": "high",
           "freq_weight": 7,
-          "importance": 7.0,
+          "importance": 4.5,
           "mapped": true,
           "match_count": 1,
           "best_match": {
@@ -9661,7 +9661,7 @@
           "category": "mouse",
           "frequency": "high",
           "freq_weight": 7,
-          "importance": 7.0,
+          "importance": 3.0,
           "mapped": true,
           "match_count": 1,
           "best_match": {

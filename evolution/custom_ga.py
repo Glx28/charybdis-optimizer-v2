@@ -146,8 +146,13 @@ class CustomGARunner:
             return True
         cand_cv = sum(max(0.0, float(x)) for x in candidate.get("constraints", []))
         inc_cv = sum(max(0.0, float(x)) for x in incumbent.get("constraints", []))
-        if cand_cv != inc_cv:
-            return cand_cv < inc_cv
+        # Only prefer lower constraint violation when one solution is feasible (cv=0)
+        # and the other isn't. When both violate constraints the violation penalty is
+        # already baked into total_score (weight × count), so compare by score.
+        cand_feasible = cand_cv == 0.0
+        inc_feasible = inc_cv == 0.0
+        if cand_feasible != inc_feasible:
+            return cand_feasible
         cand_pass = bool(candidate.get("optimizer_side_pass", False))
         inc_pass = bool(incumbent.get("optimizer_side_pass", False))
         if cand_pass != inc_pass:
@@ -231,55 +236,159 @@ class CustomGARunner:
     # ------------------------------------------------------------------
 
     def _inject_diversity(self, pop_X, pop_F, pop_cv, gen):
-        # Trigger on surrogate stagnation OR archive stagnation (so a slightly
-        # optimistic surrogate that keeps stagnation_count low doesn't prevent injection)
-        archive_stagnant = self.archive_stagnation >= 6  # 3000 gens at checkpoint_every=500
+        # Trigger on surrogate stagnation OR archive stagnation.
+        # Cooldown of 1500 gens (3 checkpoints) prevents re-firing at every checkpoint.
+        archive_stagnant = self.archive_stagnation >= 3  # 1500 gens at checkpoint_every=500
         if self.stagnation_count < 1200 and not archive_stagnant:
             return pop_X, pop_F, pop_cv
-        if gen - self.last_diversity_reset < 600:
+        if gen - self.last_diversity_reset < 1500:
             return pop_X, pop_F, pop_cv
 
         n = len(pop_X)
         scalar = _scalar(pop_F, pop_cv)
-        elite_count = max(2, n // 20)
+        elite_count = max(2, n // 10)  # keep top 10% as elites
         elite_idx = set(np.argsort(scalar)[:elite_count].tolist())
         replace_order = [i for i in np.argsort(scalar)[::-1] if i not in elite_idx]
         replace_idx = replace_order[: max(4, n // 4)]
 
-        seed = self.layout.genome.astype(np.int32)
-        frozen_assigned = {
-            int(seed[i]) for i in self.layout.frozen_indices if int(seed[i]) >= 0
-        }
-        available = np.array(
-            [s for s in range(self.layout.n_shortcuts) if s not in frozen_assigned],
-            dtype=np.int32,
+        # Always base perturbations on the global best genome, not the warmstart.
+        # Using the warmstart produces mostly random genomes that violate hard constraints.
+        base = (
+            self.global_best_genome.astype(np.int32).copy()
+            if self.global_best_genome is not None
+            else self.layout.genome.astype(np.int32).copy()
         )
+
         mutable = self.layout.mutable_indices
+        ml = mutable.tolist() if hasattr(mutable, "tolist") else list(mutable)
+
+        # Exclude access/toggle SIDs from swap pool so structural constraints stay intact.
+        access_sids = set()
+        if hasattr(self.mutation, "_access_sid_targets"):
+            access_sids = set(self.mutation._access_sid_targets.keys())
+        safe_ml = [pos for pos in ml if int(base[pos]) not in access_sids] or ml
+
+        # Effort arrays for targeted perturbation (if available from mutation operator)
+        mut = self.mutation
+        pos_effort = getattr(mut, "_pos_effort_arr", None)
+        sid_imp = getattr(mut, "_sid_importance_arr", None)
+        is_group_lut = getattr(mut, "_is_group_sid_lut", None)
+        safe_ml_arr = np.array(safe_ml, dtype=np.int32)
+
+        def _effort_targeted_swaps(g, n_swaps):
+            """Swap high-importance×effort shortcuts toward lower-effort positions."""
+            if pos_effort is None or sid_imp is None or is_group_lut is None:
+                return  # fall back to random
+            for _ in range(n_swaps):
+                sids = g[safe_ml_arr]
+                valid = (sids >= 0) & (sids < len(sid_imp))
+                safe_sids = np.where(valid, sids, 0)
+                valid &= ~is_group_lut[safe_sids]
+                if not valid.any():
+                    break
+                vpos = safe_ml_arr[valid]
+                vsids = sids[valid]
+                costs = pos_effort[vpos] * sid_imp[vsids]
+                top5 = min(5, len(costs))
+                top_idx = np.argpartition(costs, -top5)[-top5:]
+                ci = int(top_idx[random.randrange(top5)])
+                src_pos = int(vpos[ci])
+                src_effort = float(pos_effort[src_pos])
+                if src_effort <= 0:
+                    break
+                lower = vpos[pos_effort[vpos] < src_effort]
+                if len(lower) == 0:
+                    break
+                tgt_pos = int(lower[random.randrange(len(lower))])
+                g[tgt_pos], g[src_pos] = int(g[src_pos]), int(g[tgt_pos])
 
         new_genomes = []
-        for dst in replace_idx:
-            g = seed.copy()
-            g[mutable] = -1
-            n_assign = min(len(mutable), len(available))
-            g[np.random.permutation(mutable)[:n_assign]] = np.random.permutation(available)[:n_assign]
+        n_replace = len(replace_idx)
+        for i, dst in enumerate(replace_idx):
+            g = base.copy()
+            # Gradient: 25% light random → 30% medium random → 25% effort-targeted → 20% mixed
+            t = i / max(n_replace - 1, 1)
+            if t < 0.25:
+                # Light random: stay close to global best
+                n_swaps = random.randint(5, 25)
+                pool = safe_ml
+                for _ in range(n_swaps):
+                    ia = random.randrange(len(pool))
+                    ib = random.randrange(len(pool))
+                    g[pool[ia]], g[pool[ib]] = g[pool[ib]], g[pool[ia]]
+            elif t < 0.55:
+                # Medium random: explore nearby basins
+                n_swaps = random.randint(25, 80)
+                pool = safe_ml
+                for _ in range(n_swaps):
+                    ia = random.randrange(len(pool))
+                    ib = random.randrange(len(pool))
+                    g[pool[ia]], g[pool[ib]] = g[pool[ib]], g[pool[ia]]
+            elif t < 0.80:
+                # Effort-targeted: move high-cost shortcuts to lower-effort positions.
+                # Specifically addresses the effort component (2.82) that's blocking improvement.
+                _effort_targeted_swaps(g, random.randint(30, 100))
+            else:
+                # Mixed: random + effort-targeted
+                n_rand = random.randint(30, 80)
+                pool = safe_ml
+                for _ in range(n_rand):
+                    ia = random.randrange(len(pool))
+                    ib = random.randrange(len(pool))
+                    g[pool[ia]], g[pool[ib]] = g[pool[ib]], g[pool[ia]]
+                _effort_targeted_swaps(g, random.randint(20, 50))
             pop_X[dst] = g
             new_genomes.append(g)
 
+        # Slot 0 always holds the global best so it stays in the live population
+        # and can be selected for crossover/mutation every generation.
+        if self.global_best_genome is not None:
+            pop_X[0] = self.global_best_genome.astype(np.int32).copy()
+
+        sm = self.surrogate_manager
         if new_genomes:
-            batch = np.array(new_genomes, dtype=np.int32)
+            # Include global best in the batch so its pop_F reflects exact fitness.
+            eval_batch = np.array(new_genomes, dtype=np.int32)
+            if self.global_best_genome is not None:
+                eval_batch = np.vstack([
+                    self.global_best_genome.reshape(1, -1).astype(np.int32),
+                    eval_batch,
+                ])
             t0 = time.perf_counter()
-            new_F, new_G = self.evaluator.evaluate_batch(batch)
+            new_F, new_G = self.evaluator.evaluate_batch(eval_batch)
             if self.perf:
                 self.perf.add("exact_eval", time.perf_counter() - t0)
+            offset = 0
+            if self.global_best_genome is not None:
+                pop_F[0] = new_F[0]
+                offset = 1
             for row, dst in enumerate(replace_idx):
-                pop_F[dst] = new_F[row]
+                pop_F[dst] = new_F[row + offset]
                 if pop_cv is not None and new_G.shape[1] > 0:
-                    pop_cv[dst] = np.maximum(new_G[row], 0)
+                    pop_cv[dst] = np.maximum(new_G[row + offset], 0)
+
+            # Add injected genomes to surrogate training data so it can rank them
+            # accurately. Without this, surrogate R² collapses after injection
+            # (diverse genomes are out-of-distribution) → selection is nearly random
+            # for 500 gens until the next scheduled retrain.
+            if sm is not None:
+                sm.add_exact_evaluations(eval_batch, new_F)
+                sm.async_retrain()
+                print(
+                    f"    Surrogate async retrain submitted on {len(eval_batch)} injection evals.",
+                    flush=True,
+                )
 
         self.last_diversity_reset = gen
+        # Reset archive stagnation so injection doesn't re-fire at the very next checkpoint.
+        # The algorithm now has 3 full checkpoint cycles (1500 gens) to escape the plateau.
+        self.archive_stagnation = 0
+
+        since_best = (gen - self.global_best_generation) if self.global_best_generation else "?"
         print(
-            f"    Gen {gen}: stagnation for {self.stagnation_count} gens."
-            f" Injected {len(replace_idx)} diverse individuals, kept {elite_count} elites.",
+            f"    Gen {gen}: no real improvement for ~{since_best} gens"
+            f" (gen-{self.global_best_generation} best preserved at slot 0)."
+            f" Injected {len(replace_idx)} global-best perturbations, kept {elite_count} elites.",
             flush=True,
         )
         return pop_X, pop_F, pop_cv
@@ -306,15 +415,16 @@ class CustomGARunner:
         improved = self._update_archive(best_genome, entry)
         if improved:
             self.archive_stagnation = 0
+            gap = entry['total_score'] + 49.30
             print(
                 f"    Gen {gen}: global best improved to {entry['total_score']:.4f}"
-                f" (optimizer_side_pass={entry['optimizer_side_pass']})",
+                f" (gap={gap:+.2f}, optimizer_side_pass={entry['optimizer_side_pass']})",
                 flush=True,
             )
         else:
             self.archive_stagnation += 1
             stagnant_gens = self.archive_stagnation * self.checkpoint_every
-            if stagnant_gens >= 20000 and self.global_best_exact is not None:
+            if stagnant_gens >= 100000 and self.global_best_exact is not None:
                 print(
                     f"    Gen {gen}: early stop — archive stagnant for {stagnant_gens} gens"
                     f" (best score={self.global_best_exact['total_score']:.4f})",
@@ -389,11 +499,12 @@ class CustomGARunner:
             if self.perf:
                 self.perf.add("surrogate_teacher_eval", time.perf_counter() - t0)
             sm.add_exact_evaluations(pop_X.astype(np.int32), exact_F)
+        sm.maybe_collect_retrain()
         if sm.should_retrain():
             t0 = time.perf_counter()
-            sm.retrain()
+            sm.async_retrain()
             if self.perf:
-                self.perf.add("surrogate_retrain", time.perf_counter() - t0)
+                self.perf.add("surrogate_retrain_submit", time.perf_counter() - t0)
 
     # ------------------------------------------------------------------
     # Main loop
@@ -422,6 +533,29 @@ class CustomGARunner:
             if self.perf:
                 self.perf.add("exact_eval", time.perf_counter() - t0)
         pop_cv = None  # constraint violations only tracked at checkpoints
+
+        # Exact-evaluate slot 0 (warmstart) so the surrogate can't misprice it and
+        # so it is immediately registered as the initial global best. Without this,
+        # the archive starts empty and the gen-500 checkpoint picks a random
+        # population member as global best — discarding the warmstart's quality.
+        ws_F, ws_G = self.evaluator.evaluate_batch(pop_X[:1].astype(np.int32))
+        pop_F[0] = ws_F[0]
+        if sm is not None:
+            sm.add_exact_evaluations(pop_X[:1].astype(np.int32), ws_F)
+        ws_total = float(ws_F[0].sum())
+        ws_gap = ws_total + 49.30
+        print(
+            f"    Warmstart slot-0 exact score={ws_total:.4f} (gap={ws_gap:+.2f},"
+            f" added to surrogate training data)",
+            flush=True,
+        )
+        # Seed the archive with the warmstart so the first checkpoint can only improve.
+        ws_layout = self.layout.clone_with(genome=pop_X[0].astype(np.int32))
+        ws_exact = self.evaluator.evaluate(ws_layout)
+        ws_entry = self._exact_entry(ws_exact, 0)
+        _, ws_comp, ws_arr, ws_acc = self._layout_reports(ws_layout)
+        self._annotate(ws_entry, ws_acc)
+        self._update_archive(pop_X[0].astype(np.int32), ws_entry)
 
         gen_times = []
 
@@ -457,9 +591,29 @@ class CustomGARunner:
                 children_F = sm.trainer.predict(children_X)
                 # Collect exact results and splice back — overrides surrogate predictions
                 # for these 150 children with ground-truth fitness.
-                mini_F, _ = mini_future.result()
+                mini_F, mini_G = mini_future.result()
                 children_F[mini_idx] = mini_F
                 sm.add_exact_evaluations(mini_batch, mini_F)
+                # Check if any mini-eval genome beats the global_best.
+                # Only run the full acceptance report (expensive) when the score is promising.
+                mini_totals = mini_F.sum(axis=1)
+                mini_best_i = int(np.argmin(mini_totals))
+                gb_score = float(self.global_best_exact["total_score"]) if self.global_best_exact else float("inf")
+                if mini_totals[mini_best_i] < gb_score - 0.01:
+                    mini_best_genome = mini_batch[mini_best_i]
+                    mini_best_layout = self.layout.clone_with(genome=mini_best_genome.astype(np.int32))
+                    mini_exact = self.evaluator.evaluate(mini_best_layout)
+                    mini_entry = self._exact_entry(mini_exact, gen)
+                    _, _, _, mini_acc = self._layout_reports(mini_best_layout)
+                    self._annotate(mini_entry, mini_acc)
+                    if self._is_better(mini_entry, self.global_best_exact):
+                        self._update_archive(mini_best_genome, mini_entry)
+                        gap = mini_entry['total_score'] + 49.30
+                        print(
+                            f"    Gen {gen}: global best improved to {mini_entry['total_score']:.4f}"
+                            f" (gap={gap:+.2f}, source=mini_eval)",
+                            flush=True,
+                        )
             else:
                 t0 = time.perf_counter()
                 children_F, _ = self.evaluator.evaluate_batch(children_X)

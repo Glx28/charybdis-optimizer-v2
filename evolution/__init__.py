@@ -352,6 +352,8 @@ class SwapMutation(Mutation):
         bulk_assign_prob=0.04,
         optional_arrow_drop_prob=0.04,
         group_move_prob=None,
+        cluster_app_prob=0.20,
+        effort_swap_prob=0.06,
     ):
         super().__init__()
         self.prob = prob
@@ -363,6 +365,8 @@ class SwapMutation(Mutation):
         self.random_assign_prob = random_assign_prob
         self.bulk_assign_prob = bulk_assign_prob
         self.optional_arrow_drop_prob = optional_arrow_drop_prob
+        self.cluster_app_prob = cluster_app_prob
+        self.effort_swap_prob = effort_swap_prob
         self.mutable_indices = np.where(~frozen_mask)[0] if frozen_mask is not None else None
         self.mutable_list = self.mutable_indices.tolist() if self.mutable_indices is not None else None
         self.group_sid_sets = []
@@ -379,6 +383,33 @@ class SwapMutation(Mutation):
         self.right_non_thumb_by_layer = defaultdict(list)
         self.safe_access_positions = []
         self.l0_safe_access_positions = []
+        # Bug 3 & 5: per-layer position pools and access SID metadata
+        self.right_positions_by_layer: dict = defaultdict(list)
+        self.right_thumb_positions_by_layer: dict = defaultdict(list)
+        self.left_thumb_positions_by_layer: dict = defaultdict(list)
+        self._pos_layer_arr = np.zeros(len(layout.positions) if layout is not None else 0, dtype=np.int32)
+        self._pos_hand_arr = np.zeros(len(layout.positions) if layout is not None else 0, dtype=np.int32)
+        self._pos_is_thumb_arr = np.zeros(len(layout.positions) if layout is not None else 0, dtype=np.bool_)
+        self._access_sid_targets: dict = {}
+        self._access_sid_momentary: dict = {}
+        if layout is not None:
+            for idx, pos in enumerate(layout.positions):
+                self._pos_layer_arr[idx] = int(pos.layer)
+                self._pos_hand_arr[idx] = 1 if pos.hand == "right" else 0
+                self._pos_is_thumb_arr[idx] = bool(pos.is_thumb)
+                if pos.is_frozen or pos.layer == 7 or pos.layer == 0:
+                    continue
+                layer_i = int(pos.layer)
+                if pos.hand == "right":
+                    self.right_positions_by_layer[layer_i].append(idx)
+                    if pos.is_thumb:
+                        self.right_thumb_positions_by_layer[layer_i].append(idx)
+                elif pos.is_thumb:
+                    self.left_thumb_positions_by_layer[layer_i].append(idx)
+            for s in layout.shortcuts:
+                if s.is_layer_access:
+                    self._access_sid_targets[s.sid] = int(s.access_target_layer)
+                    self._access_sid_momentary[s.sid] = bool(s.access_is_momentary)
         if layout is not None and self.mutable_list:
             frozen_sids = {
                 int(layout.genome[i])
@@ -436,6 +467,49 @@ class SwapMutation(Mutation):
         else:
             self._assignable_not_arrow = self._assignable_arr
 
+        # LUTs for O(1) numpy-vectorized reachability and thumb-occupancy checks.
+        # Replaces Python dict iteration in _would_break_reachability and
+        # _get_layer_occupied_thumbs — one numpy gather replaces 510-iter loops.
+        self._access_target_lut = np.full(n_sc, -1, dtype=np.int32)
+        self._access_is_mo_lut = np.zeros(n_sc, dtype=np.bool_)
+        for _sid, _tgt in self._access_sid_targets.items():
+            if 0 <= _sid < n_sc:
+                self._access_target_lut[_sid] = int(_tgt)
+        for _sid, _is_mo in self._access_sid_momentary.items():
+            if 0 <= _sid < n_sc:
+                self._access_is_mo_lut[_sid] = bool(_is_mo)
+
+        # App-cluster mutation: precompute app → sids and position x,y arrays
+        self._pos_x = np.array([p.x for p in layout.positions], dtype=np.float32) if layout is not None else np.array([], dtype=np.float32)
+        self._pos_y = np.array([p.y for p in layout.positions], dtype=np.float32) if layout is not None else np.array([], dtype=np.float32)
+        self._app_sids: dict = {}
+        if layout is not None and self.mutable_list:
+            frozen_sids_set = {
+                int(layout.genome[i])
+                for i, pos in enumerate(layout.positions)
+                if pos.is_frozen and int(layout.genome[i]) >= 0
+            }
+            for s in layout.shortcuts:
+                if s.sid in frozen_sids_set or s.sid in self.group_member_sids:
+                    continue
+                self._app_sids.setdefault(s.app, set()).add(s.sid)
+            self._app_sids = {k: v for k, v in self._app_sids.items() if len(v) >= 2}
+        self._app_ids = list(self._app_sids.keys())
+        # Numpy arrays per app for vectorized sid presence checks
+        self._app_sids_arrs: dict = {
+            app_id: np.array(sorted(sids), dtype=np.int32)
+            for app_id, sids in self._app_sids.items()
+        }
+        # Effort-swap mutation: position efforts and shortcut importances as arrays
+        self._pos_effort_arr = np.array(
+            [float(p.effort) for p in layout.positions], dtype=np.float32
+        ) if layout is not None else np.array([], dtype=np.float32)
+        self._sid_importance_arr = np.zeros(n_sc, dtype=np.float32)
+        if layout is not None:
+            for s in layout.shortcuts:
+                if 0 <= s.sid < n_sc:
+                    self._sid_importance_arr[s.sid] = float(s.importance)
+
     def _build_protected_group_moves(self, layout):
         """Precompute whole-group mutation targets via build_group_placements."""
         for sid_tuple, anchor_list in build_group_placements(layout):
@@ -469,10 +543,12 @@ class SwapMutation(Mutation):
         for pos in layout.positions:
             if pos.is_frozen or pos.layer == 7:
                 continue
-            if not (pos.hand == "right" and pos.is_thumb):
-                self.safe_access_positions.append(pos.gene_idx)
-                if pos.layer == 0:
-                    self.l0_safe_access_positions.append(pos.gene_idx)
+            # Bug 1 fix: ALL non-frozen non-L7 positions (including both thumb clusters)
+            # are valid for MO/TO coach buttons. Only MB/scroll are restricted to
+            # right_non_thumb_by_layer below.
+            self.safe_access_positions.append(pos.gene_idx)
+            if pos.layer == 0:
+                self.l0_safe_access_positions.append(pos.gene_idx)
             if pos.layer == 0:
                 continue
             if pos.hand == "right" and not pos.is_thumb:
@@ -534,7 +610,7 @@ class SwapMutation(Mutation):
         layer = random.choice(candidate_layers)
         right_positions = self.right_non_thumb_by_layer[layer]
         target_positions = random.sample(right_positions[:min(len(right_positions), 12)], 6)
-        target_positions.sort()
+        target_positions.sort()  # position index order only — fitness scoring drives quality placement
         sids = [
             self.mouse_button_sids[1],
             self.mouse_button_sids[2],
@@ -545,13 +621,9 @@ class SwapMutation(Mutation):
         ]
 
         blocked = set(target_positions)
-        access_pool = self.l0_safe_access_positions or self.safe_access_positions
-        safe_access = [
-            pos for pos in self.safe_access_positions
-            if pos not in blocked
-        ]
-        if self.l0_safe_access_positions:
-            safe_access = [pos for pos in access_pool if pos not in blocked]
+        # Bug 2 fix: use safe_access_positions (any non-frozen non-L7 position),
+        # not l0_safe_access_positions. Fitness scoring determines optimal placement.
+        safe_access = [pos for pos in self.safe_access_positions if pos not in blocked]
         if len(safe_access) < 2:
             return False
         hold_pos = random.choice(safe_access)
@@ -559,11 +631,24 @@ class SwapMutation(Mutation):
         toggle_pos = random.choice(safe_access)
         sids.extend([self.access_hold_by_target[layer], self.access_toggle_by_target[layer]])
         target_positions.extend([hold_pos, toggle_pos])
+        # Bug 3 fix: place return-to-L0 toggle ON the mouse layer (right side preferred).
+        # Every toggle-accessible layer must have a return toggle back to L0.
+        if 0 in self.access_toggle_by_target:
+            return_sid = self.access_toggle_by_target[0]
+            placed_set = set(target_positions)
+            right_thumbs = [p for p in self.right_thumb_positions_by_layer.get(layer, []) if p not in placed_set]
+            right_any = [p for p in self.right_positions_by_layer.get(layer, []) if p not in placed_set]
+            return_pool = right_thumbs if right_thumbs else right_any
+            if return_pool:
+                sids.append(return_sid)
+                target_positions.append(random.choice(return_pool))
         return self._place_sids(genome, sids, target_positions)
 
     def _propose_l7_access(self, genome):
         if 7 not in self.access_hold_by_target or 7 not in self.access_toggle_by_target:
             return False
+        # L7 (arrows) is always accessed from L0: prefer l0_safe_access_positions,
+        # fall back to all safe positions. Bug 2 fix only applies to mouse workflow layer.
         access_pool = self.l0_safe_access_positions or self.safe_access_positions
         if len(access_pool) < 2:
             return False
@@ -596,12 +681,70 @@ class SwapMutation(Mutation):
         ok = ~is_group & ~is_singleton_important
         return self._mutable_arr[ok]
 
+    def _would_break_reachability(self, genome, pos_to_clear):
+        """True if clearing genome[pos_to_clear] would make its target layer unreachable.
+
+        One numpy gather over mutable positions replaces the 510-iter Python loop.
+        """
+        sid = int(genome[pos_to_clear])
+        if sid < 0 or sid >= self.n_shortcuts:
+            return False
+        target = int(self._access_target_lut[sid])
+        if target <= 0:
+            return False
+        mutable_sids = genome[self._mutable_arr]
+        other_mask = (self._mutable_arr != pos_to_clear) & (mutable_sids >= 0) & (mutable_sids < self.n_shortcuts)
+        if not other_mask.any():
+            return True
+        other_sids = mutable_sids[other_mask]
+        return not bool(np.any(self._access_target_lut[other_sids] == target))
+
+    def _get_layer_occupied_thumbs(self, genome):
+        """Return dict layer -> set of hand ints (0=left,1=right) whose thumb is occupied.
+
+        A hand's thumb is occupied on layer L if L is reachable ONLY via exactly one
+        momentary hold from that hand (no toggle access, no other MO keys).
+
+        One numpy gather + LUT lookup replaces the 510-iter Python loop.
+        """
+        mutable_sids = genome[self._mutable_arr]
+        valid = (mutable_sids >= 0) & (mutable_sids < self.n_shortcuts)
+        if not valid.any():
+            return {}
+        safe_sids = np.where(valid, mutable_sids, 0)
+        targets = self._access_target_lut[safe_sids]
+        is_mo = self._access_is_mo_lut[safe_sids]
+        is_access = valid & (targets > 0) & (targets < 32)
+        if not is_access.any():
+            return {}
+        access_targets = targets[is_access]
+        access_mo = is_mo[is_access]
+        access_hands = self._pos_hand_arr[self._mutable_arr[is_access]]
+        occupied: dict = {}
+        for layer_id in np.unique(access_targets):
+            lm = access_targets == layer_id
+            layer_mo = access_mo[lm]
+            layer_hands = access_hands[lm]
+            has_toggle = not bool(np.all(layer_mo))
+            mo_hands = layer_hands[layer_mo]
+            if has_toggle or len(mo_hands) != 1:
+                occupied[int(layer_id)] = set()
+            else:
+                occupied[int(layer_id)] = {int(mo_hands[0])}
+        return occupied
+
     def _random_reassign_one(self, genome):
         """Generic multiplicity mutation: let shortcut counts evolve."""
         candidates = self._reassign_candidates(genome)
         if candidates is None or len(candidates) == 0:
             return False
-        pos = int(candidates[np.random.randint(len(candidates))])
+        # Bug 4: avoid displacing the sole access path to any layer
+        for _ in range(5):
+            pos = int(candidates[np.random.randint(len(candidates))])
+            if not self._would_break_reachability(genome, pos):
+                break
+        else:
+            return False
         genome[pos] = int(self._assignable_arr[np.random.randint(len(self._assignable_arr))])
         return True
 
@@ -682,6 +825,135 @@ class SwapMutation(Mutation):
 
         return True
     
+    def _cluster_app_shortcut(self, genome):
+        """Move the most-outlier shortcut of a random app toward the app's physical centroid.
+
+        Fully vectorized: one _genome_pos_map call replaces per-app mutable_list iteration.
+        Thumb exclusion mask and occupied thumbs computed once per genome, not per app.
+        """
+        if not self._app_ids:
+            return False
+
+        # Build sid→pos map once (numpy) — replaces O(n_apps × n_mutable) Python loops.
+        pos_map = self._genome_pos_map(genome)
+
+        # Occupied thumbs and the resulting exclusion mask — both computed once per genome.
+        occupied_thumbs = self._get_layer_occupied_thumbs(genome)
+        is_thumb_m = self._pos_is_thumb_arr[self._mutable_arr]
+        layers_m = self._pos_layer_arr[self._mutable_arr]
+        hands_m = self._pos_hand_arr[self._mutable_arr]
+        thumb_exclude = np.zeros(len(self._mutable_arr), dtype=np.bool_)
+        for _lid, _occ in occupied_thumbs.items():
+            for _h in _occ:
+                thumb_exclude |= is_thumb_m & (layers_m == _lid) & (hands_m == _h) & (layers_m > 0)
+
+        # Group-member exclusion mask over mutable positions.
+        mutable_sids = genome[self._mutable_arr]
+        safe_ms = np.where(mutable_sids >= 0, mutable_sids, 0)
+        is_group_m = self._is_group_sid_lut[safe_ms] & (mutable_sids >= 0)
+        base_exclude = is_group_m | thumb_exclude  # positions never valid as targets
+
+        app_ids = list(self._app_ids)
+        random.shuffle(app_ids)
+        for app_id in app_ids:
+            app_sids = self._app_sids_arrs[app_id]
+            present_mask = pos_map[app_sids] >= 0
+            if present_mask.sum() < 2:
+                continue
+            present_sids = app_sids[present_mask]
+            present_positions = pos_map[present_sids]
+
+            xs = self._pos_x[present_positions]
+            ys = self._pos_y[present_positions]
+            cx = float(np.mean(xs))
+            cy = float(np.mean(ys))
+
+            dists = np.sqrt((xs - cx) ** 2 + (ys - cy) ** 2)
+            max_dist = float(dists.max())
+            if max_dist <= 0.5:
+                continue
+            oi = int(np.argmax(dists))
+            outlier_sid = int(present_sids[oi])
+            outlier_pos = int(present_positions[oi])
+
+            # Candidate positions: mutable, not outlier, not group, not excluded thumb.
+            not_outlier = self._mutable_arr != outlier_pos
+            candidate_mask = not_outlier & ~base_exclude
+            candidate_positions = self._mutable_arr[candidate_mask]
+            if len(candidate_positions) == 0:
+                continue
+
+            cand_xs = self._pos_x[candidate_positions]
+            cand_ys = self._pos_y[candidate_positions]
+            cand_dists = np.sqrt((cand_xs - cx) ** 2 + (cand_ys - cy) ** 2)
+            if float(cand_dists.min()) >= max_dist:
+                continue
+
+            best_target = int(candidate_positions[int(np.argmin(cand_dists))])
+            displaced = int(genome[best_target])
+            genome[best_target] = outlier_sid
+            genome[outlier_pos] = displaced
+            return True
+        return False
+
+    def _effort_swap(self, genome):
+        """Propose swapping a high importance×effort shortcut with a lower-effort position.
+
+        Addresses remaining effort cost without cheating: we don't hardcode positions.
+        We sample from the HIGH-COST end (many worse shortcuts = more candidates), then
+        pick the TARGET uniformly from any lower-effort position — fitness scoring and
+        selection decide whether the trade-off (effort vs adjacency) is worth it.
+        """
+        if len(self._mutable_arr) < 2 or len(self._sid_importance_arr) == 0:
+            return False
+        mutable_sids = genome[self._mutable_arr]
+        valid = (mutable_sids >= 0) & (mutable_sids < self.n_shortcuts)
+        if not valid.any():
+            return False
+        # Exclude group members from consideration
+        safe_sids = np.where(valid, mutable_sids, 0)
+        valid &= ~self._is_group_sid_lut[safe_sids]
+        if not valid.any():
+            return False
+
+        valid_positions = self._mutable_arr[valid]
+        valid_sids = mutable_sids[valid]
+        pos_efforts = self._pos_effort_arr[valid_positions]
+        sid_imps = self._sid_importance_arr[valid_sids]
+        costs = pos_efforts * sid_imps
+
+        # Pick one of the top-5 highest-cost shortcuts at random (not deterministic max,
+        # which would always target the same shortcut and prevent exploration).
+        top_k = min(5, len(costs))
+        top_idx = np.argpartition(costs, -top_k)[-top_k:]
+        chosen_i = int(top_idx[random.randrange(top_k)])
+        src_pos = int(valid_positions[chosen_i])
+        src_effort = float(pos_efforts[chosen_i])
+
+        if src_effort <= 0.0:
+            return False
+
+        # Target: prefer same-layer lower-effort positions to preserve adjacency clusters.
+        # Fall back to cross-layer if no same-layer candidates exist.
+        lower_mask = pos_efforts < src_effort
+        lower_mask[chosen_i] = False
+        candidates = valid_positions[lower_mask]
+        if len(candidates) == 0:
+            return False
+
+        src_layer = int(self._pos_layer_arr[src_pos])
+        same_layer_mask = self._pos_layer_arr[candidates] == src_layer
+        same_layer_candidates = candidates[same_layer_mask]
+        if len(same_layer_candidates) > 0 and random.random() < 0.75:
+            target_pos = int(same_layer_candidates[random.randrange(len(same_layer_candidates))])
+        else:
+            target_pos = int(candidates[random.randrange(len(candidates))])
+
+        displaced = int(genome[target_pos])
+        genome[target_pos] = int(genome[src_pos])
+        genome[src_pos] = displaced
+        return True
+
     def _do(self, problem, X, **kwargs):
         n = X.shape[0]
         prob = float(self.prob.value if hasattr(self.prob, "value") else self.prob)
@@ -705,6 +977,12 @@ class SwapMutation(Mutation):
                 handled[i] = True
                 continue
             if random.random() < self.random_assign_prob and self._random_reassign_one(X[i]):
+                handled[i] = True
+                continue
+            if random.random() < self.cluster_app_prob and self._cluster_app_shortcut(X[i]):
+                handled[i] = True
+                continue
+            if random.random() < self.effort_swap_prob and self._effort_swap(X[i]):
                 handled[i] = True
                 continue
 

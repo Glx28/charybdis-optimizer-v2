@@ -629,6 +629,7 @@ if NUMBA_AVAILABLE:
         mouse_button_x = np.full((32, 6), -1.0, dtype=np.float32)
         mouse_button_y = np.full((32, 6), -1.0, dtype=np.float32)
         mouse_button_effort = np.zeros((32, 6), dtype=np.float32)
+        mouse_button_importance = np.zeros((32, 6), dtype=np.float32)
         mouse_button_usage = np.zeros((32, 6), dtype=np.float32)
         mouse_non_right_count = np.zeros(32, dtype=np.int32)
         mouse_l7_count = 0
@@ -783,10 +784,13 @@ if NUMBA_AVAILABLE:
             if access_cost >= 999999.0:
                 access_cost = 40.0
                 access_layout += imp
-            # Toggle buttons cost more: they require a deliberate return action
+            # Toggle layer-access keys: exponential opportunity-cost for wasting
+            # low-effort positions. effort=0 (home row) → very high penalty;
+            # effort=2.75 (top corner) → near-zero. exp(-2*effort) gives ~250x ratio.
             pos_eff = pos_effort[i]
             if shortcut_access_target[sid] >= 0 and not shortcut_access_momentary[sid]:
-                pos_eff *= toggle_effort_multiplier
+                transparent_waste = 200.0 * math.exp(-2.0 * pos_effort[i])
+                pos_eff = pos_effort[i] + transparent_waste
             effort += imp * (pos_eff + access_cost)
             if 0 <= layer < 32 and shortcut_access_target[sid] < 0:
                 layer_demand[layer] += imp
@@ -869,6 +873,7 @@ if NUMBA_AVAILABLE:
                             mouse_button_x[layer, button] = pos_x[i]
                             mouse_button_y[layer, button] = pos_y[i]
                             mouse_button_effort[layer, button] = pos_effort[i]
+                            mouse_button_importance[layer, button] = imp
                             mouse_button_usage[layer, button] = shortcut_usage_count[sid]
                         else:
                             mouse_non_right_count[layer] += 1
@@ -1613,7 +1618,8 @@ if NUMBA_AVAILABLE:
                 if mouse_button_right[layer, button] <= 0:
                     continue
                 usage_scale = 1.0 + math.log1p(mouse_button_usage[layer, button]) * 0.35
-                candidate_penalty += mouse_button_effort[layer, button] * usage_scale * 400.0
+                imp_scale = mouse_button_importance[layer, button] if mouse_button_importance[layer, button] > 0.0 else 1.0
+                candidate_penalty += mouse_button_effort[layer, button] * imp_scale * usage_scale * 30.0
                 if mouse_button_right_thumb[layer, button] > 0:
                     candidate_penalty += 20000.0
             if mouse_button_right[layer, 1] > 0 and mouse_button_right[layer, 2] > 0:

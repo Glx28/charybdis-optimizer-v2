@@ -1,8 +1,9 @@
 evolution:
   pop_size: 1500            # was 900; more diversity, more GPU work per predict batch
-  n_generations: 30000
+  n_generations: 500000     # early stop governs; ~24h run
   crossover_prob: 0.7
   mutation_prob: 0.2
+  cluster_app_prob: 0.20
   seed: 42
   inject_seed: true
 surrogate:
@@ -28,7 +29,7 @@ exact_eval:
   parity_tolerance: 1e-4
 fitness:
   weights:
-    effort: 1.0
+    effort: 8.0
     adjacency: 1.5
     finger_balance: 0.8
     same_finger: 2.0
@@ -46,7 +47,7 @@ fitness:
     UpArrow: 4.0
     DownArrow: 4.0
   missing_important_threshold: 6.0
-  toggle_effort_multiplier: 2.5
+  toggle_effort_multiplier: 4.0
   violation_sub_weights:
     duplicate: 10.0
     l0_displacement: 50.0
@@ -64,7 +65,7 @@ fitness:
     access_layout: 3000.0
     raw_keyboard_completion_norwegian: 80000.0
     dynamic_mouse_layer: 200000.0
-    empty_position: 5.0
+    empty_position: 50.0
     layer_reachability: 50000.0
     layer_depth_penalty: 2000.0
     natural_mouse_layer_exists: 200000
@@ -74,6 +75,7 @@ fitness:
     - layer7_access
     - natural_mouse_layer_exists
     - layer_reachability
+    - toggle_back_to_l0
 output:
   checkpoint_interval: 500
   verbose: true

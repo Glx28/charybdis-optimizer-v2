@@ -1,4 +1,7 @@
 """Neural surrogate model for fast fitness approximation."""
+import copy
+import concurrent.futures
+import threading
 import numpy as np
 import torch
 import torch.nn as nn
@@ -89,6 +92,12 @@ class SurrogateTrainer:
                 print(f"  torch.compile failed, continuing eager: {exc}", flush=True)
         self.optimizer = torch.optim.Adam(self.surrogate.parameters(), lr=1e-3)
         self.surrogate.eval()
+        # Double-buffer for async retraining: _train_model trains in background,
+        # surrogate is the inference model. Weights are swapped after training completes.
+        self._train_model = None
+        self._retrain_lock = threading.Lock()
+        self._pending_mean = None
+        self._pending_std = None
 
     @staticmethod
     def _can_compile() -> bool:
@@ -140,6 +149,63 @@ class SurrogateTrainer:
         # Keep model in eval mode between retrains — predict() does not flip it
         self.surrogate.eval()
 
+    def train_on_copy(self, layouts: np.ndarray, exact_scores: np.ndarray,
+                      epochs: int = 10, batch_size: int = 1024):
+        """Train a private copy of the model; call swap_if_ready() to apply."""
+        # Deep-copy current inference model as starting point for training.
+        train_model = copy.deepcopy(self.surrogate)
+        train_model.to(self.device)
+        train_model.train()
+        optimizer = torch.optim.Adam(train_model.parameters(), lr=1e-3)
+        scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
+
+        mean = exact_scores.mean(axis=0)
+        std = exact_scores.std(axis=0) + 1e-6
+        normalized = (exact_scores - mean) / std
+
+        X = torch.tensor(layouts, dtype=torch.long, device=self.device)
+        Y = torch.tensor(normalized, dtype=torch.float32, device=self.device)
+        n = len(X)
+        batch_size = min(int(batch_size), n)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs), eta_min=1e-5)
+
+        for epoch in range(epochs):
+            total_loss = 0.0
+            order = torch.randperm(n, device=self.device)
+            for start in range(0, n, batch_size):
+                idx = order[start:start + batch_size]
+                optimizer.zero_grad(set_to_none=True)
+                with torch.amp.autocast("cuda", enabled=self.use_amp):
+                    pred = train_model(X.index_select(0, idx))
+                    loss = F.huber_loss(pred.float(), Y.index_select(0, idx), delta=1.0)
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
+                total_loss += loss.item() * idx.size(0)
+            scheduler.step()
+            avg_loss = total_loss / n
+            if epoch % 10 == 0:
+                print(f"  Surrogate epoch {epoch}: loss={avg_loss:.6f}", flush=True)
+        train_model.eval()
+
+        with self._retrain_lock:
+            self._train_model = train_model
+            self._pending_mean = mean
+            self._pending_std = std
+
+    def swap_if_ready(self) -> bool:
+        """Swap trained model weights into inference model if a retrain completed."""
+        with self._retrain_lock:
+            if self._train_model is None:
+                return False
+            self.surrogate.load_state_dict(self._train_model.state_dict())
+            self.mean = self._pending_mean
+            self.std = self._pending_std
+            self._train_model = None
+            self._pending_mean = None
+            self._pending_std = None
+        return True
+
     def predict(self, layouts: np.ndarray) -> np.ndarray:
         if self.mean is None:
             raise RuntimeError("Trainer has not been trained yet")
@@ -188,7 +254,7 @@ class SurrogateTrainer:
 
 class SurrogateManager:
     """Manages the surrogate during evolution."""
-    
+
     def __init__(self, surrogate: LayoutSurrogate, trainer: SurrogateTrainer,
                  retrain_every: int = 200, exact_eval_every: int = 50,
                  retrain_epochs: int = 10, retrain_batch_size: int = 1024,
@@ -203,7 +269,9 @@ class SurrogateManager:
         self.generation = 0
         self.exact_cache = []
         self.accuracy_history = []
-    
+        self._retrain_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self._retrain_future = None
+
     def should_retrain(self) -> bool:
         return self.generation > 0 and self.generation % self.retrain_every == 0
     
@@ -254,6 +322,63 @@ class SurrogateManager:
         r2_mean = float(np.mean(acc["r2"]))
         self.accuracy_history.append(r2_mean)
         print(f"  Surrogate R^2 = {r2_mean:.4f}", flush=True)
-    
+
+    def _build_retrain_batch(self):
+        """Sample training batch from cache; returns (layouts, scores) arrays."""
+        n_cache = len(self.exact_cache)
+        if self.max_retrain_samples > 0 and n_cache > self.max_retrain_samples:
+            recent_n = self.max_retrain_samples // 2
+            random_n = self.max_retrain_samples - recent_n
+            recent_idx = np.arange(n_cache - recent_n, n_cache)
+            history_limit = n_cache - recent_n
+            if history_limit > 0 and random_n > 0:
+                random_idx = np.random.choice(history_limit, size=random_n, replace=False)
+                indices = np.concatenate([random_idx, recent_idx])
+            else:
+                indices = recent_idx
+        else:
+            indices = np.arange(n_cache)
+        layouts = np.array([self.exact_cache[int(i)][0] for i in indices])
+        scores = np.array([self.exact_cache[int(i)][1] for i in indices])
+        return layouts, scores, n_cache
+
+    def async_retrain(self):
+        """Submit surrogate retrain to background thread; GA loop continues immediately."""
+        if len(self.exact_cache) < 100:
+            print(f"  Surrogate cache too small ({len(self.exact_cache)}), skipping retrain", flush=True)
+            return
+        # Wait for any previous retrain to finish before starting a new one
+        if self._retrain_future is not None and not self._retrain_future.done():
+            return
+        layouts, scores, n_cache = self._build_retrain_batch()
+        print(
+            f"  Async surrogate retrain submitted ({len(layouts)} of {n_cache} samples)...",
+            flush=True,
+        )
+        self._retrain_future = self._retrain_executor.submit(
+            self.trainer.train_on_copy,
+            layouts, scores, self.retrain_epochs, self.retrain_batch_size,
+        )
+
+    def maybe_collect_retrain(self) -> bool:
+        """If background retrain is done, swap the new model into inference. Returns True on swap."""
+        if self._retrain_future is None or not self._retrain_future.done():
+            return False
+        exc = self._retrain_future.exception()
+        self._retrain_future = None
+        if exc is not None:
+            print(f"  Async surrogate retrain failed: {exc}", flush=True)
+            return False
+        swapped = self.trainer.swap_if_ready()
+        if swapped:
+            layouts, scores, n_cache = self._build_retrain_batch()
+            acc = self.trainer.evaluate(
+                layouts[:min(500, len(layouts))], scores[:min(500, len(scores))]
+            )
+            r2_mean = float(np.mean(acc["r2"]))
+            self.accuracy_history.append(r2_mean)
+            print(f"  Surrogate R^2 = {r2_mean:.4f} (async swap)", flush=True)
+        return swapped
+
     def step(self):
         self.generation += 1

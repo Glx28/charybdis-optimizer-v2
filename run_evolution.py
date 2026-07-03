@@ -36,7 +36,7 @@ from pymoo.optimize import minimize
 from pymoo.core.callback import Callback
 
 
-def generate_random_layouts(layout, n):
+def generate_random_layouts(layout, n, warmstart_genome=None):
     from evolution import build_group_placements
 
     mutable = layout.mutable_indices
@@ -46,7 +46,6 @@ def generate_random_layouts(layout, n):
     if n <= 0:
         return layouts
 
-    layouts[0] = layout.genome.astype(np.int32).copy()
     frozen = layout.frozen_indices
     frozen_assigned = {int(sid) for sid in layout.genome[frozen] if sid >= 0}
 
@@ -60,7 +59,26 @@ def generate_random_layouts(layout, n):
         if sid not in frozen_assigned and sid not in group_sids_all
     ]
 
-    for i in range(1, n):
+    if warmstart_genome is not None:
+        layouts[0] = warmstart_genome.astype(np.int32).copy()
+        layouts[0, frozen] = layout.genome[frozen]  # ensure frozen positions are canonical
+        n_perturbed = min(n - 1, max(1, n // 5))
+        for i in range(1, n_perturbed + 1):
+            g = warmstart_genome.astype(np.int32).copy()
+            g[frozen] = layout.genome[frozen]
+            n_swaps = random.randint(20, 80)
+            ml = mutable.tolist() if hasattr(mutable, 'tolist') else list(mutable)
+            for _ in range(n_swaps):
+                ia = random.randrange(len(ml))
+                ib = random.randrange(len(ml))
+                g[ml[ia]], g[ml[ib]] = g[ml[ib]], g[ml[ia]]
+            layouts[i] = g
+        rand_start = n_perturbed + 1
+    else:
+        layouts[0] = layout.genome.astype(np.int32).copy()
+        rand_start = 1
+
+    for i in range(rand_start, n):
         layouts[i, frozen] = layout.genome[frozen]
         n_assign = min(len(mutable), len(available_sids))
         assigned = random.sample(available_sids, n_assign)
@@ -718,6 +736,22 @@ def main(argv=None):
 
     hard_constraints = config.get("fitness.hard_constraints", [])
 
+    # Try to warmstart from local search result
+    warmstart_genome = None
+    warmstart_path = os.path.join(args.output_dir, 'v2_local_search_result.json')
+    if os.path.exists(warmstart_path):
+        try:
+            with open(warmstart_path) as f:
+                ws = json.load(f)
+            # Use top-level 'genome' which is updated by each run's best find;
+            # 'best_exact' was set during local search with different scale factors.
+            warmstart_genome = np.array(ws['genome'], dtype=np.int32)
+            ws_score = ws.get('best_score', None)
+            score_str = f"score={ws_score:.4f}, gap={ws_score+49.30:+.2f}" if ws_score is not None else "score=N/A"
+            print(f"  Warmstart genome loaded from {warmstart_path} ({score_str})", flush=True)
+        except Exception as e:
+            print(f"  Warmstart load failed: {e}", flush=True)
+
     surrogate_enabled = bool(config.get("surrogate.enabled", False))
     evaluator = build_evaluator(config, layout)
     maybe_validate_exact_evaluator(config, layout, evaluator)
@@ -726,19 +760,45 @@ def main(argv=None):
     seed_result = evaluator.evaluate(layout)
     print(f"  Seed fitness (raw): effort={seed_result.objectives[0]*1:.0f}, adj={seed_result.objectives[1]*1:.0f}, viol={seed_result.objectives[2]*1:.0f}", flush=True)
 
-    # Compute robust scale factors from a small random sample (IQR-based, not seed-relative)
-    n_sample = 50
-    sample_layouts = generate_random_layouts(layout, n_sample)
-    sample_scores, _ = evaluate_exact_batch(
-        sample_layouts, layout, evaluator, perf=perf, label="scale_sample_eval",
-    )
-    q25 = np.percentile(sample_scores, 25, axis=0)
-    q75 = np.percentile(sample_scores, 75, axis=0)
-    iqr = q75 - q25
-    seed_scores = np.abs(seed_result.objectives)
-    scale_factors = np.maximum(iqr, seed_scores * 0.1)
-    scale_factors = np.maximum(scale_factors, 1.0)
-    print(f"  IQR scale factors: effort={scale_factors[0]:.2f}, adj={scale_factors[1]:.2f}, viol={scale_factors[2]:.2f}", flush=True)
+    # Compute or load stable IQR-based scale factors.
+    # Scale factors must be stable across runs so that scores are comparable and the
+    # optimizer doesn't over-weight objectives when the warmstart is already good.
+    # Problem: generate_random_layouts perturbs the warmstart, so as the warmstart
+    # improves the IQR shrinks, biasing the scale factors.
+    # Fix: compute once from a fresh (unbiased) random sample and cache to disk.
+    _scale_cache = "build/v2_scale_factors.json"
+    scale_factors = None
+    if os.path.exists(_scale_cache):
+        try:
+            with open(_scale_cache) as _f:
+                _cached = json.load(_f)
+            scale_factors = np.array(_cached["scale_factors"], dtype=np.float64)
+            print(f"  IQR scale factors (cached): effort={scale_factors[0]:.2f}, adj={scale_factors[1]:.2f}, viol={scale_factors[2]:.2f}", flush=True)
+        except Exception as _e:
+            print(f"  Scale cache load failed: {_e}; recomputing.", flush=True)
+            scale_factors = None
+
+    if scale_factors is None:
+        # Use a fresh layout (no warmstart) so IQR reflects the true random distribution.
+        # Problem: generate_random_layouts perturbs the warmstart genome, so as the warmstart
+        # improves, the IQR shrinks — biasing scale factors each run. Fix: compute from fresh.
+        _data_dir = str(config.get("data_dir", "data"))
+        fresh_layout = build_layout(_data_dir, config.get("fitness.weights", {}))
+        n_sample = 200  # more samples for stable IQR
+        sample_layouts = generate_random_layouts(fresh_layout, n_sample)
+        sample_scores, _ = evaluate_exact_batch(
+            sample_layouts, fresh_layout, evaluator, perf=perf, label="scale_sample_eval",
+        )
+        q25 = np.percentile(sample_scores, 25, axis=0)
+        q75 = np.percentile(sample_scores, 75, axis=0)
+        iqr = q75 - q25
+        seed_scores = np.abs(seed_result.objectives)
+        scale_factors = np.maximum(iqr, seed_scores * 0.1)
+        scale_factors = np.maximum(scale_factors, 1.0)
+        os.makedirs("build", exist_ok=True)
+        with open(_scale_cache, "w") as _f:
+            json.dump({"scale_factors": scale_factors.tolist()}, _f)
+        print(f"  IQR scale factors (computed, cached): effort={scale_factors[0]:.2f}, adj={scale_factors[1]:.2f}, viol={scale_factors[2]:.2f}", flush=True)
     evaluator = build_evaluator(config, layout, scale_factors=scale_factors)
     maybe_validate_exact_evaluator(config, layout, evaluator)
     seed_result = evaluator.evaluate(layout)
@@ -772,7 +832,7 @@ def main(argv=None):
         )
         n_initial = int(config.get("surrogate.initial_exact_samples", 1000))
         t0_train = time.perf_counter()
-        initial_layouts = generate_random_layouts(layout, n_initial)
+        initial_layouts = generate_random_layouts(layout, n_initial, warmstart_genome=warmstart_genome)
         initial_scores, _ = evaluate_exact_batch(
             initial_layouts, layout, evaluator, perf=perf, label="surrogate_initial_teacher_eval",
         )
@@ -806,9 +866,14 @@ def main(argv=None):
     )
     crossover_prob = config.get("evolution.crossover_prob", 0.7)
 
-    print("  All individuals start from fully random shortcut assignment (L0 thumb gets one random momentary hold).", flush=True)
+    if warmstart_genome is not None:
+        print(f"  Initial population: 1 warmstart + {pop_size // 5} perturbed + {pop_size - pop_size // 5 - 1} random.", flush=True)
+    else:
+        print("  All individuals start from fully random shortcut assignment (L0 thumb gets one random momentary hold).", flush=True)
     print(f"\nRunning evolution (CustomGA): pop={pop_size}, gens={n_gen}", flush=True)
     t0 = time.time()
+
+    initial_pop_X = generate_random_layouts(layout, pop_size, warmstart_genome=warmstart_genome)
 
     runner = CustomGARunner(
         layout=layout,
@@ -825,7 +890,7 @@ def main(argv=None):
         perf=perf,
         hard_constraints=hard_constraints,
     )
-    ga_result = runner.run(n_gen)
+    ga_result = runner.run(n_gen, initial_pop_X=initial_pop_X)
 
     t1 = time.time()
     print(f"\nEvolution completed in {t1-t0:.1f}s", flush=True)
