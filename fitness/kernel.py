@@ -547,6 +547,11 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
     else:
         reference_genome = np.asarray(reference_genome, dtype=np.int32)
 
+    # log1p lookup table for integer usage counts — exact, zero transcendental cost
+    max_usage_int = int(shortcut_usage_count.max()) + 10000 if len(shortcut_usage_count) > 0 else 10000
+    log1p_lut = np.log1p(np.arange(max_usage_int + 1, dtype=np.float64)).astype(np.float32)
+    # Per-position transparent waste: exp(-2*effort) precomputed (only ~8 distinct values)
+    pos_effort_waste = (200.0 * np.exp(-2.0 * pos_effort)).astype(np.float32)
     return (
         pos_effort, pos_layer, pos_finger, pos_hand, pos_is_thumb, pos_is_frozen, dist, trackball_dist, pos_x, pos_y,
         shortcut_importance, shortcut_app, shortcut_category, shortcut_base, shortcut_l0_only, shortcut_trackball,
@@ -562,6 +567,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         np.float32(missing_important_threshold),
         hard_constraint_indices, shortcut_key_group, np.int32(n_key_groups),
         np.float32(toggle_effort_multiplier),
+        log1p_lut, pos_effort_waste,
     )
 
 
@@ -578,8 +584,10 @@ if NUMBA_AVAILABLE:
         threshold, hard_constraint_indices,
         shortcut_key_group, n_key_groups,
         toggle_effort_multiplier,
+        log1p_lut, pos_effort_waste,
     ):
         n_pos = genome.shape[0]
+        lut_size = log1p_lut.shape[0]
         n_short = shortcut_importance.shape[0]
         n_apps = app_usage_weight.shape[0]
 
@@ -764,6 +772,38 @@ if NUMBA_AVAILABLE:
         group_sum_x = np.zeros(n_key_groups, dtype=np.float32)
         group_sum_y = np.zeros(n_key_groups, dtype=np.float32)
 
+        # Pre-scan: identify the candidate mouse layer before the effort loop so
+        # mouse button importance can be boosted dynamically on that layer.
+        # The candidate is the non-L0/L7 layer with the most right-hand non-thumb
+        # mouse buttons. This mirrors the natural_mouse_layer logic but runs early
+        # using only raw counts — no penalty computation needed here.
+        _mouse_right_count = np.zeros(32, dtype=np.int32)
+        for i in range(n_pos):
+            _sid = genome[i]
+            if _sid < 0 or _sid >= n_short:
+                continue
+            if not shortcut_is_mouse[_sid]:
+                continue
+            _btn = shortcut_mouse_button[_sid]
+            if _btn <= 0:
+                continue
+            _layer = pos_layer[i]
+            if _layer <= 0 or _layer == 7 or _layer >= 32:
+                continue
+            if pos_hand[i] == 1 and not pos_is_thumb[i]:  # right non-thumb
+                _mouse_right_count[_layer] += 1
+        candidate_mouse_layer = -1
+        _best_mc = 0
+        for _l in range(1, 32):
+            if _l == 7:
+                continue
+            if _mouse_right_count[_l] > _best_mc:
+                _best_mc = _mouse_right_count[_l]
+                candidate_mouse_layer = _l
+        # Only treat it as a candidate if at least 2 mouse buttons are there
+        if _best_mc < 2:
+            candidate_mouse_layer = -1
+
         for i in range(n_pos):
             sid = genome[i]
             if sid < 0 or sid >= n_short:
@@ -780,22 +820,30 @@ if NUMBA_AVAILABLE:
                 sid_layer_seen[sid, layer] = True
 
             imp = shortcut_importance[sid]
+            # Dynamic mouse-layer importance boost: when a mouse button is on the
+            # candidate mouse layer, its importance is boosted 3x. This makes
+            # effort-ordering within the mouse layer critical — MB1 at effort=1.0
+            # is 3x as bad as MB1 elsewhere. On non-mouse layers the static
+            # importance applies (lower signal, placement is less constrained).
+            if shortcut_is_mouse[sid] and shortcut_mouse_button[sid] > 0 and layer == candidate_mouse_layer:
+                imp = imp * 3.0
             access_cost = layer_access_cost[layer] if 0 <= layer < 32 else 0.0
             if access_cost >= 999999.0:
                 access_cost = 40.0
                 access_layout += imp
-            # Toggle layer-access keys: exponential opportunity-cost for wasting
-            # low-effort positions. effort=0 (home row) → very high penalty;
-            # effort=2.75 (top corner) → near-zero. exp(-2*effort) gives ~250x ratio.
+            # Toggle layer-access keys: precomputed exp(-2*effort) opportunity-cost.
             pos_eff = pos_effort[i]
             if shortcut_access_target[sid] >= 0 and not shortcut_access_momentary[sid]:
-                transparent_waste = 200.0 * math.exp(-2.0 * pos_effort[i])
-                pos_eff = pos_effort[i] + transparent_waste
-            effort += imp * (pos_eff + access_cost)
+                pos_eff = pos_effort[i] + pos_effort_waste[i]
+            # Quadratic effort-importance: high-imp keys at high-effort positions are
+            # punished superlinearly. imp×pos_eff×(1+imp×pos_eff×0.5) grows ~imp²
+            # while access_cost stays linear (layer structure is harder to change).
+            _pos_cost = pos_eff * imp * (1.0 + pos_eff * imp * 0.5)
+            effort += _pos_cost + imp * access_cost
             if 0 <= layer < 32 and shortcut_access_target[sid] < 0:
                 layer_demand[layer] += imp
                 if layer != 0 and layer != 7 and not pos_is_frozen[i]:
-                    usage_value = math.log1p(shortcut_usage_count[sid])
+                    _uc = int(shortcut_usage_count[sid]); usage_value = log1p_lut[_uc if _uc < lut_size else lut_size - 1]
                     general_value = imp * (1.0 + usage_value * 0.75)
                     if shortcut_is_mouse[sid]:
                         general_value *= 0.65
@@ -820,7 +868,7 @@ if NUMBA_AVAILABLE:
                     # workflow, but copies are intentionally harder to justify
                     # than ordinary workflow shortcuts.
                     exception_raw -= 4.0
-                exception_score = 1.0 / (1.0 + math.exp(-exception_raw * 0.45))
+                _xk = exception_raw * 0.45; exception_score = 0.5 + 0.5 * _xk / (1.0 + (_xk if _xk >= 0.0 else -_xk))
                 if exception_score > layer_base_exception[layer, base]:
                     layer_base_exception[layer, base] = exception_score
             app = shortcut_app[sid]
@@ -843,10 +891,10 @@ if NUMBA_AVAILABLE:
                             scroll_right_momentary_usage[layer] = shortcut_usage_count[sid]
                 proximity = 1.0 - trackball_dist[i] * 0.25
                 if proximity > 0.0:
-                    trackball += imp * proximity * (1.0 + math.log1p(shortcut_usage_count[sid]) * 0.25)
+                    _uc = int(shortcut_usage_count[sid]); trackball += imp * proximity * (1.0 + log1p_lut[_uc if _uc < lut_size else lut_size - 1] * 0.25)
                 if pos_is_thumb[i]:
                     trackball += imp * 2.0
-                usage_scale = 1.0 + math.log1p(shortcut_usage_count[sid]) * 0.25
+                _uc = int(shortcut_usage_count[sid]); usage_scale = 1.0 + log1p_lut[_uc if _uc < lut_size else lut_size - 1] * 0.25
                 effective = pos_effort[i] + access_cost
                 if shortcut_access_momentary[sid]:
                     effective += 0.7
@@ -881,7 +929,7 @@ if NUMBA_AVAILABLE:
                     hand_bias += imp * 5.0
                 if 0 <= layer < 32 and layer_right_required[layer]:
                     mouse_layer_access += imp * 100.0
-                usage_scale = 1.0 + math.log1p(shortcut_usage_count[sid]) * 0.25
+                _uc = int(shortcut_usage_count[sid]); usage_scale = 1.0 + log1p_lut[_uc if _uc < lut_size else lut_size - 1] * 0.25
                 effective = pos_effort[i] + access_cost
                 if 0 <= layer < 32 and layer_right_required[layer]:
                     effective += 4.0
@@ -951,11 +999,11 @@ if NUMBA_AVAILABLE:
                 dx = pos_x[i] - pos_x[j]
                 dy = pos_y[i] - pos_y[j]
                 dist_sq = dx * dx + dy * dy
-                distance_reward = math.exp(-dist_sq * 0.9)
+                distance_reward = 1.0 / (1.0 + dist_sq * 0.9)
                 exception_raw = shortcut_importance[sid_i] + duplicate_support[sid_i] * 10.0 - 16.0
                 if shortcut_is_mouse[sid_i]:
                     exception_raw -= 4.0
-                exception_score = 1.0 / (1.0 + math.exp(-exception_raw * 0.45))
+                _xk = exception_raw * 0.45; exception_score = 0.5 + 0.5 * _xk / (1.0 + (_xk if _xk >= 0.0 else -_xk))
                 familiarity += shortcut_importance[sid_i] * exception_score * exception_score * distance_reward
 
         # Adjacency
@@ -1022,8 +1070,8 @@ if NUMBA_AVAILABLE:
                     transition += 1.5
                 if layer_right_required[pos_layer[pos_a]] or layer_right_required[pos_layer[pos_b]]:
                     transition += 2.0
-                pair_weight = math.sqrt(shortcut_importance[sid_a] * shortcut_importance[sid_b])
-                usage_pair = 1.0 + math.log1p(shortcut_usage_count[sid_a] + shortcut_usage_count[sid_b]) * 0.2
+                pair_weight = (shortcut_importance[sid_a] + shortcut_importance[sid_b]) * 0.5
+                _ucp = int(shortcut_usage_count[sid_a] + shortcut_usage_count[sid_b]); usage_pair = 1.0 + log1p_lut[_ucp if _ucp < lut_size else lut_size - 1] * 0.2
                 mouse_workflow += pair_weight * usage_pair * transition
 
         for r in range(app_workflow_rows.shape[0]):
@@ -1071,7 +1119,7 @@ if NUMBA_AVAILABLE:
                             if uncertainty_factor > 0.75:
                                 uncertainty_factor = 0.75
                         exception_raw = avg_slot_value + max_support * 10.0 - 16.0
-                        exception_score = 1.0 / (1.0 + math.exp(-exception_raw * 0.45))
+                        _xk = exception_raw * 0.45; exception_score = 0.5 + 0.5 * _xk / (1.0 + (_xk if _xk >= 0.0 else -_xk))
                         novelty_cost = 0.15 + (1.0 - exception_score) * (1.0 - exception_score)
                         duplicate += unsupported * unsupported * uncertainty_factor * novelty_cost * (1.0 + avg_slot_value * 0.1)
 
@@ -1113,7 +1161,7 @@ if NUMBA_AVAILABLE:
                         exception_raw = shortcut_importance[sid] + duplicate_support[sid] * 10.0 - 16.0
                         if shortcut_is_mouse[sid]:
                             exception_raw -= 4.0
-                        exception_score = 1.0 / (1.0 + math.exp(-exception_raw * 0.45))
+                        _xk = exception_raw * 0.45; exception_score = 0.5 + 0.5 * _xk / (1.0 + (_xk if _xk >= 0.0 else -_xk))
                         novelty_cost = 0.15 + (1.0 - exception_score) * (1.0 - exception_score)
                         duplicate_value_gap += unsupported_extra * gap * uncertainty_factor * novelty_cost
 
@@ -1134,7 +1182,7 @@ if NUMBA_AVAILABLE:
                     exception_raw = shortcut_importance[sid] + duplicate_support[sid] * 10.0 - 16.0
                     if shortcut_is_mouse[sid]:
                         exception_raw -= 4.0
-                    exception_score = 1.0 / (1.0 + math.exp(-exception_raw * 0.45))
+                    _xk = exception_raw * 0.45; exception_score = 0.5 + 0.5 * _xk / (1.0 + (_xk if _xk >= 0.0 else -_xk))
                     novelty_cost = 0.15 + (1.0 - exception_score) * (1.0 - exception_score)
                     cross_dup += extra * extra * uncertainty_factor * novelty_cost
 
@@ -1612,12 +1660,12 @@ if NUMBA_AVAILABLE:
                     if mouse_button_right_thumb[layer, button] > 0:
                         right_thumb_count += 1
             missing_buttons = 5 - button_count
-            candidate_penalty = float(missing_buttons) * 15000.0
-            candidate_penalty += float(mouse_non_right_count[layer]) * 20000.0
+            candidate_penalty = float(missing_buttons) * 50000.0
+            candidate_penalty += float(mouse_non_right_count[layer]) * 40000.0
             for button in range(1, 6):
                 if mouse_button_right[layer, button] <= 0:
                     continue
-                usage_scale = 1.0 + math.log1p(mouse_button_usage[layer, button]) * 0.35
+                _um = int(mouse_button_usage[layer, button]); usage_scale = 1.0 + log1p_lut[_um if _um < lut_size else lut_size - 1] * 0.35
                 imp_scale = mouse_button_importance[layer, button] if mouse_button_importance[layer, button] > 0.0 else 1.0
                 candidate_penalty += mouse_button_effort[layer, button] * imp_scale * usage_scale * 30.0
                 if mouse_button_right_thumb[layer, button] > 0:
@@ -1639,7 +1687,7 @@ if NUMBA_AVAILABLE:
                 candidate_penalty += dist45 * 180.0
                 candidate_penalty += dy * 500.0
             if scroll_right_momentary[layer]:
-                usage_scale = 1.0 + math.log1p(scroll_right_momentary_usage[layer]) * 0.35
+                _us = int(scroll_right_momentary_usage[layer]); usage_scale = 1.0 + log1p_lut[_us if _us < lut_size else lut_size - 1] * 0.35
                 candidate_penalty += scroll_right_momentary_effort[layer] * usage_scale * 400.0
             else:
                 candidate_penalty += 25000.0
@@ -1683,7 +1731,7 @@ if NUMBA_AVAILABLE:
                     continue
                 if pos_is_frozen[i]:
                     continue
-                usage_relief = math.log1p(shortcut_usage_count[sid]) * 0.08
+                _ur = int(shortcut_usage_count[sid]); usage_relief = log1p_lut[_ur if _ur < lut_size else lut_size - 1] * 0.08
                 if usage_relief > 0.75:
                     usage_relief = 0.75
                 mouse_scattered += 0.35 + (1.0 - usage_relief)
@@ -1746,7 +1794,7 @@ if NUMBA_AVAILABLE:
                     threshold_ratio = 0.85
                     multiplier = 0.25
                 if overlap_ratio > threshold_ratio:
-                    demand = math.sqrt(max(layer_demand[layer_a], 1.0) * max(layer_demand[layer_b], 1.0))
+                    demand = (max(layer_demand[layer_a], 1.0) + max(layer_demand[layer_b], 1.0)) * 0.5
                     excess = overlap_ratio - threshold_ratio
                     layer_similarity += excess * excess * demand * multiplier
 
@@ -1782,7 +1830,10 @@ if NUMBA_AVAILABLE:
         #
         # Excluded: L0 (base typing), L7 (frozen), frozen positions, unreachable layers.
         # Soft pressure only; never a hard acceptance constraint.
-        empty_position = 0.0
+        # Empty-position penalty added directly to effort objective so it isn't
+        # drowned by the violation scale factor (2.3e12 vs effort scale ~39k).
+        # Soft sigmoid gate peaks at effort=0 (home row) and falls sharply;
+        # multiplier 5.0 makes each empty prime slot cost ~15 effort units.
         for i in range(n_pos):
             if genome[i] >= 0:
                 continue
@@ -1793,15 +1844,16 @@ if NUMBA_AVAILABLE:
                 continue
             if layer_access_cost[layer] >= 999999.0:
                 continue
-            ev = pos_effort[i]
-            pos_value = 1.0 / (1.0 + ev)
-            gate = 1.0 / (1.0 + math.exp(-8.0 * (pos_value - 0.5)))
+            _pv = 1.0 / (1.0 + pos_effort[i])
+            _xk = 8.0 * (_pv - 0.5)
+            gate = 0.5 + 0.5 * _xk / (1.0 + (_xk if _xk >= 0.0 else -_xk))
             lc = layer_access_cost[layer]
-            layer_factor = 2.0 / (1.0 + lc * 0.05)
-            if layer_factor > 3.0:
-                layer_factor = 3.0
-            demand_scale = 1.0 + math.log1p(layer_demand[layer]) * 0.1
-            empty_position += gate * layer_factor * demand_scale
+            layer_factor = 3.0 / (1.0 + lc * 0.15)
+            if layer_factor > 4.0:
+                layer_factor = 4.0
+            ld = layer_demand[layer]
+            demand_scale = 1.0 + ld / (1.0 + ld * 2.0) * 0.6
+            effort += gate * layer_factor * demand_scale * 20.0
 
         # Layer graph: reachability and depth penalty.
         total_demand = 0.0
@@ -1845,7 +1897,7 @@ if NUMBA_AVAILABLE:
         raw_scores[13] = access_layout
         raw_scores[14] = raw_keyboard_completion_norwegian
         raw_scores[15] = dynamic_mouse_layer
-        raw_scores[16] = empty_position
+        raw_scores[16] = 0.0  # empty_position now routed into effort objective directly
         raw_scores[17] = layer_reachability
         raw_scores[18] = layer_depth_penalty
         raw_scores[19] = 0.0 if natural_mouse_layer >= 0 else 1.0
@@ -1951,6 +2003,7 @@ if NUMBA_AVAILABLE:
         threshold, hard_constraint_indices,
         shortcut_key_group, n_key_groups,
         toggle_effort_multiplier,
+        log1p_lut, pos_effort_waste,
     ):
         batch = genomes.shape[0]
         n_constr = hard_constraint_indices.shape[0]
@@ -1969,6 +2022,7 @@ if NUMBA_AVAILABLE:
                 threshold, hard_constraint_indices,
                 shortcut_key_group, n_key_groups,
                 toggle_effort_multiplier,
+                log1p_lut, pos_effort_waste,
             )
             out[b] = obj
             constraints[b] = constr

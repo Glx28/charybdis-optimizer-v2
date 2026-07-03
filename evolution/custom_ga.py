@@ -127,6 +127,7 @@ class CustomGARunner:
         self.exact_history = []
         self._should_stop = False
         self.best_exact = None
+        self._relaxed_selection_until = 0  # gen until which to use diversity-preserving survival
 
     # ------------------------------------------------------------------
     # Helpers (ported from ExactEvalCallback)
@@ -235,14 +236,45 @@ class CustomGARunner:
     # Diversity injection
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _population_diversity(pop_X, n_sample=40):
+        """Mean pairwise Hamming distance over a random sample of genome pairs.
+
+        Returns a value in [0, 1] where 1 = all genomes completely different,
+        0 = all genomes identical. Sampling keeps this O(n_sample² × genome_len).
+        """
+        n = len(pop_X)
+        if n < 2:
+            return 1.0
+        idx = np.random.choice(n, size=min(n_sample, n), replace=False)
+        sample = pop_X[idx]
+        pairs = 0
+        total_diff = 0
+        genome_len = sample.shape[1]
+        for i in range(len(sample)):
+            for j in range(i + 1, len(sample)):
+                total_diff += int(np.sum(sample[i] != sample[j]))
+                pairs += 1
+        return total_diff / max(pairs * genome_len, 1)
+
     def _inject_diversity(self, pop_X, pop_F, pop_cv, gen):
-        # Trigger on surrogate stagnation OR archive stagnation.
-        # Cooldown of 1500 gens (3 checkpoints) prevents re-firing at every checkpoint.
-        archive_stagnant = self.archive_stagnation >= 3  # 1500 gens at checkpoint_every=500
-        if self.stagnation_count < 1200 and not archive_stagnant:
+        # Trigger conditions (any one suffices):
+        #   1. Surrogate stagnation (stagnation_count >= 1200)
+        #   2. Archive stagnation (2+ checkpoint cycles with no improvement)
+        #   3. Population genetic diversity collapsed below threshold
+        archive_stagnant = self.archive_stagnation >= 2  # 1000 gens at checkpoint_every=500
+        diversity = self._population_diversity(pop_X)
+        diversity_collapsed = diversity < 0.08  # genomes are >92% identical on average
+        if self.stagnation_count < 1200 and not archive_stagnant and not diversity_collapsed:
             return pop_X, pop_F, pop_cv
-        if gen - self.last_diversity_reset < 1500:
+        if gen - self.last_diversity_reset < 500:
             return pop_X, pop_F, pop_cv
+        trigger = (
+            "surrogate_stagnation" if self.stagnation_count >= 1200
+            else "archive_stagnation" if archive_stagnant
+            else "diversity_collapsed"
+        )
+        print(f"    Diversity injection trigger: {trigger} (pop_diversity={diversity:.3f})", flush=True)
 
         n = len(pop_X)
         scalar = _scalar(pop_F, pop_cv)
@@ -302,12 +334,27 @@ class CustomGARunner:
                 tgt_pos = int(lower[random.randrange(len(lower))])
                 g[tgt_pos], g[src_pos] = int(g[src_pos]), int(g[tgt_pos])
 
-        new_genomes = []
+        # Bring in fresh random genomes to break out of the local basin.
+        # All-perturbation injection traps the algorithm after repeated firing.
+        from run_evolution import generate_random_layouts
         n_replace = len(replace_idx)
+        n_random = max(4, n_replace // 2)  # 50% fully random for stronger basin escape
+        random_pool = generate_random_layouts(self.layout, n_random)
+
+        new_genomes = []
+        rand_assigned = 0
         for i, dst in enumerate(replace_idx):
+            # Use random genomes for the last 25% of slots.
+            if i >= n_replace - n_random and rand_assigned < n_random:
+                g = random_pool[rand_assigned].copy()
+                rand_assigned += 1
+                pop_X[dst] = g
+                new_genomes.append(g)
+                continue
+
             g = base.copy()
             # Gradient: 25% light random → 30% medium random → 25% effort-targeted → 20% mixed
-            t = i / max(n_replace - 1, 1)
+            t = i / max(n_replace - n_random - 1, 1)
             if t < 0.25:
                 # Light random: stay close to global best
                 n_swaps = random.randint(5, 25)
@@ -326,7 +373,6 @@ class CustomGARunner:
                     g[pool[ia]], g[pool[ib]] = g[pool[ib]], g[pool[ia]]
             elif t < 0.80:
                 # Effort-targeted: move high-cost shortcuts to lower-effort positions.
-                # Specifically addresses the effort component (2.82) that's blocking improvement.
                 _effort_targeted_swaps(g, random.randint(30, 100))
             else:
                 # Mixed: random + effort-targeted
@@ -381,8 +427,10 @@ class CustomGARunner:
 
         self.last_diversity_reset = gen
         # Reset archive stagnation so injection doesn't re-fire at the very next checkpoint.
-        # The algorithm now has 3 full checkpoint cycles (1500 gens) to escape the plateau.
         self.archive_stagnation = 0
+        # Protect injected diverse genomes for 75 gens: use elitism+random survival
+        # so random genomes can't immediately be killed off by the elite pool.
+        self._relaxed_selection_until = gen + 75
 
         since_best = (gen - self.global_best_generation) if self.global_best_generation else "?"
         print(
@@ -523,6 +571,14 @@ class CustomGARunner:
             pop_X = generate_random_layouts(self.layout, self.pop_size)
         pop_X = pop_X.astype(np.int32)
 
+        # Remove illegal momentary-hold-to-own-layer placements from the warmstart
+        # genome (slot 0). These can't arise from valid mutations but may be present
+        # in checkpoints from before the rule was enforced.
+        if hasattr(self.mutation, 'sanitize_self_ref_momentary'):
+            n_cleared = self.mutation.sanitize_self_ref_momentary(pop_X[0])
+            if n_cleared > 0:
+                print(f"    Warmstart sanitized: {n_cleared} self-ref momentary hold keys cleared.", flush=True)
+
         # Initial surrogate evaluation
         sm = self.surrogate_manager
         if sm is not None and sm.trainer.mean is not None:
@@ -532,7 +588,9 @@ class CustomGARunner:
             pop_F, _ = self.evaluator.evaluate_batch(pop_X)
             if self.perf:
                 self.perf.add("exact_eval", time.perf_counter() - t0)
-        pop_cv = None  # constraint violations only tracked at checkpoints
+        # constraint violations: tracked via mini_eval splice (see below)
+        # Initialised as zeros; updated in-place whenever exact evaluations run.
+        pop_cv = np.zeros((self.pop_size, 5), dtype=np.float32)
 
         # Exact-evaluate slot 0 (warmstart) so the surrogate can't misprice it and
         # so it is immediately registered as the initial global best. Without this,
@@ -540,6 +598,8 @@ class CustomGARunner:
         # population member as global best — discarding the warmstart's quality.
         ws_F, ws_G = self.evaluator.evaluate_batch(pop_X[:1].astype(np.int32))
         pop_F[0] = ws_F[0]
+        if ws_G.shape[1] > 0:
+            pop_cv[0] = np.maximum(ws_G[0], 0)
         if sm is not None:
             sm.add_exact_evaluations(pop_X[:1].astype(np.int32), ws_F)
         ws_total = float(ws_F[0].sum())
@@ -594,6 +654,10 @@ class CustomGARunner:
                 mini_F, mini_G = mini_future.result()
                 children_F[mini_idx] = mini_F
                 sm.add_exact_evaluations(mini_batch, mini_F)
+                # Track constraint violations for mini-eval children so hard constraints
+                # propagate into survival selection via _scalar(F, cv).
+                children_cv = np.zeros((len(children_X), mini_G.shape[1]), dtype=np.float32)
+                children_cv[mini_idx] = np.maximum(mini_G, 0)
                 # Check if any mini-eval genome beats the global_best.
                 # Only run the full acceptance report (expensive) when the score is promising.
                 mini_totals = mini_F.sum(axis=1)
@@ -616,17 +680,32 @@ class CustomGARunner:
                         )
             else:
                 t0 = time.perf_counter()
-                children_F, _ = self.evaluator.evaluate_batch(children_X)
+                children_F, children_G = self.evaluator.evaluate_batch(children_X)
+                children_cv = np.maximum(children_G, 0)
                 if self.perf:
                     self.perf.add("exact_eval", time.perf_counter() - t0)
 
             # --- (µ+λ) survival: keep best pop_size from parents + children ---
             all_X = np.concatenate([pop_X, children_X], axis=0)
             all_F = np.concatenate([pop_F, children_F], axis=0)
-            all_scalar = _scalar(all_F)
-            survivors = np.argpartition(all_scalar, self.pop_size)[: self.pop_size]
+            all_cv = np.concatenate([pop_cv, children_cv], axis=0) if 'children_cv' in dir() else None
+            all_scalar = _scalar(all_F, all_cv)
+            n_pop = self.pop_size
+            if gen < self._relaxed_selection_until:
+                # Post-injection diversity protection: keep top 10% elite + random from rest.
+                # Prevents random injected genomes from being immediately eliminated by
+                # competition with the fully-converged elite pool.
+                elite_n = max(2, n_pop // 10)
+                elite_idx = np.argpartition(all_scalar, elite_n)[:elite_n]
+                remaining = np.setdiff1d(np.arange(len(all_scalar)), elite_idx)
+                random_n = n_pop - elite_n
+                rand_idx = remaining[np.random.choice(len(remaining), min(random_n, len(remaining)), replace=False)]
+                survivors = np.concatenate([elite_idx, rand_idx])
+            else:
+                survivors = np.argpartition(all_scalar, n_pop)[:n_pop]
             pop_X = all_X[survivors].astype(np.int32)
             pop_F = all_F[survivors]
+            pop_cv = all_cv[survivors] if all_cv is not None else pop_cv
 
             # --- Adaptive mutation rate ---
             best_quality = float(pop_F.sum(axis=1).min())

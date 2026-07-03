@@ -34,12 +34,12 @@ fitness:
     finger_balance: 0.8
     same_finger: 2.0
     violations: 120.0
-    workflow_coherence: 30.0
+    workflow_coherence: 20.0
     trackball_proximity: 5.0
     app_coherence: 5.0
-    familiarity: 12.0
-    layer_similarity: 8.0
-    everything_layer: 8.0
+    familiarity: 6.0
+    layer_similarity: 4.0
+    everything_layer: 4.0
   shortcut_importance_overrides:
     Win+S: 12.0
     LeftArrow: 4.0
@@ -64,12 +64,12 @@ fitness:
     duplicate_value_gap: 500.0
     access_layout: 3000.0
     raw_keyboard_completion_norwegian: 80000.0
-    dynamic_mouse_layer: 200000.0
+    dynamic_mouse_layer: 500000.0
     empty_position: 50.0
     layer_reachability: 50000.0
     layer_depth_penalty: 2000.0
     natural_mouse_layer_exists: 200000
-    toggle_back_to_l0: 50000.0
+    toggle_back_to_l0: 150000000000.0
   hard_constraints:
     - missing_important
     - layer7_access
