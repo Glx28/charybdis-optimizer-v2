@@ -1,4 +1,5 @@
 """Neural surrogate model for fast fitness approximation."""
+import contextlib
 import copy
 import concurrent.futures
 import threading
@@ -98,6 +99,13 @@ class SurrogateTrainer:
         self._retrain_lock = threading.Lock()
         self._pending_mean = None
         self._pending_std = None
+        # Separate CUDA streams so background retraining does not block inference.
+        if torch.cuda.is_available():
+            self._inference_stream = torch.cuda.Stream()
+            self._training_stream = torch.cuda.Stream()
+        else:
+            self._inference_stream = None
+            self._training_stream = None
 
     @staticmethod
     def _can_compile() -> bool:
@@ -124,28 +132,34 @@ class SurrogateTrainer:
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer, T_max=max(1, epochs), eta_min=1e-5
         )
-        for epoch in range(epochs):
-            total_loss = 0.0
-            order = torch.randperm(n, device=self.device)
-            for start in range(0, n, batch_size):
-                idx = order[start:start + batch_size]
-                batch_x = X.index_select(0, idx)
-                batch_y = Y.index_select(0, idx)
-                self.optimizer.zero_grad(set_to_none=True)
-                with torch.amp.autocast("cuda", enabled=self.use_amp):
-                    pred = self.surrogate(batch_x)
-                    # Huber loss: robust to fitness outliers (violations span many orders of magnitude)
-                    loss = F.huber_loss(pred.float(), batch_y, delta=1.0)
-                self.scaler.scale(loss).backward()
-                self.scaler.step(self.optimizer)
-                self.scaler.update()
-                total_loss += loss.item() * batch_x.size(0)
-            scheduler.step()
+        stream_ctx = (
+            torch.cuda.stream(self._training_stream)
+            if self._training_stream is not None
+            else contextlib.nullcontext()
+        )
+        with stream_ctx:
+            for epoch in range(epochs):
+                total_loss = 0.0
+                order = torch.randperm(n, device=self.device)
+                for start in range(0, n, batch_size):
+                    idx = order[start:start + batch_size]
+                    batch_x = X.index_select(0, idx)
+                    batch_y = Y.index_select(0, idx)
+                    self.optimizer.zero_grad(set_to_none=True)
+                    with torch.amp.autocast("cuda", enabled=self.use_amp):
+                        pred = self.surrogate(batch_x)
+                        # Huber loss: robust to fitness outliers (violations span many orders of magnitude)
+                        loss = F.huber_loss(pred.float(), batch_y, delta=1.0)
+                    self.scaler.scale(loss).backward()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                    total_loss += loss.item() * idx.size(0)
+                scheduler.step()
 
-            avg_loss = total_loss / n
-            self.history.append(avg_loss)
-            if epoch % 10 == 0:
-                print(f"  Surrogate epoch {epoch}: loss={avg_loss:.6f}")
+                avg_loss = total_loss / n
+                self.history.append(avg_loss)
+                if epoch % 10 == 0:
+                    print(f"  Surrogate epoch {epoch}: loss={avg_loss:.6f}")
         # Keep model in eval mode between retrains — predict() does not flip it
         self.surrogate.eval()
 
@@ -169,23 +183,29 @@ class SurrogateTrainer:
         batch_size = min(int(batch_size), n)
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max(1, epochs), eta_min=1e-5)
 
-        for epoch in range(epochs):
-            total_loss = 0.0
-            order = torch.randperm(n, device=self.device)
-            for start in range(0, n, batch_size):
-                idx = order[start:start + batch_size]
-                optimizer.zero_grad(set_to_none=True)
-                with torch.amp.autocast("cuda", enabled=self.use_amp):
-                    pred = train_model(X.index_select(0, idx))
-                    loss = F.huber_loss(pred.float(), Y.index_select(0, idx), delta=1.0)
-                scaler.scale(loss).backward()
-                scaler.step(optimizer)
-                scaler.update()
-                total_loss += loss.item() * idx.size(0)
-            scheduler.step()
-            avg_loss = total_loss / n
-            if epoch % 10 == 0:
-                print(f"  Surrogate epoch {epoch}: loss={avg_loss:.6f}", flush=True)
+        stream_ctx = (
+            torch.cuda.stream(self._training_stream)
+            if self._training_stream is not None
+            else contextlib.nullcontext()
+        )
+        with stream_ctx:
+            for epoch in range(epochs):
+                total_loss = 0.0
+                order = torch.randperm(n, device=self.device)
+                for start in range(0, n, batch_size):
+                    idx = order[start:start + batch_size]
+                    optimizer.zero_grad(set_to_none=True)
+                    with torch.amp.autocast("cuda", enabled=self.use_amp):
+                        pred = train_model(X.index_select(0, idx))
+                        loss = F.huber_loss(pred.float(), Y.index_select(0, idx), delta=1.0)
+                    scaler.scale(loss).backward()
+                    scaler.step(optimizer)
+                    scaler.update()
+                    total_loss += loss.item() * idx.size(0)
+                scheduler.step()
+                avg_loss = total_loss / n
+                if epoch % 10 == 0:
+                    print(f"  Surrogate epoch {epoch}: loss={avg_loss:.6f}", flush=True)
         train_model.eval()
 
         with self._retrain_lock:
@@ -213,7 +233,12 @@ class SurrogateTrainer:
         # Use int32 for H2D transfer — halves bandwidth vs int64, free GPU cast in forward().
         layouts = np.asarray(layouts, dtype=np.int32)
         n = layouts.shape[0]
-        with torch.no_grad(), torch.amp.autocast("cuda", enabled=self.use_amp):
+        stream_ctx = (
+            torch.cuda.stream(self._inference_stream)
+            if self._inference_stream is not None
+            else contextlib.nullcontext()
+        )
+        with torch.no_grad(), torch.amp.autocast("cuda", enabled=self.use_amp), stream_ctx:
             if str(self.device).startswith("cuda"):
                 if self._predict_buffer is None or self._predict_buffer.shape[0] < n or self._predict_buffer.shape[1] != layouts.shape[1]:
                     self._predict_buffer = torch.empty((n, layouts.shape[1]), dtype=torch.int32, device=self.device)
@@ -222,8 +247,8 @@ class SurrogateTrainer:
                 X = self._predict_buffer[:n]
             else:
                 X = torch.from_numpy(layouts).to(self.device)
-            pred = self.surrogate(X).float().cpu().numpy()
-        return pred * self.std + self.mean
+            pred = self.surrogate(X).float().cpu()
+        return pred.numpy() * self.std + self.mean
     
     def evaluate(self, layouts: np.ndarray, exact_scores: np.ndarray) -> dict:
         pred = self.predict(layouts)

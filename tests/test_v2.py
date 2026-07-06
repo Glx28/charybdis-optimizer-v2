@@ -1933,6 +1933,8 @@ class TestEmptyPositionPenalty(unittest.TestCase):
             "mouse_layer_access", "arrow_scattered", "mouse_scattered", "layer7_access",
             "duplicate_value_gap", "access_layout", "raw_keyboard_completion_norwegian",
             "dynamic_mouse_layer", "natural_mouse_layer_exists",
+            "layer_reachability", "layer_depth_penalty", "toggle_back_to_l0",
+            "mouse_hold_position_conflict", "mouse_layer_depth_penalty",
         ]}
         vweights["empty_position"] = empty_position_weight
         from fitness.evaluator import FitnessEvaluator
@@ -2488,6 +2490,301 @@ class TestMouseLayerAcceptanceTier(unittest.TestCase):
         report = _dynamic_mouse_layer_report(layout)
         self.assertFalse(report["acceptance_pass"],
                          "L7 must not satisfy the mouse layer check even with MB1-5 on it")
+
+
+class TestSwapMutationNumba(unittest.TestCase):
+    def _build_simple_mutation_layout(self):
+        """Layout with frozen positions, a group, and mutable positions."""
+        positions = tuple(
+            Position(i, 1, float(i % 6), float(i // 6), "left" if i < 6 else "right", 1, 1.0)
+            for i in range(12)
+        )
+        shortcuts = tuple([
+            Shortcut(0, "LeftArrow", "Left", "Nav", 1.0, base_key="LeftArrow"),
+            Shortcut(1, "UpArrow", "Up", "Nav", 1.0, base_key="UpArrow"),
+            Shortcut(2, "DownArrow", "Down", "Nav", 1.0, base_key="DownArrow"),
+            Shortcut(3, "RightArrow", "Right", "Nav", 1.0, base_key="RightArrow"),
+            Shortcut(4, "@access:L2:hold", "L2 hold", "Layer Access", 5.0,
+                     is_layer_access=True, access_target_layer=2, access_is_momentary=True),
+            Shortcut(5, "@access:L2:toggle", "L2 toggle", "Layer Access", 5.0,
+                     is_layer_access=True, access_target_layer=2, access_is_momentary=False),
+            Shortcut(6, "@access:L0:toggle", "L0 return", "Layer Access", 5.0,
+                     is_layer_access=True, access_target_layer=0, access_is_momentary=False),
+            *[Shortcut(i, f"K{i}", "", "App", 1.0) for i in range(7, 12)],
+        ])
+        frozen = np.array([False] * 12, dtype=np.bool_)
+        frozen[0] = True
+        genome = np.arange(12, dtype=np.int32)
+        layout = Layout(genome, positions, shortcuts, frozen)
+        return layout
+
+    def test_numba_kernel_preserves_invariants(self):
+        """Numba-accelerated mutations must not touch frozen positions or scatter groups."""
+        layout = self._build_simple_mutation_layout()
+        mutation = SwapMutation(
+            prob=0.5,
+            frozen_mask=layout.frozen_mask,
+            layout=layout,
+            mouse_workflow_prob=0.0,
+            l7_access_prob=0.0,
+            group_overwrite_prob=0.0,
+            optional_arrow_drop_prob=0.0,
+            bulk_assign_prob=0.0,
+            cluster_app_prob=0.0,
+            random_assign_prob=0.5,
+            effort_swap_prob=0.5,
+            smart_duplicate_prob=0.5,
+        )
+        np.random.seed(42)
+        random.seed(42)
+        pop = np.tile(layout.genome.astype(np.int32), (200, 1))
+        # introduce some empty slots and duplicates
+        pop[pop == 11] = -1
+        pop[:, 4] = 4
+        out = mutation._do(None, pop.copy())
+
+        # Frozen position 0 must be unchanged.
+        self.assertTrue(np.all(out[:, 0] == layout.genome[0]))
+        # Arrow group sids 0-3 must still occupy only positions 0-3 (group overwrite disabled).
+        for sid in range(4):
+            for row in out:
+                pos = int(np.where(row == sid)[0][0]) if sid in row else -1
+                if pos >= 0:
+                    self.assertIn(pos, [0, 1, 2, 3])
+
+    def test_numba_and_python_fallback_similar_mutation_rates(self):
+        """Numba path and pure-Python fallback should mutate a similar fraction."""
+        import evolution
+        layout = self._build_simple_mutation_layout()
+        mutation = SwapMutation(
+            prob=0.5,
+            frozen_mask=layout.frozen_mask,
+            layout=layout,
+            mouse_workflow_prob=0.0,
+            l7_access_prob=0.0,
+            group_overwrite_prob=0.0,
+            optional_arrow_drop_prob=0.0,
+            bulk_assign_prob=0.0,
+            cluster_app_prob=0.0,
+            random_assign_prob=0.5,
+            effort_swap_prob=0.5,
+            smart_duplicate_prob=0.5,
+        )
+        n = 500
+        np.random.seed(123)
+        random.seed(123)
+        pop = np.tile(layout.genome.astype(np.int32), (n, 1))
+        pop[pop == 11] = -1
+
+        # Numba path
+        out_numba = mutation._do(None, pop.copy())
+        changed_numba = np.sum(np.any(out_numba != pop, axis=1))
+
+        # Force Python fallback by patching NUMBA_AVAILABLE
+        orig = evolution.NUMBA_AVAILABLE
+        try:
+            evolution.NUMBA_AVAILABLE = False
+            np.random.seed(123)
+            random.seed(123)
+            out_py = mutation._do(None, pop.copy())
+        finally:
+            evolution.NUMBA_AVAILABLE = orig
+        changed_py = np.sum(np.any(out_py != pop, axis=1))
+
+        # Both should mutate a non-trivial fraction of genomes.
+        self.assertGreater(changed_numba, n * 0.1)
+        self.assertGreater(changed_py, n * 0.1)
+        # Rates should be within 20 percentage points (different RNGs, same probabilities).
+        self.assertLess(abs(changed_numba - changed_py) / n, 0.20)
+
+    def test_numba_kernel_is_deterministic_for_same_seeds(self):
+        """Calling the Numba kernel directly with the same seeds must be deterministic."""
+        from evolution import _mutate_batch_numba
+        layout = self._build_simple_mutation_layout()
+        mutation = SwapMutation(
+            prob=0.0,
+            frozen_mask=layout.frozen_mask,
+            layout=layout,
+            mouse_workflow_prob=0.0,
+            l7_access_prob=0.0,
+            group_overwrite_prob=0.0,
+            optional_arrow_drop_prob=0.0,
+            bulk_assign_prob=0.0,
+            cluster_app_prob=0.0,
+            random_assign_prob=0.5,
+            effort_swap_prob=0.5,
+            smart_duplicate_prob=0.5,
+        )
+        n = 50
+        pop = np.tile(layout.genome.astype(np.int32), (n, 1))
+        pop[pop == 11] = -1
+        handled = np.zeros(n, dtype=np.bool_)
+        seeds = np.random.randint(0, 2**63, size=n, dtype=np.uint64)
+        probs = np.array([0.5, 0.5, 0.5, 0.0, 0.0, 0.0], dtype=np.float64)
+        out1 = pop.copy()
+        _mutate_batch_numba(
+            out1, handled.copy(), probs, seeds,
+            mutation._mutable_arr,
+            mutation._pos_layer_arr,
+            mutation._pos_hand_arr,
+            mutation._pos_is_thumb_arr,
+            mutation._pos_effort_arr,
+            mutation._sid_importance_arr,
+            mutation._access_target_lut,
+            mutation._access_is_mo_lut,
+            mutation._mo_access_target_lut,
+            mutation._is_group_sid_lut,
+            mutation._is_important_sid_lut,
+            np.int32(mutation._return_toggle_sid if mutation._return_toggle_sid is not None else -1),
+            mutation._dup_candidate_arr,
+            mutation._dup_exp_w,
+            mutation._frozen_sid_counts,
+            mutation._assignable_arr,
+            mutation._layer_mutable_flat,
+            mutation._layer_mutable_start,
+            mutation._mouse_button_sids,
+            mutation._toggle_access_sids_arr,
+            np.int32(mutation.n_shortcuts),
+        )
+        out2 = pop.copy()
+        _mutate_batch_numba(
+            out2, handled.copy(), probs, seeds,
+            mutation._mutable_arr,
+            mutation._pos_layer_arr,
+            mutation._pos_hand_arr,
+            mutation._pos_is_thumb_arr,
+            mutation._pos_effort_arr,
+            mutation._sid_importance_arr,
+            mutation._access_target_lut,
+            mutation._access_is_mo_lut,
+            mutation._mo_access_target_lut,
+            mutation._is_group_sid_lut,
+            mutation._is_important_sid_lut,
+            np.int32(mutation._return_toggle_sid if mutation._return_toggle_sid is not None else -1),
+            mutation._dup_candidate_arr,
+            mutation._dup_exp_w,
+            mutation._frozen_sid_counts,
+            mutation._assignable_arr,
+            mutation._layer_mutable_flat,
+            mutation._layer_mutable_start,
+            mutation._mouse_button_sids,
+            mutation._toggle_access_sids_arr,
+            np.int32(mutation.n_shortcuts),
+        )
+        np.testing.assert_array_equal(out1, out2)
+
+    def test_numba_random_reassign_pairs_return_toggle(self):
+        """Numba random_reassign must place a return toggle when creating a toggle access."""
+        from evolution import _numba_random_reassign_one
+        # Build a layout with mutable positions on layer 2 so the return toggle has a home.
+        positions = tuple(
+            Position(i, 1 if i < 6 else 2, float(i % 6), float(i // 6), "left" if i < 6 else "right", 1, 1.0)
+            for i in range(12)
+        )
+        shortcuts = tuple([
+            Shortcut(0, "LeftArrow", "Left", "Nav", 1.0, base_key="LeftArrow"),
+            Shortcut(1, "UpArrow", "Up", "Nav", 1.0, base_key="UpArrow"),
+            Shortcut(2, "DownArrow", "Down", "Nav", 1.0, base_key="DownArrow"),
+            Shortcut(3, "RightArrow", "Right", "Nav", 1.0, base_key="RightArrow"),
+            Shortcut(4, "@access:L2:toggle", "L2 toggle", "Layer Access", 5.0,
+                     is_layer_access=True, access_target_layer=2, access_is_momentary=False),
+            Shortcut(5, "@access:L0:toggle", "L0 return", "Layer Access", 5.0,
+                     is_layer_access=True, access_target_layer=0, access_is_momentary=False),
+            *[Shortcut(i, f"K{i}", "", "App", 1.0) for i in range(6, 12)],
+        ])
+        frozen = np.array([False] * 12, dtype=np.bool_)
+        genome = np.arange(12, dtype=np.int32)
+        layout = Layout(genome, positions, shortcuts, frozen)
+        mutation = SwapMutation(prob=0.0, frozen_mask=layout.frozen_mask, layout=layout)
+
+        # Force assignable pool to only the L2 toggle so random_reassign must place it.
+        mutation._assignable_arr = np.array([4], dtype=np.int32)
+
+        g = genome.copy()
+        g[5] = 11  # non-group position on layer 1
+        state = np.array([42], dtype=np.uint64)
+        ok = _numba_random_reassign_one(
+            g, state,
+            mutation._mutable_arr,
+            mutation._pos_layer_arr,
+            mutation._assignable_arr,
+            mutation._is_group_sid_lut,
+            mutation._is_important_sid_lut,
+            mutation._access_target_lut,
+            mutation._mo_access_target_lut,
+            mutation.n_shortcuts,
+            mutation._toggle_access_sids_arr,
+            np.int32(mutation._return_toggle_sid),
+            mutation._layer_mutable_flat,
+            mutation._layer_mutable_start,
+        )
+        self.assertTrue(ok)
+        self.assertIn(4, g, "L2 toggle was not placed")
+        self.assertIn(5, g, "Return-to-L0 toggle missing on layer 2")
+
+
+class TestCudaExactEvalParity(unittest.TestCase):
+    """Parity between the CUDA exact-eval kernel and the Numba fallback."""
+
+    def _make_evaluator(self):
+        from core.loader import build_layout
+        from config import Config
+        config = Config.load("config_v2.yaml")
+        layout = build_layout("data", config.raw.get("fitness", {}))
+        return FitnessEvaluator(
+            weights=config.get("fitness.weights", {}),
+            reference_layout=layout,
+            violation_weights=config.get("fitness.violation_sub_weights", {}),
+            missing_important_threshold=config.get("fitness.missing_important_threshold", 6.0),
+            hard_constraints=config.get("fitness.hard_constraints", []),
+            toggle_effort_multiplier=float(config.get("fitness.toggle_effort_multiplier", 2.5)),
+        )
+
+    def test_cuda_parity_seed_and_random(self):
+        """CUDA and Numba objectives must agree within float32 tolerance."""
+        try:
+            import torch
+            from fitness.cuda_kernel import cuda_available
+        except Exception:
+            self.skipTest("CUDA kernel not importable")
+        if not cuda_available():
+            self.skipTest("CUDA not available")
+
+        evaluator = self._make_evaluator()
+        layout = evaluator.reference_layout
+        rng = np.random.default_rng(98765)
+
+        # Seed genome
+        samples = [layout.genome.copy()]
+        # Mutated seed genomes
+        for _ in range(7):
+            g = layout.genome.copy()
+            for _ in range(20):
+                a, b = rng.choice(layout.mutable_indices, 2, replace=False)
+                g[a], g[b] = g[b], g[a]
+            samples.append(g)
+        # Fully random genomes
+        for _ in range(7):
+            g = np.full(layout.n_positions, -1, dtype=np.int32)
+            g[layout.frozen_indices] = layout.genome[layout.frozen_indices]
+            n_assign = min(len(layout.mutable_indices), layout.n_shortcuts)
+            assigned = rng.choice(layout.n_shortcuts, size=n_assign, replace=False)
+            g[layout.mutable_indices[:n_assign]] = assigned
+            samples.append(g)
+
+        batch = np.asarray(samples, dtype=np.int32)
+
+        evaluator.model._use_cuda = True
+        obj_cuda, _ = evaluator.model.evaluate_batch(batch)
+
+        evaluator.model._use_cuda = False
+        obj_numba, _ = evaluator.model.evaluate_batch(batch)
+
+        # Allow larger absolute tolerance on the violations objective because it
+        # sums many large terms in different orders on GPU vs CPU.
+        np.testing.assert_allclose(obj_cuda[:, 0], obj_numba[:, 0], rtol=1e-4, atol=2000.0)
+        np.testing.assert_allclose(obj_cuda[:, 1], obj_numba[:, 1], rtol=1e-4, atol=1.0)
+        np.testing.assert_allclose(obj_cuda[:, 2], obj_numba[:, 2], rtol=1e-4, atol=2e7)
 
 
 if __name__ == "__main__":

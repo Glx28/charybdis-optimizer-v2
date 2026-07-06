@@ -95,6 +95,7 @@ class CustomGARunner:
         build_dir,
         perf,
         hard_constraints,
+        mini_eval_count: int = 150,
     ):
         self.layout = layout
         self.evaluator = evaluator
@@ -109,6 +110,7 @@ class CustomGARunner:
         self.build_dir = build_dir
         self.perf = perf
         self.hard_constraints = hard_constraints
+        self.mini_eval_count = max(1, int(mini_eval_count))
 
         # Background thread pool for concurrent mini exact eval during GPU predict
         self._eval_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -639,18 +641,18 @@ class CustomGARunner:
 
             # --- Hybrid exact/surrogate evaluation ---
             if sm is not None and sm.trainer.mean is not None:
-                # Submit 150-genome exact eval to background before GPU predict.
-                # Numba JIT releases the GIL, so it runs concurrently with CUDA forward.
-                # Exact scores for 10% of children act as selection "beacons" that guide
-                # the search toward hard-constraint-satisfying regions.
-                mini_idx = np.random.choice(len(children_X), 150, replace=False)
+                # Submit a small exact-eval mini batch to background before GPU predict.
+                # Exact scores for a subset of children act as selection "beacons" that
+                # guide the search toward hard-constraint-satisfying regions.
+                n_mini = min(self.mini_eval_count, len(children_X))
+                mini_idx = np.random.choice(len(children_X), n_mini, replace=False)
                 mini_batch = children_X[mini_idx].copy()
                 mini_future = self._eval_executor.submit(
                     self.evaluator.evaluate_batch, mini_batch
                 )
                 children_F = sm.trainer.predict(children_X)
                 # Collect exact results and splice back — overrides surrogate predictions
-                # for these 150 children with ground-truth fitness.
+                # for these children with ground-truth fitness.
                 mini_F, mini_G = mini_future.result()
                 children_F[mini_idx] = mini_F
                 sm.add_exact_evaluations(mini_batch, mini_F)
@@ -659,15 +661,31 @@ class CustomGARunner:
                 children_cv = np.zeros((len(children_X), mini_G.shape[1]), dtype=np.float32)
                 children_cv[mini_idx] = np.maximum(mini_G, 0)
                 # Check if any mini-eval genome beats the global_best.
-                # Only run the full acceptance report (expensive) when the score is promising.
+                # Reuse the already-computed batch exact scores instead of re-running
+                # a single-genome Numba evaluation.
                 mini_totals = mini_F.sum(axis=1)
                 mini_best_i = int(np.argmin(mini_totals))
                 gb_score = float(self.global_best_exact["total_score"]) if self.global_best_exact else float("inf")
                 if mini_totals[mini_best_i] < gb_score - 0.01:
                     mini_best_genome = mini_batch[mini_best_i]
+                    mini_entry = self._exact_entry(
+                        type(
+                            "obj",
+                            (object,),
+                            {
+                                "objectives": mini_F[mini_best_i].copy(),
+                                "constraints": mini_G[mini_best_i].copy(),
+                                "factor_scores": self.evaluator._factor_scores_from_objectives(
+                                    mini_F[mini_best_i]
+                                ),
+                                "total_score": float(mini_totals[mini_best_i]),
+                            },
+                        )(),
+                        gen,
+                    )
+                    # Lightweight acceptance check for archive updates; full report still
+                    # runs at checkpoint time.
                     mini_best_layout = self.layout.clone_with(genome=mini_best_genome.astype(np.int32))
-                    mini_exact = self.evaluator.evaluate(mini_best_layout)
-                    mini_entry = self._exact_entry(mini_exact, gen)
                     _, _, _, mini_acc = self._layout_reports(mini_best_layout)
                     self._annotate(mini_entry, mini_acc)
                     if self._is_better(mini_entry, self.global_best_exact):

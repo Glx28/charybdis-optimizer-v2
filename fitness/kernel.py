@@ -524,6 +524,8 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         vw.get("layer_depth_penalty", DEFAULT_VIOLATION_WEIGHTS["layer_depth_penalty"]),
         vw.get("natural_mouse_layer_exists", DEFAULT_VIOLATION_WEIGHTS.get("natural_mouse_layer_exists", 50000.0)),
         vw.get("toggle_back_to_l0", DEFAULT_VIOLATION_WEIGHTS.get("toggle_back_to_l0", 50000.0)),
+        vw.get("mouse_hold_position_conflict", DEFAULT_VIOLATION_WEIGHTS.get("mouse_hold_position_conflict", 150000000000.0)),
+        vw.get("mouse_layer_depth_penalty", DEFAULT_VIOLATION_WEIGHTS.get("mouse_layer_depth_penalty", 150000000000.0)),
     ], dtype=np.float32)
 
     VIOLATION_NAMES = (
@@ -535,6 +537,8 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         "layer_reachability", "layer_depth_penalty",
         "natural_mouse_layer_exists",
         "toggle_back_to_l0",
+        "mouse_hold_position_conflict",
+        "mouse_layer_depth_penalty",
     )
     hard_constraints = hard_constraints or []
     hard_constraint_indices = np.asarray(
@@ -629,6 +633,7 @@ if NUMBA_AVAILABLE:
         reachable_toggle_access = np.zeros(32, dtype=np.bool_)
         reachable_momentary_access = np.zeros(32, dtype=np.bool_)
         momentary_edge = np.zeros((32, 32), dtype=np.bool_)
+        has_hold_edge = np.zeros((32, 32), dtype=np.bool_)
         edge_cost = np.full((32, 32), 1000000.0, dtype=np.float32)
         edge_hand = np.full((32, 32), -1, dtype=np.int32)
         access_layout = 0.0
@@ -645,6 +650,7 @@ if NUMBA_AVAILABLE:
         scroll_right_momentary_thumb = np.zeros(32, dtype=np.bool_)
         scroll_right_momentary_effort = np.zeros(32, dtype=np.float32)
         scroll_right_momentary_usage = np.zeros(32, dtype=np.float32)
+        scroll_right_momentary_x = np.full(32, -1.0, dtype=np.float32)
 
         # Pre-scan: which layers have at least one mutable (non-frozen, non-L7) position.
         # Used to determine if the optimizer CAN place a return toggle on a given layer.
@@ -692,6 +698,8 @@ if NUMBA_AVAILABLE:
                     access_layout += 8.0
             if shortcut_access_momentary[sid] and not pos_is_thumb[i]:
                 access_layout += 4.0
+            if shortcut_access_momentary[sid]:
+                has_hold_edge[source, target] = True
             if cost < edge_cost[source, target]:
                 edge_cost[source, target] = cost
                 momentary_edge[source, target] = shortcut_access_momentary[sid]
@@ -741,6 +749,26 @@ if NUMBA_AVAILABLE:
                             layer_hop_depth[tgt] = cand
                             changed_hop = True
             if not changed_hop:
+                break
+
+        # Hold-only BFS: shortest path using ONLY momentary (hold) edges.
+        # Toggle edges are ignored entirely. Used for mouse_layer_depth_penalty so
+        # toggle access to the mouse layer never escapes the depth penalty that
+        # only momentary (hold) access can satisfy.
+        hold_hop_depth = np.full(32, 999, dtype=np.int32)
+        hold_hop_depth[0] = 0
+        for _ in range(32):
+            changed_hold = False
+            for src in range(32):
+                if hold_hop_depth[src] >= 999:
+                    continue
+                for tgt in range(32):
+                    if has_hold_edge[src, tgt]:
+                        cand = hold_hop_depth[src] + 1
+                        if cand < hold_hop_depth[tgt]:
+                            hold_hop_depth[tgt] = cand
+                            changed_hold = True
+            if not changed_hold:
                 break
 
         for target in range(32):
@@ -886,9 +914,11 @@ if NUMBA_AVAILABLE:
                         if pos_is_thumb[i]:
                             scroll_right_momentary_thumb[layer] = True
                         else:
-                            scroll_right_momentary[layer] = True
-                            scroll_right_momentary_effort[layer] = pos_effort[i]
-                            scroll_right_momentary_usage[layer] = shortcut_usage_count[sid]
+                            if not scroll_right_momentary[layer] or pos_effort[i] < scroll_right_momentary_effort[layer]:
+                                scroll_right_momentary[layer] = True
+                                scroll_right_momentary_effort[layer] = pos_effort[i]
+                                scroll_right_momentary_usage[layer] = shortcut_usage_count[sid]
+                                scroll_right_momentary_x[layer] = pos_x[i]
                 proximity = 1.0 - trackball_dist[i] * 0.25
                 if proximity > 0.0:
                     _uc = int(shortcut_usage_count[sid]); trackball += imp * proximity * (1.0 + log1p_lut[_uc if _uc < lut_size else lut_size - 1] * 0.25)
@@ -1686,9 +1716,19 @@ if NUMBA_AVAILABLE:
                     candidate_penalty += (1.0 - dx) * 800.0
                 candidate_penalty += dist45 * 180.0
                 candidate_penalty += dy * 500.0
+            # Prefer MB1 at x=8 (index finger), MB2 at x=9 (middle), scroll at x=10 (ring).
+            # Both index-home and pinky-home have eff=0 — x-penalty differentiates them.
+            # Only applies to non-thumb right-hand placements (thumbs are penalized separately).
+            if mouse_button_right[layer, 1] > 0 and mouse_button_right_thumb[layer, 1] == 0:
+                candidate_penalty += abs(mouse_button_x[layer, 1] - 8.0) * 12000.0
+            if mouse_button_right[layer, 2] > 0 and mouse_button_right_thumb[layer, 2] == 0:
+                candidate_penalty += abs(mouse_button_x[layer, 2] - 9.0) * 12000.0
             if scroll_right_momentary[layer]:
                 _us = int(scroll_right_momentary_usage[layer]); usage_scale = 1.0 + log1p_lut[_us if _us < lut_size else lut_size - 1] * 0.35
-                candidate_penalty += scroll_right_momentary_effort[layer] * usage_scale * 400.0
+                # High coefficient: eff=1.0 costs 15000, eff=1.75 costs 26250 (worse than missing scroll @25000)
+                candidate_penalty += scroll_right_momentary_effort[layer] * usage_scale * 15000.0
+                if scroll_right_momentary_x[layer] >= 0.0:
+                    candidate_penalty += abs(scroll_right_momentary_x[layer] - 10.0) * 12000.0
             else:
                 candidate_penalty += 25000.0
             if scroll_right_momentary_thumb[layer]:
@@ -1880,7 +1920,47 @@ if NUMBA_AVAILABLE:
             if direct_toggle_access[lx] and not layer_has_return_toggle[lx] and layer_has_mutable[lx]:
                 toggle_back_to_l0 += 1.0
 
-        raw_scores = np.empty(21, dtype=np.float32)
+        # mouse_hold_position_conflict: @L_mouse:hold key on another layer at same physical (x,y) as a mouse button on natural_mouse_layer.
+        # Mouse buttons own their positions; access keys must not overlap them.
+        mouse_hold_position_conflict = 0.0
+        if natural_mouse_layer >= 0:
+            mb_xs = np.full(16, -9999.0, dtype=np.float32)
+            mb_ys = np.full(16, -9999.0, dtype=np.float32)
+            n_mb = 0
+            for i in range(n_pos):
+                sid = genome[i]
+                if sid < 0 or sid >= n_short:
+                    continue
+                if pos_layer[i] == natural_mouse_layer and shortcut_is_mouse[sid] and shortcut_mouse_button[sid] > 0:
+                    if n_mb < 16:
+                        mb_xs[n_mb] = pos_x[i]
+                        mb_ys[n_mb] = pos_y[i]
+                        n_mb += 1
+            for i in range(n_pos):
+                sid = genome[i]
+                if sid < 0 or sid >= n_short:
+                    continue
+                if (shortcut_access_momentary[sid] and
+                        shortcut_access_target[sid] == natural_mouse_layer and
+                        pos_layer[i] != natural_mouse_layer):
+                    for k in range(n_mb):
+                        dx = pos_x[i] - mb_xs[k]
+                        dy = pos_y[i] - mb_ys[k]
+                        if dx * dx + dy * dy < 0.01:
+                            mouse_hold_position_conflict += 1.0
+                            break
+
+        # Empty position penalty: waste = 200*exp(-2*eff). Prime slots (eff≈0) left
+        # empty cost ~200, far slots (eff≥4) cost ~0. This pushes high-value shortcuts
+        # into home-row positions on each layer (especially mouse layer MB1/MB2/scroll).
+        # L0 and L7 are exempt: L0 naturally has many empty slots; L7 is frozen/arrows.
+        empty_pos_waste = 0.0
+        for i in range(n_pos):
+            lyr = pos_layer[i]
+            if genome[i] < 0 and not pos_is_frozen[i] and lyr != 7 and lyr != 0:
+                empty_pos_waste += pos_effort_waste[i]
+
+        raw_scores = np.empty(23, dtype=np.float32)
         raw_scores[0] = duplicate
         raw_scores[1] = l0_displacement
         raw_scores[2] = missing
@@ -1897,11 +1977,24 @@ if NUMBA_AVAILABLE:
         raw_scores[13] = access_layout
         raw_scores[14] = raw_keyboard_completion_norwegian
         raw_scores[15] = dynamic_mouse_layer
-        raw_scores[16] = 0.0  # empty_position now routed into effort objective directly
+        raw_scores[16] = empty_pos_waste
         raw_scores[17] = layer_reachability
         raw_scores[18] = layer_depth_penalty
         raw_scores[19] = 0.0 if natural_mouse_layer >= 0 else 1.0
         raw_scores[20] = toggle_back_to_l0
+        raw_scores[21] = mouse_hold_position_conflict
+        # mouse_layer_depth_penalty: extra hold-hops beyond 1 to the natural mouse layer.
+        # Only momentary (hold) paths count — toggle access never reduces or incurs this penalty.
+        # 0 = hold directly from L0, 1 = 2-hop hold path, 999 = no hold path at all.
+        if natural_mouse_layer >= 0:
+            ml_hold_depth = hold_hop_depth[natural_mouse_layer]
+            if ml_hold_depth >= 999:
+                raw_scores[22] = 2.0
+            else:
+                ml_extra = ml_hold_depth - 1
+                raw_scores[22] = float(ml_extra) if ml_extra > 0 else 0.0
+        else:
+            raw_scores[22] = 0.0
 
         # Hard constraints (g(x) <= 0 convention; raw_scores are >= 0).
         n_constr = hard_constraint_indices.shape[0]
@@ -1911,7 +2004,7 @@ if NUMBA_AVAILABLE:
 
         # Soft penalties weighted and summed into the violations objective.
         violations_raw = 0.0
-        for j in range(21):
+        for j in range(23):
             violations_raw += raw_scores[j] * violation_weights[j]
 
         workflow = 0.0
@@ -1991,7 +2084,7 @@ if NUMBA_AVAILABLE:
         out[2] = objective_viol / scale_factors[2]
         return out, constraints
 
-    @njit(parallel=True, cache=True)
+    @njit(parallel=False, cache=True)
     def _evaluate_batch(
         genomes, pos_effort, pos_layer, pos_finger, pos_hand, pos_is_thumb, pos_is_frozen, dist, trackball_dist, pos_x, pos_y,
         shortcut_importance, shortcut_app, shortcut_category, shortcut_base, shortcut_l0_only, shortcut_trackball,

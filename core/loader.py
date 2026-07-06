@@ -195,7 +195,10 @@ def _is_plain_keypress_shortcut(keys: str, sc_data: dict) -> bool:
     if "vimium" in category and "+" not in clean and len(clean) > 1:
         return False
     if not modifiers and re.fullmatch(r"[A-Za-z]{2,}", clean):
-        return False
+        # Allow solo modifier keys (LeftAlt, LeftCtrl, etc.) and arrow keys — these
+        # are valid physical keys, not text sequences.
+        if _normalize_raw_key_id(clean) is None and clean not in RAW_ARROW_BASE_KEYS:
+            return False
 
     return True
 

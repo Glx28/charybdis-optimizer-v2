@@ -175,6 +175,560 @@ if NUMBA_AVAILABLE:
                 if sid >= 0 and frozen_sid_lut[sid]:
                     X[i, pos] = -1
 
+    # ------------------------------------------------------------------
+    # Numba-accelerated simple mutation proposals for SwapMutation._do
+    # ------------------------------------------------------------------
+
+    @njit(cache=True)
+    def _rng_step(state):
+        """SplitMix64-style RNG step; mutates state array in place."""
+        state[0] += np.uint64(0x9e3779b97f4a7c15)
+        z = state[0]
+        z = (z ^ (z >> np.uint64(30))) * np.uint64(0xbf58476d1ce4e5b9)
+        z = (z ^ (z >> np.uint64(27))) * np.uint64(0x94d049bb133111eb)
+        z = z ^ (z >> np.uint64(31))
+        state[0] = z
+        return z
+
+    @njit(cache=True)
+    def _rand_float(state):
+        return float(_rng_step(state) & np.uint64(0x7fffffffffffffff)) / float(np.uint64(0x7fffffffffffffff))
+
+    @njit(cache=True)
+    def _rand_int(state, n):
+        return int(_rng_step(state) % np.uint64(n))
+
+    @njit(cache=True)
+    def _contains(arr, val):
+        for i in range(len(arr)):
+            if arr[i] == val:
+                return True
+        return False
+
+    @njit(cache=True)
+    def _numba_random_reassign_one(genome, state, mutable_arr, pos_layer_arr, assignable_arr,
+                                   is_group_sid_lut, is_important_sid_lut, access_target_lut,
+                                   mo_access_target_lut, n_shortcuts, toggle_access_sids_arr,
+                                   return_toggle_sid, layer_mutable_flat, layer_mutable_start):
+        n_mut = len(mutable_arr)
+        if n_mut == 0 or len(assignable_arr) == 0:
+            return False
+
+        mutable_sids = genome[mutable_arr]
+        counts = np.zeros(n_shortcuts, dtype=np.int32)
+        for k in range(n_mut):
+            sid = mutable_sids[k]
+            if sid >= 0 and sid < n_shortcuts:
+                counts[sid] += 1
+
+        n_candidates = 0
+        cand_positions = np.empty(n_mut, dtype=np.int32)
+        for k in range(n_mut):
+            sid = mutable_sids[k]
+            pos = mutable_arr[k]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            if is_group_sid_lut[sid]:
+                continue
+            if is_important_sid_lut[sid] and counts[sid] <= 1:
+                continue
+            cand_positions[n_candidates] = pos
+            n_candidates += 1
+
+        if n_candidates == 0:
+            return False
+
+        chosen_pos = -1
+        for _ in range(5):
+            idx = _rand_int(state, n_candidates)
+            pos = cand_positions[idx]
+            sid = genome[pos]
+            if sid < 0 or sid >= n_shortcuts:
+                chosen_pos = pos
+                break
+            target = access_target_lut[sid]
+            if target <= 0:
+                chosen_pos = pos
+                break
+            broken = True
+            for k in range(n_mut):
+                if mutable_arr[k] == pos:
+                    continue
+                other_sid = genome[mutable_arr[k]]
+                if other_sid >= 0 and other_sid < n_shortcuts and access_target_lut[other_sid] == target:
+                    broken = False
+                    break
+            if not broken:
+                chosen_pos = pos
+                break
+
+        if chosen_pos < 0:
+            return False
+
+        pos_layer = pos_layer_arr[chosen_pos]
+        n_valid_assign = 0
+        valid_assign = np.empty(len(assignable_arr), dtype=np.int32)
+        for k in range(len(assignable_arr)):
+            sid = assignable_arr[k]
+            mo_tgt = mo_access_target_lut[sid]
+            if mo_tgt >= 0 and mo_tgt == pos_layer:
+                continue
+            valid_assign[n_valid_assign] = sid
+            n_valid_assign += 1
+        if n_valid_assign == 0:
+            valid_assign = assignable_arr
+            n_valid_assign = len(assignable_arr)
+
+        new_sid = valid_assign[_rand_int(state, n_valid_assign)]
+        genome[chosen_pos] = new_sid
+
+        if _contains(toggle_access_sids_arr, new_sid):
+            target_layer = access_target_lut[new_sid]
+            if target_layer > 0 and return_toggle_sid >= 0:
+                n_layers = len(layer_mutable_start)
+                start = layer_mutable_start[target_layer]
+                end = layer_mutable_start[target_layer + 1] if target_layer + 1 < n_layers else len(layer_mutable_flat)
+                already = False
+                for p in range(start, end):
+                    pos = layer_mutable_flat[p]
+                    if genome[pos] == return_toggle_sid:
+                        already = True
+                        break
+                if not already:
+                    n_empty = 0
+                    n_any = 0
+                    empty_positions = np.empty(end - start, dtype=np.int32)
+                    any_positions = np.empty(end - start, dtype=np.int32)
+                    for p in range(start, end):
+                        pos = layer_mutable_flat[p]
+                        any_positions[n_any] = pos
+                        n_any += 1
+                        if genome[pos] < 0:
+                            empty_positions[n_empty] = pos
+                            n_empty += 1
+                    if n_any > 0:
+                        if n_empty > 0:
+                            pool = empty_positions
+                            n_pool = n_empty
+                        else:
+                            pool = any_positions
+                            n_pool = n_any
+                        genome[pool[_rand_int(state, n_pool)]] = return_toggle_sid
+        return True
+
+    @njit(cache=True)
+    def _numba_detect_mouse_layer(genome, mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr, mouse_button_sids):
+        n_mut = len(mutable_arr)
+        if mouse_button_sids[1] < 0:
+            return -1
+        layer_counts = np.zeros(32, dtype=np.int32)
+        for k in range(n_mut):
+            pos = mutable_arr[k]
+            sid = genome[pos]
+            if sid < 0:
+                continue
+            is_mouse = False
+            for b in range(1, 6):
+                if mouse_button_sids[b] == sid:
+                    is_mouse = True
+                    break
+            if is_mouse:
+                lyr = pos_layer_arr[pos]
+                if lyr > 0 and lyr != 7 and lyr < 32 and pos_hand_arr[pos] == 1 and not pos_is_thumb_arr[pos]:
+                    layer_counts[lyr] += 1
+        best = 0
+        best_layer = -1
+        for lyr in range(32):
+            if layer_counts[lyr] > best:
+                best = layer_counts[lyr]
+                best_layer = lyr
+        if best < 2:
+            return -1
+        return best_layer
+
+    @njit(cache=True)
+    def _numba_effort_swap(genome, state, mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr,
+                           pos_effort_arr, sid_importance_arr, is_group_sid_lut, mouse_button_sids,
+                           n_shortcuts):
+        n_mut = len(mutable_arr)
+        if n_mut < 2 or len(sid_importance_arr) == 0:
+            return False
+
+        mouse_layer = _numba_detect_mouse_layer(genome, mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr, mouse_button_sids)
+
+        valid_positions = np.empty(n_mut, dtype=np.int32)
+        valid_costs = np.empty(n_mut, dtype=np.float32)
+        n_valid = 0
+        for k in range(n_mut):
+            pos = mutable_arr[k]
+            sid = genome[pos]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            if is_group_sid_lut[sid]:
+                continue
+            imp = sid_importance_arr[sid]
+            if mouse_layer >= 0:
+                is_mouse = False
+                for b in range(1, 6):
+                    if mouse_button_sids[b] == sid:
+                        is_mouse = True
+                        break
+                if is_mouse and pos_layer_arr[pos] == mouse_layer:
+                    imp *= 3.0
+            valid_positions[n_valid] = pos
+            valid_costs[n_valid] = pos_effort_arr[pos] * imp
+            n_valid += 1
+
+        if n_valid == 0:
+            return False
+
+        top_k = min(5, n_valid)
+        order = np.argsort(valid_costs[:n_valid])
+        top_idx = order[-top_k:]
+        chosen_i = top_idx[_rand_int(state, top_k)]
+        src_pos = valid_positions[chosen_i]
+        src_effort = pos_effort_arr[src_pos]
+        if src_effort <= 0.0:
+            return False
+
+        n_lower = 0
+        lower_positions = np.empty(n_valid, dtype=np.int32)
+        for k in range(n_valid):
+            if k == chosen_i:
+                continue
+            if pos_effort_arr[valid_positions[k]] < src_effort:
+                lower_positions[n_lower] = valid_positions[k]
+                n_lower += 1
+        if n_lower == 0:
+            return False
+
+        src_layer = pos_layer_arr[src_pos]
+        n_same = 0
+        same_layer_positions = np.empty(n_lower, dtype=np.int32)
+        for k in range(n_lower):
+            if pos_layer_arr[lower_positions[k]] == src_layer:
+                same_layer_positions[n_same] = lower_positions[k]
+                n_same += 1
+
+        if n_same > 0 and _rand_float(state) < 0.75:
+            target_pos = same_layer_positions[_rand_int(state, n_same)]
+        else:
+            target_pos = lower_positions[_rand_int(state, n_lower)]
+
+        tmp = genome[src_pos]
+        genome[src_pos] = genome[target_pos]
+        genome[target_pos] = tmp
+        return True
+
+    @njit(cache=True)
+    def _numba_smart_duplicate(genome, state, mutable_arr, pos_effort_arr, dup_candidate_arr,
+                               dup_exp_w, frozen_sid_counts, n_shortcuts):
+        n_cand = len(dup_candidate_arr)
+        if n_cand == 0:
+            return False
+
+        n_mut = len(mutable_arr)
+        empty_positions = np.empty(n_mut, dtype=np.int32)
+        n_empty = 0
+        for k in range(n_mut):
+            pos = mutable_arr[k]
+            if genome[pos] < 0:
+                empty_positions[n_empty] = pos
+                n_empty += 1
+        if n_empty == 0:
+            return False
+
+        efforts = np.empty(n_empty, dtype=np.float32)
+        for k in range(n_empty):
+            efforts[k] = pos_effort_arr[empty_positions[k]]
+        top_n = max(1, n_empty // 3)
+        order = np.argsort(efforts)
+        target_idx = order[_rand_int(state, top_n)]
+        target_pos = empty_positions[target_idx]
+
+        counts = np.zeros(n_shortcuts, dtype=np.int32)
+        for k in range(n_mut):
+            sid = genome[mutable_arr[k]]
+            if sid >= 0 and sid < n_shortcuts:
+                counts[sid] += 1
+
+        n_frozen = len(frozen_sid_counts)
+        weights = np.empty(n_cand, dtype=np.float32)
+        total_w = 0.0
+        for k in range(n_cand):
+            sid = dup_candidate_arr[k]
+            cnt = counts[sid]
+            if n_frozen > 0 and sid < n_frozen:
+                cnt += frozen_sid_counts[sid]
+            w = dup_exp_w[k] / (1.0 + float(cnt))
+            weights[k] = w
+            total_w += w
+
+        if total_w <= 0.0:
+            return False
+
+        r = _rand_float(state) * total_w
+        cum = 0.0
+        chosen = dup_candidate_arr[0]
+        for k in range(n_cand):
+            cum += weights[k]
+            if cum >= r:
+                chosen = dup_candidate_arr[k]
+                break
+
+        genome[target_pos] = chosen
+        return True
+
+    @njit(cache=True)
+    def _numba_bias_toggle_to_own_layer(genome, state, pos_layer_arr, access_target_lut, access_is_mo_lut,
+                                        layer_mutable_flat, layer_mutable_start, n_shortcuts):
+        n_pos = len(genome)
+        cand_positions = np.empty(n_pos, dtype=np.int32)
+        cand_layers = np.empty(n_pos, dtype=np.int32)
+        n_cand = 0
+        for pos in range(n_pos):
+            sid = genome[pos]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            tgt = access_target_lut[sid]
+            if tgt <= 0 or tgt == 7:
+                continue
+            if access_is_mo_lut[sid]:
+                continue
+            if pos_layer_arr[pos] == tgt:
+                continue
+            cand_positions[n_cand] = pos
+            cand_layers[n_cand] = tgt
+            n_cand += 1
+        if n_cand == 0:
+            return False
+
+        idx = _rand_int(state, n_cand)
+        src_pos = cand_positions[idx]
+        target_layer = cand_layers[idx]
+
+        n_layers = len(layer_mutable_start)
+        start = layer_mutable_start[target_layer]
+        end = layer_mutable_start[target_layer + 1] if target_layer + 1 < n_layers else len(layer_mutable_flat)
+        if start >= end:
+            return False
+
+        n_empty = 0
+        n_any = 0
+        empty_positions = np.empty(end - start, dtype=np.int32)
+        any_positions = np.empty(end - start, dtype=np.int32)
+        for p in range(start, end):
+            pos = layer_mutable_flat[p]
+            if pos == src_pos:
+                continue
+            any_positions[n_any] = pos
+            n_any += 1
+            if genome[pos] < 0:
+                empty_positions[n_empty] = pos
+                n_empty += 1
+
+        if n_any == 0:
+            return False
+        if n_empty > 0:
+            tgt_pos = empty_positions[_rand_int(state, n_empty)]
+        else:
+            tgt_pos = any_positions[_rand_int(state, n_any)]
+
+        tmp = genome[src_pos]
+        genome[src_pos] = genome[tgt_pos]
+        genome[tgt_pos] = tmp
+        return True
+
+    @njit(cache=True)
+    def _numba_bias_access_to_thumb(genome, state, mutable_arr, pos_layer_arr, pos_is_thumb_arr,
+                                    access_target_lut, is_group_sid_lut, n_shortcuts):
+        n_mut = len(mutable_arr)
+        if n_mut == 0:
+            return False
+
+        cand_positions = np.empty(n_mut, dtype=np.int32)
+        n_cand = 0
+        for k in range(n_mut):
+            pos = mutable_arr[k]
+            sid = genome[pos]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            if access_target_lut[sid] <= 0:
+                continue
+            if pos_is_thumb_arr[pos]:
+                continue
+            cand_positions[n_cand] = pos
+            n_cand += 1
+        if n_cand == 0:
+            return False
+
+        src_pos = cand_positions[_rand_int(state, n_cand)]
+        src_layer = pos_layer_arr[src_pos]
+
+        thumb_positions = np.empty(n_mut, dtype=np.int32)
+        n_thumb = 0
+        for k in range(n_mut):
+            pos = mutable_arr[k]
+            if pos == src_pos:
+                continue
+            if not pos_is_thumb_arr[pos]:
+                continue
+            sid = genome[pos]
+            if sid >= 0 and sid < n_shortcuts and is_group_sid_lut[sid]:
+                continue
+            thumb_positions[n_thumb] = pos
+            n_thumb += 1
+        if n_thumb == 0:
+            return False
+
+        n_same = 0
+        same_layer = np.empty(n_thumb, dtype=np.int32)
+        for k in range(n_thumb):
+            if pos_layer_arr[thumb_positions[k]] == src_layer:
+                same_layer[n_same] = thumb_positions[k]
+                n_same += 1
+
+        if n_same > 0:
+            tgt_pos = same_layer[_rand_int(state, n_same)]
+        else:
+            tgt_pos = thumb_positions[_rand_int(state, n_thumb)]
+
+        tmp = genome[src_pos]
+        genome[src_pos] = genome[tgt_pos]
+        genome[tgt_pos] = tmp
+        return True
+
+    @njit(cache=True)
+    def _numba_repair_return_toggles(genome, state, pos_layer_arr, access_target_lut, access_is_mo_lut,
+                                     layer_mutable_flat, layer_mutable_start, pos_is_thumb_arr,
+                                     return_toggle_sid, n_shortcuts):
+        if return_toggle_sid < 0:
+            return False
+
+        n_pos = len(genome)
+        toggle_to = np.zeros(32, dtype=np.bool_)
+        has_return = np.zeros(32, dtype=np.bool_)
+        for pos in range(n_pos):
+            sid = genome[pos]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            tgt = access_target_lut[sid]
+            if tgt <= 0:
+                continue
+            if access_is_mo_lut[sid]:
+                continue
+            lyr = pos_layer_arr[pos]
+            if tgt != 0:
+                toggle_to[lyr] = True
+            else:
+                has_return[lyr] = True
+
+        missing = np.empty(32, dtype=np.int32)
+        n_missing = 0
+        n_layers = len(layer_mutable_start)
+        for lyr in range(32):
+            if toggle_to[lyr] and not has_return[lyr]:
+                start = layer_mutable_start[lyr]
+                end = layer_mutable_start[lyr + 1] if lyr + 1 < n_layers else len(layer_mutable_flat)
+                if start < end:
+                    missing[n_missing] = lyr
+                    n_missing += 1
+        if n_missing == 0:
+            return False
+
+        lyr = missing[_rand_int(state, n_missing)]
+        start = layer_mutable_start[lyr]
+        end = layer_mutable_start[lyr + 1] if lyr + 1 < n_layers else len(layer_mutable_flat)
+
+        n_te = 0
+        n_ae = 0
+        n_ap = 0
+        thumb_empty = np.empty(end - start, dtype=np.int32)
+        any_empty = np.empty(end - start, dtype=np.int32)
+        any_positions = np.empty(end - start, dtype=np.int32)
+        for p in range(start, end):
+            pos = layer_mutable_flat[p]
+            any_positions[n_ap] = pos
+            n_ap += 1
+            if genome[pos] < 0:
+                any_empty[n_ae] = pos
+                n_ae += 1
+                if pos_is_thumb_arr[pos]:
+                    thumb_empty[n_te] = pos
+                    n_te += 1
+
+        if n_te > 0:
+            pool = thumb_empty
+            n_pool = n_te
+        elif n_ae > 0:
+            pool = any_empty
+            n_pool = n_ae
+        else:
+            pool = any_positions
+            n_pool = n_ap
+
+        genome[pool[_rand_int(state, n_pool)]] = return_toggle_sid
+        return True
+
+    @njit(parallel=True, cache=True)
+    def _mutate_batch_numba(X, handled, probs, seeds,
+                            mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr, pos_effort_arr,
+                            sid_importance_arr, access_target_lut, access_is_mo_lut, mo_access_target_lut,
+                            is_group_sid_lut, is_important_sid_lut,
+                            return_toggle_sid,
+                            dup_candidate_arr, dup_exp_w, frozen_sid_counts,
+                            assignable_arr,
+                            layer_mutable_flat, layer_mutable_start,
+                            mouse_button_sids,
+                            toggle_access_sids_arr,
+                            n_shortcuts):
+        n = X.shape[0]
+        for i in prange(n):
+            if handled[i]:
+                continue
+            state = np.empty(1, dtype=np.uint64)
+            state[0] = seeds[i]
+
+            if _rand_float(state) < probs[0]:
+                if _numba_random_reassign_one(X[i], state, mutable_arr, pos_layer_arr, assignable_arr,
+                                              is_group_sid_lut, is_important_sid_lut, access_target_lut,
+                                              mo_access_target_lut, n_shortcuts, toggle_access_sids_arr,
+                                              return_toggle_sid, layer_mutable_flat, layer_mutable_start):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[1]:
+                if _numba_effort_swap(X[i], state, mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr,
+                                      pos_effort_arr, sid_importance_arr, is_group_sid_lut, mouse_button_sids,
+                                      n_shortcuts):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[2]:
+                if _numba_smart_duplicate(X[i], state, mutable_arr, pos_effort_arr, dup_candidate_arr,
+                                          dup_exp_w, frozen_sid_counts, n_shortcuts):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[3]:
+                if _numba_bias_toggle_to_own_layer(X[i], state, pos_layer_arr, access_target_lut, access_is_mo_lut,
+                                                   layer_mutable_flat, layer_mutable_start, n_shortcuts):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[4]:
+                if _numba_bias_access_to_thumb(X[i], state, mutable_arr, pos_layer_arr, pos_is_thumb_arr,
+                                               access_target_lut, is_group_sid_lut, n_shortcuts):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[5]:
+                if _numba_repair_return_toggles(X[i], state, pos_layer_arr, access_target_lut, access_is_mo_lut,
+                                                layer_mutable_flat, layer_mutable_start, pos_is_thumb_arr,
+                                                return_toggle_sid, n_shortcuts):
+                    handled[i] = True
+                    continue
+
 
 class LayoutProblem(Problem):
     def __init__(self, n_positions, n_shortcuts, evaluator,
@@ -458,6 +1012,12 @@ class SwapMutation(Mutation):
             ]
             self._dup_candidate_arr = np.array(_dup_sids, dtype=np.int32)
             self._dup_imp_arr = np.array([_sid_to_imp[sid] for sid in _dup_sids], dtype=np.float32)
+            # Precompute the softmax numerator (constant across genomes) so
+            # _smart_duplicate avoids an np.exp call per invocation.
+            T = 5.0
+            dup_logits = self._dup_imp_arr / T
+            dup_logits = dup_logits - float(dup_logits.max())
+            self._dup_exp_w = np.exp(dup_logits)
             # Precompute frozen position counts: _base_* keys on L0 already have
             # count=1 from frozen placement, so they start with half the weight
             # of an unplaced shortcut when the discount is applied at runtime.
@@ -475,12 +1035,17 @@ class SwapMutation(Mutation):
         if not hasattr(self, '_dup_candidate_arr'):
             self._dup_candidate_arr = np.array([], dtype=np.int32)
             self._dup_imp_arr = np.array([], dtype=np.float32)
+            self._dup_exp_w = np.array([], dtype=np.float32)
             self._frozen_sid_counts = np.zeros(0, dtype=np.int32)
         self._mutable_arr = np.array(self.mutable_list or [], dtype=np.int32)
         self._assignable_arr = np.array(self.assignable_sids or [], dtype=np.int32)
         self._important_arr = np.array(sorted(self.important_sids), dtype=np.int32)
         self._group_arr = np.array(sorted(self.group_member_sids), dtype=np.int32)
         self._raw_arrow_arr = np.array(sorted(self.raw_arrow_sids), dtype=np.int32)
+        # Precomputed mutable-position attribute slices to avoid repeated indexing.
+        self._mutable_is_thumb = self._pos_is_thumb_arr[self._mutable_arr]
+        self._mutable_layer = self._pos_layer_arr[self._mutable_arr]
+        self._mutable_hand = self._pos_hand_arr[self._mutable_arr]
         # Boolean LUTs for O(1) per-element membership checks on numpy arrays
         self._is_group_sid_lut = np.zeros(n_sc, dtype=np.bool_) if n_sc > 0 else np.array([], dtype=np.bool_)
         self._is_important_sid_lut = np.zeros(n_sc, dtype=np.bool_) if n_sc > 0 else np.array([], dtype=np.bool_)
@@ -554,6 +1119,31 @@ class SwapMutation(Mutation):
             for idx in (self.mutable_list or []):
                 lyr = int(layout.positions[idx].layer)
                 self._layer_mutable_positions.setdefault(lyr, []).append(idx)
+
+        # Flattened layer mutable positions for O(1) Numba lookups.
+        self._layer_mutable_flat = np.zeros(0, dtype=np.int32)
+        self._layer_mutable_start = np.zeros(33, dtype=np.int32)
+        if layout is not None and self._layer_mutable_positions:
+            flat_parts = []
+            start = 0
+            for lyr in range(33):
+                self._layer_mutable_start[lyr] = start
+                positions = self._layer_mutable_positions.get(lyr, [])
+                flat_parts.extend(positions)
+                start += len(positions)
+            self._layer_mutable_flat = np.array(flat_parts, dtype=np.int32)
+
+        # Mouse button sids as a fixed-size int32 array (index 1-5 used, 0 unused).
+        self._mouse_button_sids = np.full(6, -1, dtype=np.int32)
+        for btn_idx, sid in self.mouse_button_sids.items():
+            if 1 <= btn_idx <= 5:
+                self._mouse_button_sids[btn_idx] = int(sid)
+
+        # Toggle access sids (not @L0, not @L7) as a sorted int32 array.
+        self._toggle_access_sids_arr = np.array(
+            sorted(self._toggle_access_sids), dtype=np.int32
+        )
+
         # Effort-swap mutation: position efforts and shortcut importances as arrays
         self._pos_effort_arr = np.array(
             [float(p.effort) for p in layout.positions], dtype=np.float32
@@ -775,6 +1365,7 @@ class SwapMutation(Mutation):
         access_mo = is_mo[is_access]
         access_hands = self._pos_hand_arr[self._mutable_arr[is_access]]
         occupied: dict = {}
+        # Only iterate over layers that actually appear (usually a handful).
         for layer_id in np.unique(access_targets):
             lm = access_targets == layer_id
             layer_mo = access_mo[lm]
@@ -786,6 +1377,43 @@ class SwapMutation(Mutation):
             else:
                 occupied[int(layer_id)] = {int(mo_hands[0])}
         return occupied
+
+    def _thumb_exclude_mask(self, genome):
+        """Return a boolean mask over mutable positions excluded because of thumb occupancy.
+
+        This is the direct mask form used by _cluster_app_shortcut, avoiding the
+        intermediate dict construction in _get_layer_occupied_thumbs.
+        """
+        thumb_exclude = np.zeros(len(self._mutable_arr), dtype=np.bool_)
+        mutable_sids = genome[self._mutable_arr]
+        valid = (mutable_sids >= 0) & (mutable_sids < self.n_shortcuts)
+        if not valid.any():
+            return thumb_exclude
+        safe_sids = np.where(valid, mutable_sids, 0)
+        targets = self._access_target_lut[safe_sids]
+        is_mo = self._access_is_mo_lut[safe_sids]
+        is_access = valid & (targets > 0) & (targets < 32)
+        if not is_access.any():
+            return thumb_exclude
+        access_targets = targets[is_access]
+        access_mo = is_mo[is_access]
+        access_hands = self._mutable_hand[is_access]
+        for layer_id in np.unique(access_targets):
+            lm = access_targets == layer_id
+            layer_mo = access_mo[lm]
+            layer_hands = access_hands[lm]
+            has_toggle = not bool(np.all(layer_mo))
+            mo_hands = layer_hands[layer_mo]
+            if has_toggle or len(mo_hands) != 1:
+                continue
+            hand = int(mo_hands[0])
+            thumb_exclude |= (
+                self._mutable_is_thumb
+                & (self._mutable_layer == layer_id)
+                & (self._mutable_hand == hand)
+                & (self._mutable_layer > 0)
+            )
+        return thumb_exclude
 
     def _ensure_return_toggle(self, genome, layer):
         """Ensure layer has a return-to-L0 toggle after a toggle-access to it is placed.
@@ -902,25 +1530,15 @@ class SwapMutation(Mutation):
         else:
             total_counts = mutable_counts
 
-        # Softmax(imp / T) / (1 + count) — numerically stable via max subtraction
-        T = 5.0
-        logits = self._dup_imp_arr / T
-        logits = logits - float(logits.max())
-        exp_w = np.exp(logits)
+        # Softmax(imp / T) / (1 + count) — exp part is precomputed in __init__
         cnts = total_counts[self._dup_candidate_arr].astype(np.float32)
-        weights = exp_w / (1.0 + cnts)
+        weights = self._dup_exp_w / (1.0 + cnts)
         total_w = float(weights.sum())
         if total_w <= 0.0:
             return False
 
-        r = np.random.random() * total_w
-        cumsum = 0.0
-        chosen_sid = int(self._dup_candidate_arr[-1])
-        for k in range(len(self._dup_candidate_arr)):
-            cumsum += float(weights[k])
-            if cumsum >= r:
-                chosen_sid = int(self._dup_candidate_arr[k])
-                break
+        probs = weights / total_w
+        chosen_sid = int(np.random.choice(self._dup_candidate_arr, p=probs))
 
         genome[target_pos] = chosen_sid
         return True
@@ -1004,15 +1622,8 @@ class SwapMutation(Mutation):
         # Build sid→pos map once (numpy) — replaces O(n_apps × n_mutable) Python loops.
         pos_map = self._genome_pos_map(genome)
 
-        # Occupied thumbs and the resulting exclusion mask — both computed once per genome.
-        occupied_thumbs = self._get_layer_occupied_thumbs(genome)
-        is_thumb_m = self._pos_is_thumb_arr[self._mutable_arr]
-        layers_m = self._pos_layer_arr[self._mutable_arr]
-        hands_m = self._pos_hand_arr[self._mutable_arr]
-        thumb_exclude = np.zeros(len(self._mutable_arr), dtype=np.bool_)
-        for _lid, _occ in occupied_thumbs.items():
-            for _h in _occ:
-                thumb_exclude |= is_thumb_m & (layers_m == _lid) & (hands_m == _h) & (layers_m > 0)
+        # Thumb exclusion mask computed directly without intermediate dict.
+        thumb_exclude = self._thumb_exclude_mask(genome)
 
         # Group-member exclusion mask over mutable positions.
         mutable_sids = genome[self._mutable_arr]
@@ -1070,29 +1681,28 @@ class SwapMutation(Mutation):
         dynamic 3× importance boost the kernel uses, making MB1 visible as the
         highest-cost target when it sits at an elevated effort position.
         """
-        mouse_right_count = np.zeros(32, dtype=np.int32)
-        for i in range(len(genome)):
-            sid = genome[i]
-            if sid < 0 or sid >= self.n_shortcuts:
-                continue
-            # Check if it's a mouse button (non-zero btn means it's MB1-MB5)
-            # We rely on the access-target LUT to skip non-mouse sids quickly.
-            # Mouse button sids are stored in self.mouse_button_sids {btn: sid}.
-            pass
-        # Direct scan over mouse_button_sids values
-        mouse_sids = set(self.mouse_button_sids.values())
-        for i, sid in enumerate(genome):
-            if sid < 0 or int(sid) not in mouse_sids:
-                continue
-            layer = int(self._pos_layer_arr[i])
-            if layer <= 0 or layer == 7 or layer >= 32:
-                continue
-            if self._pos_hand_arr[i] == 1 and not self._pos_is_thumb_arr[i]:
-                mouse_right_count[layer] += 1
-        best_mc = int(mouse_right_count.max())
+        if not self.mouse_button_sids:
+            return -1
+        mouse_sids = np.fromiter(self.mouse_button_sids.values(), dtype=np.int32)
+        genome_arr = np.asarray(genome, dtype=np.int32)
+        is_mouse = np.isin(genome_arr, mouse_sids)
+        if not is_mouse.any():
+            return -1
+        valid = (
+            is_mouse
+            & (self._pos_layer_arr > 0)
+            & (self._pos_layer_arr != 7)
+            & (self._pos_layer_arr < 32)
+            & (self._pos_hand_arr == 1)
+            & (~self._pos_is_thumb_arr)
+        )
+        if not valid.any():
+            return -1
+        counts = np.bincount(self._pos_layer_arr[valid], minlength=32)
+        best_mc = int(counts.max())
         if best_mc < 2:
             return -1
-        return int(np.argmax(mouse_right_count))
+        return int(np.argmax(counts))
 
     def _effort_swap(self, genome):
         """Propose swapping a high importance×effort shortcut with a lower-effort position.
@@ -1122,12 +1732,10 @@ class SwapMutation(Mutation):
         if self.mouse_button_sids:
             mouse_layer = self._detect_mouse_layer(genome)
             if mouse_layer >= 0:
-                mouse_sid_set = set(self.mouse_button_sids.values())
+                mouse_sids = np.fromiter(self.mouse_button_sids.values(), dtype=np.int32)
                 valid_layers = self._pos_layer_arr[valid_positions]
-                for k in range(len(valid_sids)):
-                    if (int(valid_sids[k]) in mouse_sid_set
-                            and int(valid_layers[k]) == mouse_layer):
-                        sid_imps[k] *= 3.0
+                boost_mask = np.isin(valid_sids, mouse_sids) & (valid_layers == mouse_layer)
+                sid_imps[boost_mask] *= 3.0
 
         costs = pos_efforts * sid_imps
 
@@ -1190,30 +1798,30 @@ class SwapMutation(Mutation):
         The fitness decides whether the result is worth keeping.
         """
         # Find toggle access sids (non-momentary, not @L0, not @L7) NOT on own layer
-        candidates = []
-        for i, sid in enumerate(genome):
-            if sid < 0 or sid >= self.n_shortcuts:
-                continue
-            tgt = int(self._access_target_lut[sid])
-            if tgt <= 0 or tgt == 7:
-                continue
-            if self._access_is_mo_lut[sid]:
-                continue  # momentary, skip
-            cur_layer = int(self._pos_layer_arr[i])
-            if cur_layer != tgt:
-                candidates.append((i, tgt))
-        if not candidates:
+        genome_arr = np.asarray(genome, dtype=np.int32)
+        valid = (genome_arr >= 0) & (genome_arr < self.n_shortcuts)
+        if not valid.any():
             return False
-        src_pos, target_layer = random.choice(candidates)
+        sids = genome_arr
+        tgts = self._access_target_lut[sids]
+        cur_layers = self._pos_layer_arr
+        is_toggle = valid & (tgts > 0) & (tgts != 7) & (~self._access_is_mo_lut[sids])
+        not_on_own = is_toggle & (cur_layers != tgts)
+        candidate_idx = np.where(not_on_own)[0]
+        if len(candidate_idx) == 0:
+            return False
+        src_pos = int(random.choice(candidate_idx))
+        target_layer = int(tgts[src_pos])
         positions_on_target = self._layer_mutable_positions.get(target_layer, [])
         if not positions_on_target:
             return False
-        empty = [p for p in positions_on_target if genome[p] < 0 and p != src_pos]
-        any_pos = [p for p in positions_on_target if p != src_pos]
-        pool = empty if empty else any_pos
-        if not pool:
+        positions_on_target = np.asarray(positions_on_target, dtype=np.int32)
+        empty = positions_on_target[(genome_arr[positions_on_target] < 0) & (positions_on_target != src_pos)]
+        any_pos = positions_on_target[positions_on_target != src_pos]
+        pool = empty if len(empty) > 0 else any_pos
+        if len(pool) == 0:
             return False
-        tgt_pos = random.choice(pool)
+        tgt_pos = int(random.choice(pool))
         genome[src_pos], genome[tgt_pos] = int(genome[tgt_pos]), int(genome[src_pos])
         return True
 
@@ -1263,30 +1871,29 @@ class SwapMutation(Mutation):
             return False
         ret_sid = self._return_toggle_sid
         # Find toggle-accessible layers
-        toggle_to: set = set()
-        has_return: set = set()
-        for i, sid in enumerate(genome):
-            if sid < 0 or sid >= self.n_shortcuts:
-                continue
-            tgt = int(self._access_target_lut[sid])
-            if tgt <= 0:
-                continue
-            if not self._access_is_mo_lut[sid]:  # toggle (not momentary)
-                if tgt == 0:
-                    has_return.add(int(self._pos_layer_arr[i]))
-                else:
-                    toggle_to.add(tgt)
+        genome_arr = np.asarray(genome, dtype=np.int32)
+        valid = (genome_arr >= 0) & (genome_arr < self.n_shortcuts)
+        if not valid.any():
+            return False
+        sids = genome_arr
+        tgts = self._access_target_lut[sids]
+        is_toggle = valid & (tgts > 0) & (~self._access_is_mo_lut[sids])
+        if not is_toggle.any():
+            return False
+        cur_layers = self._pos_layer_arr
+        toggle_to = set(cur_layers[is_toggle & (tgts != 0)].tolist())
+        has_return = set(cur_layers[is_toggle & (tgts == 0)].tolist())
         missing = [lyr for lyr in toggle_to if lyr not in has_return
                    and lyr in self._layer_mutable_positions]
         if not missing:
             return False
         lyr = random.choice(missing)
-        positions = self._layer_mutable_positions[lyr]
-        # Prefer thumb → empty → any
-        thumb_empty = [p for p in positions if genome[p] < 0 and self._pos_is_thumb_arr[p]]
-        any_empty   = [p for p in positions if genome[p] < 0]
-        pool = thumb_empty or any_empty or positions
-        genome[random.choice(pool)] = ret_sid
+        positions = np.asarray(self._layer_mutable_positions[lyr], dtype=np.int32)
+        values = genome_arr[positions]
+        thumb_empty = positions[(values < 0) & self._pos_is_thumb_arr[positions]]
+        any_empty = positions[values < 0]
+        pool = thumb_empty if len(thumb_empty) > 0 else (any_empty if len(any_empty) > 0 else positions)
+        genome[int(random.choice(pool))] = ret_sid
         return True
 
     def _do(self, problem, X, **kwargs):
@@ -1311,29 +1918,78 @@ class SwapMutation(Mutation):
             if random.random() < self.bulk_assign_prob and self._bulk_reassign(X[i]):
                 handled[i] = True
                 continue
-            if random.random() < self.random_assign_prob and self._random_reassign_one(X[i]):
-                handled[i] = True
-                continue
-            if random.random() < self.cluster_app_prob and self._cluster_app_shortcut(X[i]):
-                handled[i] = True
-                continue
-            if random.random() < self.effort_swap_prob and self._effort_swap(X[i]):
-                handled[i] = True
-                continue
-            if random.random() < self.smart_duplicate_prob and self._smart_duplicate(X[i]):
-                handled[i] = True
-                continue
-            if random.random() < self.toggle_own_layer_bias_prob and self._bias_toggle_to_own_layer(X[i]):
-                handled[i] = True
-                continue
-            if random.random() < self.access_thumb_bias_prob and self._bias_access_to_thumb(X[i]):
-                handled[i] = True
-                continue
-            if random.random() < self.return_toggle_repair_prob and self._repair_missing_return_toggles(X[i]):
-                handled[i] = True
-                continue
 
-        # Pass 2: vectorized swap for unhandled genomes (~60%)
+        # Pass 1b: app-cluster mutation stays sequential (harder to Numba-ize)
+        if self.cluster_app_prob > 0.0:
+            for i in range(n):
+                if handled[i]:
+                    continue
+                if random.random() < self.cluster_app_prob and self._cluster_app_shortcut(X[i]):
+                    handled[i] = True
+
+        # Pass 2: Numba-parallel simple mutations for remaining unhandled genomes
+        if NUMBA_AVAILABLE and n > 0 and np.any(~handled):
+            probs = np.array([
+                self.random_assign_prob,
+                self.effort_swap_prob,
+                self.smart_duplicate_prob,
+                self.toggle_own_layer_bias_prob,
+                self.access_thumb_bias_prob,
+                self.return_toggle_repair_prob,
+            ], dtype=np.float64)
+            seeds = np.random.randint(0, 2**63, size=n, dtype=np.uint64)
+            _mutate_batch_numba(
+                X,
+                handled,
+                probs,
+                seeds,
+                self._mutable_arr,
+                self._pos_layer_arr,
+                self._pos_hand_arr,
+                self._pos_is_thumb_arr,
+                self._pos_effort_arr,
+                self._sid_importance_arr,
+                self._access_target_lut,
+                self._access_is_mo_lut,
+                self._mo_access_target_lut,
+                self._is_group_sid_lut,
+                self._is_important_sid_lut,
+                np.int32(self._return_toggle_sid if self._return_toggle_sid is not None else -1),
+                self._dup_candidate_arr,
+                self._dup_exp_w,
+                self._frozen_sid_counts,
+                self._assignable_arr,
+                self._layer_mutable_flat,
+                self._layer_mutable_start,
+                self._mouse_button_sids,
+                self._toggle_access_sids_arr,
+                np.int32(self.n_shortcuts),
+            )
+        else:
+            # Pure-Python fallback (also used when Numba is unavailable)
+            for i in range(n):
+                if handled[i]:
+                    continue
+                if random.random() < self.random_assign_prob and self._random_reassign_one(X[i]):
+                    handled[i] = True
+                    continue
+                if random.random() < self.effort_swap_prob and self._effort_swap(X[i]):
+                    handled[i] = True
+                    continue
+                if random.random() < self.smart_duplicate_prob and self._smart_duplicate(X[i]):
+                    handled[i] = True
+                    continue
+                if random.random() < self.toggle_own_layer_bias_prob and self._bias_toggle_to_own_layer(X[i]):
+                    handled[i] = True
+                    continue
+                if random.random() < self.access_thumb_bias_prob and self._bias_access_to_thumb(X[i]):
+                    handled[i] = True
+                    continue
+                if random.random() < self.return_toggle_repair_prob and self._repair_missing_return_toggles(X[i]):
+                    handled[i] = True
+                    continue
+
+        # Pass 3: vectorized swap for remaining unhandled genomes
         m = len(self._mutable_arr)
         if m < 2:
             return X

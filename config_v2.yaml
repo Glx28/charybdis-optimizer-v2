@@ -3,7 +3,15 @@ evolution:
   n_generations: 500000     # early stop governs; ~24h run
   crossover_prob: 0.7
   mutation_prob: 0.2
+  group_overwrite_prob: 0.15
+  mouse_workflow_prob: 0.06
+  l7_access_prob: 0.03
+  random_assign_prob: 0.08
+  bulk_assign_prob: 0.04
+  optional_arrow_drop_prob: 0.04
   cluster_app_prob: 0.20
+  effort_swap_prob: 0.06
+  smart_duplicate_prob: 0.20
   seed: 42
   inject_seed: true
 surrogate:
@@ -17,13 +25,13 @@ surrogate:
   max_retrain_samples: 9000      # keep only recent 9000 samples → local surrogate, higher R²
   hidden_dim: 256
   embedding_dim: 32
+  mini_eval_fraction: 0.1        # fraction of children exact-evaluated each generation
 training:
   require_cuda: true
   require_gpu_primary: true
-  allow_cpu_exact_validation: true
+  allow_cpu_exact_validation: false
 exact_eval:
-  batch_size: 100                # was 50; larger Numba batch per exact-eval call
-  use_numba: true
+  batch_size: 100                # exact-eval batch size
   validate_parity: false
   parity_samples: 16
   parity_tolerance: 1e-4
@@ -46,10 +54,21 @@ fitness:
     RightArrow: 4.0
     UpArrow: 4.0
     DownArrow: 4.0
+    # Ctrl+S: 0.95 default (raw stats miss saves — boosted to match real use)
+    Ctrl+S: 14.0
+    # Ctrl+Y/A: low defaults, boosted to reflect real-world frequency
+    Ctrl+A: 6.0
+    Ctrl+Y: 12.0
+    # Shift+Enter: 99 uses/day (most-used non-frozen layer shortcut) — 6.0 default is too low
+    Shift+Enter: 9.5
+    # Ctrl+C: 52/day but only eff=1.00; same importance as Ctrl+V which is at eff=0.00
+    # Keep at 10.0 (already set by app data) — optimizer needs to find it a home-row slot
+    # Scroll: no L10 hardcode — kernel tracks scroll_right_momentary dynamically by placement layer.
+    # Effort penalty (coeff 15000) pushes whichever scroll key lands on the mouse layer to eff=0.
   missing_important_threshold: 6.0
   toggle_effort_multiplier: 4.0
   violation_sub_weights:
-    duplicate: 10.0
+    duplicate: 35.0
     l0_displacement: 50.0
     missing_important: 500.0
     cross_layer_duplicate: 25.0
@@ -57,7 +76,7 @@ fitness:
     thumb_occupancy: 30000.0
     arrow_order: 10000.0
     hand_bias: 25000.0
-    mouse_layer_access: 25000.0
+    mouse_layer_access: 5000000.0
     arrow_scattered: 50000.0
     mouse_scattered: 500.0
     layer7_access: 50000.0
@@ -67,9 +86,11 @@ fitness:
     dynamic_mouse_layer: 500000.0
     empty_position: 50.0
     layer_reachability: 50000.0
-    layer_depth_penalty: 2000.0
+    layer_depth_penalty: 3000000000.0
     natural_mouse_layer_exists: 200000
     toggle_back_to_l0: 150000000000.0
+    mouse_hold_position_conflict: 150000000000.0
+    mouse_layer_depth_penalty: 150000000000.0
   hard_constraints:
     - missing_important
     - layer7_access

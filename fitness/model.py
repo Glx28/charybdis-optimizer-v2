@@ -11,6 +11,14 @@ import numpy as np
 
 from fitness.kernel import precompute, _evaluate_batch, _single_genome, NUMBA_AVAILABLE
 
+try:
+    from fitness.cuda_kernel import evaluate_batch_cuda, build_cuda_args, cuda_available
+    _CUDA_AVAILABLE = cuda_available()
+except Exception:
+    _CUDA_AVAILABLE = False
+    evaluate_batch_cuda = None
+    build_cuda_args = None
+
 
 @dataclass
 class ParityResult:
@@ -32,6 +40,7 @@ class FitnessModel:
         reference_genome: Optional[np.ndarray] = None,
         hard_constraints: Optional[List[str]] = None,
         toggle_effort_multiplier: float = 2.5,
+        require_cuda: bool = False,
     ):
         if not NUMBA_AVAILABLE:
             raise RuntimeError("Numba is required by the single-source fitness model")
@@ -43,6 +52,7 @@ class FitnessModel:
         self.scale_factors = scale_factors if scale_factors is not None else np.ones(3, dtype=np.float32)
         self.reference_genome = reference_genome
         self.hard_constraints = hard_constraints or []
+        self.require_cuda = require_cuda
 
         self.toggle_effort_multiplier = toggle_effort_multiplier
         self.arrays = precompute(
@@ -55,6 +65,18 @@ class FitnessModel:
             hard_constraints=self.hard_constraints,
             toggle_effort_multiplier=toggle_effort_multiplier,
         )
+
+        # CUDA is the only production batch-evaluation path. Numba remains
+        # available for unit tests and explicit CPU diagnostics only.
+        self._use_cuda = bool(_CUDA_AVAILABLE)
+        if self.require_cuda and not self._use_cuda:
+            raise RuntimeError(
+                "CUDA exact evaluation is required but unavailable. "
+                "Do not start a CPU-primary training run."
+            )
+
+        # Cache static CUDA tensors so each batch eval does not rebuild them.
+        self._cuda_args = build_cuda_args(self.arrays) if self._use_cuda else None
 
         # Force one JIT compile/warm-up call on a single genome.
         _single_genome(layout.genome, *self.arrays)
@@ -73,6 +95,12 @@ class FitnessModel:
         genomes = np.asarray(genomes, dtype=np.int32)
         if genomes.ndim == 1:
             genomes = genomes.reshape(1, -1)
+        if self.require_cuda and not self._use_cuda:
+            raise RuntimeError(
+                "CUDA exact evaluation is required but this model is CPU-only."
+            )
+        if self._use_cuda:
+            return evaluate_batch_cuda(genomes, self.arrays, cuda_args=self._cuda_args)
         return _evaluate_batch(genomes, *self.arrays)
 
     def validate_parity(

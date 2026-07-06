@@ -166,6 +166,7 @@ def build_evaluator(config, layout, scale_factors=None):
         missing_important_threshold=config.get("fitness.missing_important_threshold", 6.0),
         hard_constraints=config.get("fitness.hard_constraints", []),
         toggle_effort_multiplier=float(config.get("fitness.toggle_effort_multiplier", 2.5)),
+        require_cuda=bool(config.get("training.require_cuda", True)),
     )
 
 
@@ -176,6 +177,8 @@ def enforce_training_device_policy(config):
     unit tests or one-off diagnostics, but it must not silently become the
     training path for an evolution run.
     """
+    from fitness.model import _CUDA_AVAILABLE
+
     require_cuda = bool(config.get("training.require_cuda", True))
     require_gpu_primary = bool(config.get("training.require_gpu_primary", True))
     allow_cpu_exact_validation = bool(config.get("training.allow_cpu_exact_validation", False))
@@ -190,14 +193,14 @@ def enforce_training_device_policy(config):
     if require_gpu_primary and not surrogate_enabled:
         raise SystemExit(
             "GPU training policy violation: GPU-primary training is required, but surrogate.enabled=false. "
-            "The current run_evolution.py exact-evaluation path is CPU/Numba-primary. "
-            "Enable or implement a CUDA-backed training path before starting a training run."
+            "The surrogate model is what keeps selection GPU-primary. "
+            "Enable surrogate.enabled before starting a training run."
         )
-    if require_gpu_primary and not allow_cpu_exact_validation:
+    if require_gpu_primary and not allow_cpu_exact_validation and not _CUDA_AVAILABLE:
         raise SystemExit(
-            "GPU training policy violation: allow_cpu_exact_validation=false, but this runner still uses "
-            "CPU exact evaluation as teacher labels/checkpoint validation. Implement a CUDA exact kernel or "
-            "explicitly allow CPU validation while keeping training GPU-primary."
+            "GPU training policy violation: allow_cpu_exact_validation=false, but the CUDA exact "
+            "evaluator is not available (import/compilation failed). Fix the CUDA build or explicitly "
+            "allow CPU validation while keeping training GPU-primary."
         )
 
 
@@ -857,6 +860,15 @@ def main(argv=None):
         prob=config.get("evolution.mutation_prob", 0.15),
         frozen_mask=layout.frozen_mask,
         layout=layout,
+        group_overwrite_prob=config.get("evolution.group_overwrite_prob", 0.15),
+        mouse_workflow_prob=config.get("evolution.mouse_workflow_prob", 0.06),
+        l7_access_prob=config.get("evolution.l7_access_prob", 0.03),
+        random_assign_prob=config.get("evolution.random_assign_prob", 0.08),
+        bulk_assign_prob=config.get("evolution.bulk_assign_prob", 0.04),
+        optional_arrow_drop_prob=config.get("evolution.optional_arrow_drop_prob", 0.04),
+        cluster_app_prob=config.get("evolution.cluster_app_prob", 0.20),
+        effort_swap_prob=config.get("evolution.effort_swap_prob", 0.06),
+        smart_duplicate_prob=config.get("evolution.smart_duplicate_prob", 0.20),
     )
     sanitizer = StructuralGenomeSanitizer(
         n_shortcuts=layout.n_shortcuts,
@@ -875,6 +887,8 @@ def main(argv=None):
 
     initial_pop_X = generate_random_layouts(layout, pop_size, warmstart_genome=warmstart_genome)
 
+    mini_eval_fraction = float(config.get("surrogate.mini_eval_fraction", 0.1))
+    mini_eval_count = max(1, int(round(pop_size * mini_eval_fraction)))
     runner = CustomGARunner(
         layout=layout,
         evaluator=evaluator,
@@ -889,6 +903,7 @@ def main(argv=None):
         build_dir=args.output_dir,
         perf=perf,
         hard_constraints=hard_constraints,
+        mini_eval_count=mini_eval_count,
     )
     ga_result = runner.run(n_gen, initial_pop_X=initial_pop_X)
 

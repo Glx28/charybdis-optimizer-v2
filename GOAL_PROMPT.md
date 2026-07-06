@@ -49,8 +49,9 @@ Print: gen, gap, G=[...], what changed, what to watch next turn.
 
 KEY FACTS:
 - gap = total_fitness + 49.30; more negative = better. Scale factors recalibrate on restart — cross-run gap comparisons not valid after config changes.
-- Current run: gap=-5.068 at gen~10500 (best at gen4379), stagnant since gen4379 (~6000 gens). Kill and restart if still stagnant.
+- Current run: gap=-5.068 at gen~19000 (best at gen4379), stagnant 14621 gens. Killed and restarted with new fitness changes (2026-07-05).
 - Mouse layer = L10, 1 hold-hop from L0 via left thumb; MB1-5 on R-finger only (not R-thumb)
+- Mouse layer FIXED POSITIONS (kernel x-preference): MB1 → x=8 (index), MB2 → x=9 (middle), scroll → x=10 (ring). Penalty: 12000 per column off. At x=11 instead of x=8: 36000 penalty (near-mandatory constraint while still allowing evolution).
 - Scroll priority on L10: MB1 > MB2 > momentary scroll > MB4 > MB5
 - Scroll enforcement: any `@scroll:LX:hold` placed on L10 (right-hand, non-thumb) satisfies natural_mouse_layer_exists hard constraint. Kernel penalizes scroll effort with coeff 15000 — scroll at eff=1.75 costs 26250 (worse than no scroll at 25000), forcing optimizer to find eff=0 slot.
 - SCROLL FIRMWARE ARCHITECTURE (2026-07-05): L11 is the dedicated transparent scroll mode layer. `scroll-layers = <11>` in charybdis_right.overlay. All `@scroll:LX:hold` shortcuts export as `&mo 11` in export_and_analyze_linux.py. L11 is all-transparent so current layer bindings stay visible while scrolling. Firmware is already pushed to GitHub — needs flash after next CI build.
@@ -63,7 +64,7 @@ KEY FACTS:
 - Importance overrides: Ctrl+S=14.0, Ctrl+Y=12.0, Shift+Enter=9.5, Ctrl+A=6.0 (no @scroll hardcode — kernel handles scroll dynamically)
 - Scroll effort coefficient: 15000 (raised from 8000 this session)
 - Coach app: http://127.0.0.1:8765/ reads charybdis-coach/data/keybindings_explained.csv
-- Kernel changes applied: scroll effort coeff 400→8000→15000, empty position penalty restored (L1-L10 non-L7), scroll effort min-tracking bug fixed, LeftAlt/arrow key loader bug fixed
+- Kernel changes applied: scroll effort coeff 400→8000→15000, empty position penalty restored (L1-L10 non-L7), scroll effort min-tracking bug fixed, LeftAlt/arrow key loader bug fixed, MB1/MB2/scroll x-position preference (12000 per column, 2026-07-05)
 
 ---
 

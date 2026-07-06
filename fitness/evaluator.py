@@ -19,7 +19,8 @@ class FitnessEvaluator:
                  scale_factors=None, violation_weights: Dict[str, float] = None,
                  missing_important_threshold: float = 6.0,
                  hard_constraints: Optional[List[str]] = None,
-                 toggle_effort_multiplier: float = 2.5):
+                 toggle_effort_multiplier: float = 2.5,
+                 require_cuda: bool = False):
         self.weights = dict(DEFAULT_CONFIG["fitness"]["weights"]) if weights is None else dict(weights)
         self.reference_layout = reference_layout
         self.scale_factors = scale_factors if scale_factors is not None else np.ones(3, dtype=np.float32)
@@ -27,6 +28,7 @@ class FitnessEvaluator:
         self.threshold = missing_important_threshold
         self.hard_constraints = hard_constraints or []
         self.toggle_effort_multiplier = toggle_effort_multiplier
+        self.require_cuda = require_cuda
 
         if reference_layout is not None:
             self.model = FitnessModel(
@@ -38,6 +40,7 @@ class FitnessEvaluator:
                 reference_genome=reference_layout.genome,
                 hard_constraints=self.hard_constraints,
                 toggle_effort_multiplier=toggle_effort_multiplier,
+                require_cuda=require_cuda,
             )
         else:
             self.model = None
