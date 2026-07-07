@@ -2,8 +2,16 @@ const fs = require("fs");
 const path = require("path");
 const { writeBuild, BUILD, SIBLING_TOOLS } = require("./lib/io");
 
-const USAGE_LOG = path.join(SIBLING_TOOLS, "runtime", "shortcut_usage.jsonl");
-const EVENTS_LOG = path.join(SIBLING_TOOLS, "runtime", "charybdis_events.jsonl");
+const USAGE_LOG_CANDIDATES = [
+  path.join(SIBLING_TOOLS, "shortcut_usage.jsonl"),
+  path.join(SIBLING_TOOLS, "runtime", "shortcut_usage.jsonl"),
+];
+const EVENTS_LOG_CANDIDATES = [
+  path.join(SIBLING_TOOLS, "charybdis_events.jsonl"),
+  path.join(SIBLING_TOOLS, "runtime", "charybdis_events.jsonl"),
+];
+const USAGE_LOG = USAGE_LOG_CANDIDATES.find((p) => fs.existsSync(p)) || USAGE_LOG_CANDIDATES[0];
+const EVENTS_LOG = EVENTS_LOG_CANDIDATES.find((p) => fs.existsSync(p)) || EVENTS_LOG_CANDIDATES[0];
 const SCORES_PATH = path.join(BUILD, "app_shortcut_scores.json");
 
 /**
