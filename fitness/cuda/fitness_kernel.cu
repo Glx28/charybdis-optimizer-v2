@@ -1571,10 +1571,14 @@ __device__ void evaluate_single(
         if (s->scroll_right_momentary[layer]) {
             int us = (int)s->scroll_right_momentary_usage[layer];
             float usage_scale = 1.0f + log1p_lookup(us, log1p_lut, lut_size) * 0.35f;
-            candidate_penalty += s->scroll_right_momentary_effort[layer] * usage_scale * 70000.0f;
+            candidate_penalty += s->scroll_right_momentary_effort[layer] * usage_scale * 120000.0f;
             if (s->scroll_right_momentary_x[layer] >= 0.0f) {
-                candidate_penalty += fabsf(s->scroll_right_momentary_x[layer] - 9.0f) * 36000.0f;
-                candidate_penalty += fabsf(s->scroll_right_momentary_y[layer] - 2.0f) * 42000.0f;
+                candidate_penalty += fabsf(s->scroll_right_momentary_x[layer] - 9.0f) * 42000.0f;
+                float y_gap = fabsf(s->scroll_right_momentary_y[layer] - 2.0f);
+                candidate_penalty += y_gap * 95000.0f;
+                if (y_gap > 0.0f) {
+                    candidate_penalty += y_gap * y_gap * usage_scale * 180000.0f;
+                }
                 if (s->scroll_right_momentary_x[layer] == 7.0f || s->scroll_right_momentary_x[layer] == 8.0f) {
                     candidate_penalty += 250000.0f;
                 }
@@ -1584,7 +1588,7 @@ __device__ void evaluate_single(
                     float effort_gap = s->scroll_right_momentary_effort[layer]
                         - s->mouse_button_effort[layer][lower_button];
                     if (effort_gap > 0.0f) {
-                        candidate_penalty += effort_gap * usage_scale * 90000.0f;
+                        candidate_penalty += effort_gap * usage_scale * 240000.0f;
                     }
                 }
             }

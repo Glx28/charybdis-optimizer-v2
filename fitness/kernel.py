@@ -1809,17 +1809,20 @@ if NUMBA_AVAILABLE:
                 _us = int(scroll_right_momentary_usage[layer]); usage_scale = 1.0 + log1p_lut[_us if _us < lut_size else lut_size - 1] * 0.35
                 # Scroll is part of the mouse core group. It should beat MB3-5
                 # for a prime non-thumb right-side position when usage supports it.
-                candidate_penalty += scroll_right_momentary_effort[layer] * usage_scale * 70000.0
+                candidate_penalty += scroll_right_momentary_effort[layer] * usage_scale * 120000.0
                 if scroll_right_momentary_x[layer] >= 0.0:
-                    candidate_penalty += abs(scroll_right_momentary_x[layer] - 9.0) * 36000.0
-                    candidate_penalty += abs(scroll_right_momentary_y[layer] - 2.0) * 42000.0
+                    candidate_penalty += abs(scroll_right_momentary_x[layer] - 9.0) * 42000.0
+                    y_gap = abs(scroll_right_momentary_y[layer] - 2.0)
+                    candidate_penalty += y_gap * 95000.0
+                    if y_gap > 0.0:
+                        candidate_penalty += y_gap * y_gap * usage_scale * 180000.0
                     if scroll_right_momentary_x[layer] == 7.0 or scroll_right_momentary_x[layer] == 8.0:
                         candidate_penalty += 250000.0
                 for lower_button in (3, 4):
                     if mouse_button_right[layer, lower_button] > 0:
                         effort_gap = scroll_right_momentary_effort[layer] - mouse_button_effort[layer, lower_button]
                         if effort_gap > 0.0:
-                            candidate_penalty += effort_gap * usage_scale * 90000.0
+                            candidate_penalty += effort_gap * usage_scale * 240000.0
             else:
                 candidate_penalty += 25000.0
             if scroll_right_momentary_thumb[layer]:

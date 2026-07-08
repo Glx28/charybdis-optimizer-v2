@@ -16,6 +16,7 @@ from tools._common import (
     compute_reachability,
     load_checkpoint,
     load_evaluator,
+    mouse_layer_quality_warnings,
     resolve_checkpoint_path,
 )
 from evolution.acceptance import _dynamic_mouse_layer_report
@@ -71,6 +72,13 @@ def main():
     print(f"dynamic_mouse_layer_present: {details.get('acceptance_pass', False)}")
     print(f"scroll_mode_access_present: {bool(best_detail.get('right_momentary_scroll_access'))}")
     print()
+
+    quality_warnings = mouse_layer_quality_warnings(layout, arrays, details)
+    if quality_warnings:
+        print("--- Mouse Layer Quality Warnings ---")
+        for warning in quality_warnings:
+            print(f"  ! {warning}")
+        print()
 
     if candidate >= 0:
         print(f"--- Buttons on L{candidate} ---")

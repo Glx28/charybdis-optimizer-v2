@@ -204,6 +204,85 @@ def label_shortcut(sid: int, layout: object, arrays: Optional[Tuple] = None) -> 
     }
 
 
+def mouse_layer_quality_warnings(layout: object, arrays: Tuple, mouse_report: Optional[Dict] = None) -> List[str]:
+    """Return human-facing warnings for accepted-but-low-quality mouse layers.
+
+    Acceptance intentionally checks only final validity. This helper catches
+    quality regressions inside a valid dynamic mouse layer, especially Scroll
+    being placed worse than lower-priority mouse buttons.
+    """
+    if mouse_report is None:
+        from evolution.acceptance import _dynamic_mouse_layer_report
+
+        mouse_report = _dynamic_mouse_layer_report(layout)
+
+    layer = mouse_report.get("mouse_layer")
+    if layer is None:
+        best = mouse_report.get("best_candidate") or {}
+        layer = best.get("layer")
+    if layer is None or int(layer) < 0:
+        return ["No dynamic mouse layer candidate found for quality audit."]
+    layer = int(layer)
+
+    pos_effort = arrays[0]
+    pos_layer = arrays[1]
+    pos_hand = arrays[3]
+    pos_is_thumb = arrays[4]
+    pos_x = arrays[8]
+    pos_y = arrays[9]
+    sc_is_mouse = arrays[16]
+    sc_mouse_btn = arrays[17]
+
+    button_best: Dict[int, Tuple[float, int, float, float]] = {}
+    scroll_best: Optional[Tuple[float, int, float, float]] = None
+    for idx, sid in enumerate(layout.genome):
+        sid = int(sid)
+        if sid < 0 or sid >= len(layout.shortcuts) or int(pos_layer[idx]) != layer:
+            continue
+        if sc_is_mouse[sid] and sc_mouse_btn[sid] > 0 and pos_hand[idx] == 1 and not pos_is_thumb[idx]:
+            button = int(sc_mouse_btn[sid])
+            row = (float(pos_effort[idx]), idx, float(pos_x[idx]), float(pos_y[idx]))
+            if button not in button_best or row[0] < button_best[button][0]:
+                button_best[button] = row
+        shortcut = layout.shortcuts[sid]
+        is_scroll = bool(getattr(shortcut, "is_scroll_mode_access", False)) or "scroll" in shortcut.keys.lower()
+        if (
+            is_scroll
+            and getattr(shortcut, "access_is_momentary", False)
+            and pos_hand[idx] == 1
+            and not pos_is_thumb[idx]
+        ):
+            row = (float(pos_effort[idx]), idx, float(pos_x[idx]), float(pos_y[idx]))
+            if scroll_best is None or row[0] < scroll_best[0]:
+                scroll_best = row
+
+    warnings = []
+    if scroll_best is None:
+        warnings.append(f"L{layer}: no right-hand non-thumb momentary Scroll found for quality audit.")
+        return warnings
+
+    scroll_effort, scroll_idx, scroll_x, scroll_y = scroll_best
+    for button in (3, 4):
+        if button not in button_best:
+            continue
+        btn_effort, btn_idx, btn_x, btn_y = button_best[button]
+        if scroll_effort > btn_effort + 1e-6:
+            warnings.append(
+                f"L{layer}: momentary Scroll pos{scroll_idx} "
+                f"(x={scroll_x:.0f}, y={scroll_y:.0f}, effort={scroll_effort:.2f}) "
+                f"is worse than MB{button} pos{btn_idx} "
+                f"(x={btn_x:.0f}, y={btn_y:.0f}, effort={btn_effort:.2f})."
+            )
+    if abs(scroll_y - 2.0) > 1e-6:
+        warnings.append(
+            f"L{layer}: momentary Scroll pos{scroll_idx} is on y={scroll_y:.0f}; "
+            "expected the preferred mouse row y=2 unless usage strongly proves otherwise."
+        )
+    if scroll_x in (7.0, 8.0):
+        warnings.append(f"L{layer}: momentary Scroll pos{scroll_idx} is on uncomfortable x={scroll_x:.0f}.")
+    return warnings
+
+
 def layer_inventory(layout: object) -> List[Dict[str, object]]:
     """Return a list of dicts, one per layer, with basic metadata."""
     inv = []

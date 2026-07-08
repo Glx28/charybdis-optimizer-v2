@@ -15,6 +15,7 @@ from tools._common import (
     checkpoint_to_layout,
     load_checkpoint,
     load_evaluator,
+    mouse_layer_quality_warnings,
     resolve_checkpoint_path,
 )
 from evolution.acceptance import _dynamic_mouse_layer_report
@@ -207,6 +208,13 @@ def main():
     print(f"  Norwegian cluster: {checks.get('norwegian_completion_cluster', False)}")
     print(f"  Thumb side clear: {checks.get('momentary_only_thumb_side_clear', False)}")
     print()
+
+    mouse_warnings = mouse_layer_quality_warnings(layout, arrays, current_mouse)
+    if mouse_warnings:
+        print("--- Mouse Layer Quality Warnings ---")
+        for warning in mouse_warnings:
+            print(f"  ! {warning}")
+        print()
 
     l0_rows = _l0_mutable_assignments(layout)
     if l0_rows:
