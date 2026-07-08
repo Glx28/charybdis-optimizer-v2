@@ -81,10 +81,10 @@ fitness:
     mouse_scattered: 500.0
     layer7_access: 50000.0
     duplicate_value_gap: 500.0
-    access_layout: 3000.0
+    access_layout: 5000.0
     raw_keyboard_completion_norwegian: 80000.0
     dynamic_mouse_layer: 500000.0
-    empty_position: 50.0
+    empty_position: 200.0
     layer_reachability: 50000.0
     layer_depth_penalty: 3000000000.0
     natural_mouse_layer_exists: 200000

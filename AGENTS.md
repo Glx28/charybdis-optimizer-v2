@@ -2,6 +2,12 @@
 
 Evolutionary layout optimizer for the Charybdis keyboard.
 
+## Agent-Specific Entry Points
+
+- **Kimi Code CLI:** read `KIMI.md` after this file for Kimi-specific skills, MCP servers, recipes, and run-analysis commands.
+- **Claude Code:** `CLAUDE.md` redirects here.
+- **Codex CLI:** see `CODEX_PROMPT.md`.
+
 ## GPU Training Policy
 
 Training must never silently fall back to CPU-primary evolution. This is a
@@ -120,16 +126,21 @@ momentary layer access capability and a toggle layer access capability.
 Momentary Scroll is part of the core mouse group for the generated mouse layer.
 Because scrolling is a major part of mouse/trackball use, the dynamic mouse
 layer is invalid without a right-hand non-thumb momentary Scroll capability on
-that same layer. Prefer momentary Scroll over toggle Scroll for this condition.
+that same layer. Momentary Scroll on x7 or x8 is considered uncomfortable and
+does not satisfy the generated mouse-layer condition. Prefer momentary Scroll
+over toggle Scroll for this condition.
 Do not create static or dynamic groups for `ScrollUp`/`ScrollDown`; those are
 fake wheel-direction keypresses, not real shortcuts.
 
 Mouse buttons may appear on other generated layers only when usage/access data
 justifies them, and mouse duplicates are harder to justify than ordinary
-shortcut duplicates. The dynamic mouse layer receives the primary mouse-workflow
-bonus. Within that layer, MB1 is slightly preferred left of and close to MB2;
-MB4 is slightly preferred left of and close to MB5; each pair gets a small
-same-row bonus. These are soft relative biases, not fixed coordinates.
+shortcut duplicates. Mouse buttons are forbidden on right-thumb positions on
+every generated layer, not only on the dynamic mouse layer. The dynamic mouse
+layer receives the primary mouse-workflow bonus. Within that layer, MB2 is
+more valuable than MB3/MB4/MB5 and should win better placement when usage does
+not prove otherwise. MB1 is slightly preferred left of and close to MB2; MB4 is
+slightly preferred left of and close to MB5; each pair gets a small same-row
+bonus. These are soft relative biases, not fixed coordinates.
 
 Once a natural generated mouse layer exists, it should dominate mouse
 interactions. Mouse buttons on other layers receive lower value and extra
@@ -180,3 +191,7 @@ them. Mutable raw arrows, when present outside L7, must be complete on one
 layer and use exactly one of two shapes: one row ordered `Left Up Down Right`,
 or two rows with `Left Down Right` on the bottom row and `Up` directly above
 `Down`.
+
+## Agent Tooling Rules
+
+Before editing: run `just ai-status` and `just ai-context`. Prefer existing repo tools (rg, fd, ast-grep, just recipes, MCP, tests, linters) over custom scripts. Make minimal diffs. Do not rewrite broad systems. Do not replace CUDA/GPU/Numba/Triton/NVIDIA logic with CPU-only logic. Do not add processor-side escape hatches to hide CUDA bugs. Do not delete tests. Keep final answers short unless asked for detail. For CUDA work: reproduce the GPU failure, inspect the smallest failing path, fix the GPU path, run relevant tests, then `just ai-guard`. Before finishing: `just ai-guard` and `just ai-smoke`.

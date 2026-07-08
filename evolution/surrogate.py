@@ -1,8 +1,9 @@
 """Neural surrogate model for fast fitness approximation."""
+import concurrent.futures
 import contextlib
 import copy
-import concurrent.futures
 import threading
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -11,12 +12,13 @@ import torch.nn.functional as F
 
 class LayoutSurrogate(nn.Module):
     """Predicts fitness scores from layout permutation."""
-    
+
     def __init__(
         self,
         n_positions: int,
         n_shortcuts: int,
         n_factors: int = 3,
+        n_constraints: int = 0,
         hidden_dim: int = 128,
         embedding_dim: int = 32,
     ):
@@ -24,10 +26,12 @@ class LayoutSurrogate(nn.Module):
         self.n_positions = n_positions
         self.n_shortcuts = n_shortcuts
         self.n_factors = n_factors
+        self.n_constraints = n_constraints
         self.embedding_dim = embedding_dim
-        
+        output_dim = n_factors + n_constraints
+
         self.embedding = nn.Embedding(n_shortcuts + 1, embedding_dim)
-        
+
         self.encoder = nn.Sequential(
             nn.Linear(n_positions * embedding_dim, hidden_dim),
             nn.ReLU(),
@@ -38,22 +42,22 @@ class LayoutSurrogate(nn.Module):
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
         )
-        
-        self.head = nn.Linear(hidden_dim // 2, n_factors)
-        
+
+        self.head = nn.Linear(hidden_dim // 2, output_dim)
+
         for m in self.modules():
             if isinstance(m, nn.Linear):
                 nn.init.xavier_uniform_(m.weight)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
-    
+
     def forward(self, layouts: torch.Tensor) -> torch.Tensor:
         x = layouts.long() + 1   # convert int32→int64 on GPU (free); embedding requires long
         x = self.embedding(x)
         x = x.view(x.size(0), -1)
         x = self.encoder(x)
         return self.head(x)
-    
+
     def count_parameters(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
@@ -72,6 +76,7 @@ class SurrogateTrainer:
         self.n_positions = surrogate.n_positions
         self.n_shortcuts = surrogate.n_shortcuts
         self.n_factors = surrogate.n_factors
+        self.n_constraints = surrogate.n_constraints
         self.embedding_dim = surrogate.embedding_dim
         self.surrogate = surrogate.to(device)
         self.device = device
@@ -139,7 +144,9 @@ class SurrogateTrainer:
         )
         with stream_ctx:
             for epoch in range(epochs):
-                total_loss = 0.0
+                # Accumulate loss on the compute device and sync to CPU once per epoch.
+                # This avoids thousands of per-batch .item() host-device synchronizations.
+                total_loss_t = torch.tensor(0.0, device=self.device)
                 order = torch.randperm(n, device=self.device)
                 for start in range(0, n, batch_size):
                     idx = order[start:start + batch_size]
@@ -153,10 +160,10 @@ class SurrogateTrainer:
                     self.scaler.scale(loss).backward()
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
-                    total_loss += loss.item() * idx.size(0)
+                    total_loss_t += loss.detach() * idx.size(0)
                 scheduler.step()
 
-                avg_loss = total_loss / n
+                avg_loss = float(total_loss_t.item()) / n
                 self.history.append(avg_loss)
                 if epoch % 10 == 0:
                     print(f"  Surrogate epoch {epoch}: loss={avg_loss:.6f}")
@@ -190,7 +197,7 @@ class SurrogateTrainer:
         )
         with stream_ctx:
             for epoch in range(epochs):
-                total_loss = 0.0
+                total_loss_t = torch.tensor(0.0, device=self.device)
                 order = torch.randperm(n, device=self.device)
                 for start in range(0, n, batch_size):
                     idx = order[start:start + batch_size]
@@ -201,9 +208,9 @@ class SurrogateTrainer:
                     scaler.scale(loss).backward()
                     scaler.step(optimizer)
                     scaler.update()
-                    total_loss += loss.item() * idx.size(0)
+                    total_loss_t += loss.detach() * idx.size(0)
                 scheduler.step()
-                avg_loss = total_loss / n
+                avg_loss = float(total_loss_t.item()) / n
                 if epoch % 10 == 0:
                     print(f"  Surrogate epoch {epoch}: loss={avg_loss:.6f}", flush=True)
         train_model.eval()
@@ -240,8 +247,14 @@ class SurrogateTrainer:
         )
         with torch.no_grad(), torch.amp.autocast("cuda", enabled=self.use_amp), stream_ctx:
             if str(self.device).startswith("cuda"):
-                if self._predict_buffer is None or self._predict_buffer.shape[0] < n or self._predict_buffer.shape[1] != layouts.shape[1]:
-                    self._predict_buffer = torch.empty((n, layouts.shape[1]), dtype=torch.int32, device=self.device)
+                if (
+                    self._predict_buffer is None
+                    or self._predict_buffer.shape[0] < n
+                    or self._predict_buffer.shape[1] != layouts.shape[1]
+                ):
+                    self._predict_buffer = torch.empty(
+                        (n, layouts.shape[1]), dtype=torch.int32, device=self.device
+                    )
                 cpu_view = torch.from_numpy(layouts)
                 self._predict_buffer[:n].copy_(cpu_view, non_blocking=True)
                 X = self._predict_buffer[:n]
@@ -249,14 +262,15 @@ class SurrogateTrainer:
                 X = torch.from_numpy(layouts).to(self.device)
             pred = self.surrogate(X).float().cpu()
         return pred.numpy() * self.std + self.mean
-    
+
     def evaluate(self, layouts: np.ndarray, exact_scores: np.ndarray) -> dict:
         pred = self.predict(layouts)
         mse = np.mean((pred - exact_scores) ** 2, axis=0)
         mae = np.mean(np.abs(pred - exact_scores), axis=0)
-        r2 = 1 - np.sum((pred - exact_scores) ** 2, axis=0) / (np.sum((exact_scores - exact_scores.mean(axis=0)) ** 2) + 1e-6)
+        denom = np.sum((exact_scores - exact_scores.mean(axis=0)) ** 2) + 1e-6
+        r2 = 1 - np.sum((pred - exact_scores) ** 2, axis=0) / denom
         return {"mse": mse, "mae": mae, "r2": r2}
-    
+
     def save(self, path: str):
         torch.save({
             "model": self.surrogate.state_dict(),
@@ -266,15 +280,17 @@ class SurrogateTrainer:
             "n_positions": self.n_positions,
             "n_shortcuts": self.n_shortcuts,
             "n_factors": self.n_factors,
+            "n_constraints": self.n_constraints,
             "embedding_dim": self.embedding_dim,
         }, path)
-    
+
     def load(self, path: str):
         ckpt = torch.load(path, map_location=self.device)
         self.surrogate.load_state_dict(ckpt["model"])
         self.mean = ckpt["mean"]
         self.std = ckpt["std"]
         self.history = ckpt.get("history", [])
+        self.n_constraints = ckpt.get("n_constraints", 0)
 
 
 class SurrogateManager:
@@ -299,14 +315,25 @@ class SurrogateManager:
 
     def should_retrain(self) -> bool:
         return self.generation > 0 and self.generation % self.retrain_every == 0
-    
+
     def should_exact_eval(self) -> bool:
         return self.generation % self.exact_eval_every == 0
-    
-    def add_exact_evaluations(self, layouts: np.ndarray, exact_scores: np.ndarray):
+
+    def add_exact_evaluations(
+        self,
+        layouts: np.ndarray,
+        exact_scores: np.ndarray,
+        exact_constraints: np.ndarray = None,
+    ):
+        if exact_constraints is not None:
+            combined = np.concatenate(
+                [exact_scores, exact_constraints], axis=1
+            ).astype(np.float32)
+        else:
+            combined = exact_scores.astype(np.float32)
         for i in range(len(layouts)):
-            self.exact_cache.append((layouts[i].copy(), exact_scores[i].copy()))
-    
+            self.exact_cache.append((layouts[i].copy(), combined[i].copy()))
+
     def retrain(self):
         if len(self.exact_cache) < 100:
             print(f"  Surrogate cache too small ({len(self.exact_cache)}), skipping retrain")

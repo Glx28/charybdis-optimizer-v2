@@ -59,6 +59,9 @@ struct PerThreadScratch {
     bool direct_left_thumb_momentary[MAX_LAYERS];
     bool direct_right_thumb_momentary[MAX_LAYERS];
     bool direct_toggle_access[MAX_LAYERS];
+    int l0_direct_hold_count[MAX_LAYERS];
+    int l0_direct_toggle_count[MAX_LAYERS];
+    float l0_direct_access_cost[MAX_LAYERS];
     bool layer_has_return_toggle[MAX_LAYERS];
     bool layer_has_mutable[MAX_LAYERS];
     bool direct_l0_thumb_access[MAX_LAYERS];
@@ -85,6 +88,7 @@ struct PerThreadScratch {
     float scroll_right_momentary_effort[MAX_LAYERS];
     float scroll_right_momentary_usage[MAX_LAYERS];
     float scroll_right_momentary_x[MAX_LAYERS];
+    float scroll_right_momentary_y[MAX_LAYERS];
 
     float group_count[MAX_KEY_GROUPS];
     float group_sum_x[MAX_KEY_GROUPS];
@@ -212,6 +216,9 @@ __device__ void evaluate_single(
         s->direct_left_thumb_momentary[l] = false;
         s->direct_right_thumb_momentary[l] = false;
         s->direct_toggle_access[l] = false;
+        s->l0_direct_hold_count[l] = 0;
+        s->l0_direct_toggle_count[l] = 0;
+        s->l0_direct_access_cost[l] = 0.0f;
         s->layer_has_return_toggle[l] = false;
         s->layer_has_mutable[l] = false;
         s->direct_l0_thumb_access[l] = false;
@@ -226,6 +233,7 @@ __device__ void evaluate_single(
         s->scroll_right_momentary_effort[l] = 0.0f;
         s->scroll_right_momentary_usage[l] = 0.0f;
         s->scroll_right_momentary_x[l] = -1.0f;
+        s->scroll_right_momentary_y[l] = -1.0f;
         s->mouse_non_right_count[l] = 0;
         s->layer_base_total[l] = 0.0f;
         s->raw_layer_counts[l] = 0;
@@ -305,6 +313,14 @@ __device__ void evaluate_single(
         if (target < 0 || target >= MAX_LAYERS) continue;
         int source = pos_layer[i];
         if (source < 0 || source >= MAX_LAYERS || source == target) continue;
+        if (source == 0) {
+            s->l0_direct_access_cost[target] += pos_effort_waste[i];
+            if (shortcut_access_momentary[sid]) {
+                s->l0_direct_hold_count[target]++;
+            } else {
+                s->l0_direct_toggle_count[target]++;
+            }
+        }
 
         if (shortcut_access_momentary[sid]) {
             if (pos_is_thumb[i] && pos_hand[i] == 1) {
@@ -362,9 +378,11 @@ __device__ void evaluate_single(
                 if (ec >= 999999.0f) continue;
                 float nested = 0.0f;
                 if (source != 0) {
-                    nested += 8.0f;
+                    float src_factor = source_cost;
+                    if (src_factor > 80.0f) src_factor = 80.0f;
+                    nested += 10.0f + src_factor * 0.45f;
                     if (s->momentary_edge[source][target]) {
-                        nested += 12.0f;
+                        nested += 22.0f + src_factor * 0.35f;
                     }
                 }
                 float cand = source_cost + ec + nested;
@@ -508,8 +526,25 @@ __device__ void evaluate_single(
         if (shortcut_access_target[sid] >= 0 && !shortcut_access_momentary[sid]) {
             pos_eff = pos_effort[i] + pos_effort_waste[i];
         }
+        if (layer == 0 && pos_is_thumb[i] && !pos_is_frozen[i] && shortcut_access_target[sid] < 0) {
+            int uc_l0 = (int)shortcut_usage_count[sid];
+            float usage_relief = log1p_lookup(uc_l0, log1p_lut, lut_size) * 0.12f;
+            if (usage_relief > 0.85f) usage_relief = 0.85f;
+            access_layout += imp * pos_effort_waste[i] * (1.0f - usage_relief) * 18.0f;
+        }
         float pos_cost = pos_eff * imp * (1.0f + pos_eff * imp * 0.5f);
         effort += pos_cost + imp * access_cost;
+        if (shortcut_access_target[sid] < 0) {
+            int uc_essential = (int)shortcut_usage_count[sid];
+            float usage_value = log1p_lookup(uc_essential, log1p_lut, lut_size);
+            float essential_raw = imp + usage_value * 0.65f - 12.0f;
+            float essential_gate = sigmoid_like(essential_raw * 0.45f);
+            float effective_effort = pos_eff + access_cost;
+            float over_home = effective_effort - 1.0f;
+            if (over_home > 0.0f) {
+                effort += essential_gate * imp * over_home * over_home * 18.0f;
+            }
+        }
 
         if (layer >= 0 && layer < MAX_LAYERS && shortcut_access_target[sid] < 0) {
             s->layer_demand[layer] += imp;
@@ -570,6 +605,7 @@ __device__ void evaluate_single(
                             s->scroll_right_momentary_effort[layer] = pos_effort[i];
                             s->scroll_right_momentary_usage[layer] = shortcut_usage_count[sid];
                             s->scroll_right_momentary_x[layer] = pos_x[i];
+                            s->scroll_right_momentary_y[layer] = pos_y[i];
                         }
                     }
                 }
@@ -811,20 +847,14 @@ __device__ void evaluate_single(
         int app_b = (int)app_workflow_rows[r * 3 + 1];
         if (app_a < 0 || app_b < 0 || app_a >= n_apps || app_b >= n_apps) continue;
         float weight = app_workflow_rows[r * 3 + 2];
-        bool colocated = false;
-        float shared = 0.0f;
         for (int layer = 0; layer < MAX_LAYERS; layer++) {
             if (s->app_layer_counts[app_a][layer] > 0 && s->app_layer_counts[app_b][layer] > 0) {
-                colocated = true;
-                float v = s->app_layer_importance[app_a][layer];
-                if (s->app_layer_importance[app_b][layer] < v) {
-                    v = s->app_layer_importance[app_b][layer];
+                float shared = s->app_layer_importance[app_a][layer];
+                if (s->app_layer_importance[app_b][layer] < shared) {
+                    shared = s->app_layer_importance[app_b][layer];
                 }
-                if (v > shared) shared = v;
+                adjacency += weight * log1pf(shared) * 2.0f;
             }
-        }
-        if (colocated) {
-            adjacency += weight * log1pf(shared) * 2.0f;
         }
     }
 
@@ -906,13 +936,17 @@ __device__ void evaluate_single(
                         uncertainty_factor = 0.25f + 0.10f * max_f(0.0f, (float)(count - 3));
                         if (uncertainty_factor > 0.75f) uncertainty_factor = 0.75f;
                     }
-                    float exception_raw = shortcut_importance[sid] + duplicate_support[sid] * 10.0f - 16.0f;
+                    int uc_dup = (int)shortcut_usage_count[sid];
+                    float usage_bonus = log1p_lookup(uc_dup, log1p_lut, lut_size) * 0.35f;
+                    float exception_raw = shortcut_importance[sid] + duplicate_support[sid] * 10.0f + usage_bonus - 16.0f;
                     if (shortcut_is_mouse[sid]) {
-                        exception_raw -= 4.0f;
+                        exception_raw -= 7.0f;
                     }
                     float exception_score = sigmoid_like(exception_raw * 0.45f);
                     float novelty_cost = 0.15f + (1.0f - exception_score) * (1.0f - exception_score);
-                    duplicate_value_gap += unsupported_extra * gap * uncertainty_factor * novelty_cost;
+                    float count_extra = max_f(0.0f, (float)(count - 2));
+                    float saturation = 1.0f + 0.18f * count_extra * count_extra;
+                    duplicate_value_gap += unsupported_extra * gap * uncertainty_factor * novelty_cost * saturation;
                 }
             }
         }
@@ -933,13 +967,17 @@ __device__ void evaluate_single(
                 if (duplicate_support[sid] <= 0.0f) {
                     uncertainty_factor = 0.35f;
                 }
-                float exception_raw = shortcut_importance[sid] + duplicate_support[sid] * 10.0f - 16.0f;
+                int uc_cross = (int)shortcut_usage_count[sid];
+                float usage_bonus = log1p_lookup(uc_cross, log1p_lut, lut_size) * 0.35f;
+                float exception_raw = shortcut_importance[sid] + duplicate_support[sid] * 10.0f + usage_bonus - 16.0f;
                 if (shortcut_is_mouse[sid]) {
-                    exception_raw -= 4.0f;
+                    exception_raw -= 7.0f;
                 }
                 float exception_score = sigmoid_like(exception_raw * 0.45f);
                 float novelty_cost = 0.15f + (1.0f - exception_score) * (1.0f - exception_score);
-                cross_dup += extra * extra * uncertainty_factor * novelty_cost;
+                float layer_extra = max_f(0.0f, (float)(layers - 2));
+                float saturation = 1.0f + 0.18f * layer_extra * layer_extra;
+                cross_dup += extra * extra * uncertainty_factor * novelty_cost * saturation;
             }
         }
     }
@@ -981,7 +1019,6 @@ __device__ void evaluate_single(
     // Thumb occupancy
     float thumb_occ = 0.0f;
     for (int target_layer = 0; target_layer < MAX_LAYERS; target_layer++) {
-        if (s->direct_toggle_access[target_layer]) continue;
         if (s->direct_left_thumb_momentary[target_layer] && s->direct_right_thumb_momentary[target_layer]) continue;
         bool restrict_left = s->direct_left_thumb_momentary[target_layer];
         bool restrict_right = s->direct_right_thumb_momentary[target_layer];
@@ -991,7 +1028,14 @@ __device__ void evaluate_single(
             if (sid < 0 || sid >= n_short) continue;
             if (pos_layer[i] != target_layer || !pos_is_thumb[i]) continue;
             if ((pos_hand[i] == 0 && restrict_left) || (pos_hand[i] == 1 && restrict_right)) {
-                thumb_occ += 1.0f + shortcut_importance[sid] * 0.5f;
+                if (s->reachable_toggle_access[target_layer]) {
+                    float effort_gap = 4.0f - pos_effort[i];
+                    if (effort_gap > 0.0f) {
+                        thumb_occ += effort_gap * (1.0f + shortcut_importance[sid] * 0.5f);
+                    }
+                } else {
+                    thumb_occ += 1.0f + shortcut_importance[sid] * 0.5f;
+                }
             }
         }
     }
@@ -1007,6 +1051,13 @@ __device__ void evaluate_single(
         }
         if (s->layer_access_cost[layer] > 3.0f) {
             access_layout += log1pf(demand) * (s->layer_access_cost[layer] - 3.0f);
+        }
+        int direct_l0_accesses = s->l0_direct_hold_count[layer] + s->l0_direct_toggle_count[layer];
+        if (direct_l0_accesses > 1) {
+            float redundant = (float)(direct_l0_accesses - 1);
+            float mixed_mode = (s->l0_direct_hold_count[layer] > 0 && s->l0_direct_toggle_count[layer] > 0) ? 1.0f : 0.0f;
+            access_layout += redundant * (60.0f + log1pf(demand) * 22.0f);
+            access_layout += mixed_mode * (90.0f + s->l0_direct_access_cost[layer] * 0.6f);
         }
     }
 
@@ -1418,6 +1469,7 @@ __device__ void evaluate_single(
     // Mouse scattered
     // -------------------------------------------------------------------------
     float mouse_scattered = 0.0f;
+    int mouse_global_right_thumb_count = 0;
     int mouse_layers[MAX_LAYERS];
     for (int l = 0; l < MAX_LAYERS; l++) mouse_layers[l] = 0;
     for (int i = 0; i < n_pos; i++) {
@@ -1427,6 +1479,15 @@ __device__ void evaluate_single(
             int layer = pos_layer[i];
             if (layer >= 0 && layer < MAX_LAYERS) {
                 mouse_layers[layer] = 1;
+            }
+            if (
+                shortcut_mouse_button[sid] > 0
+                && layer != 7
+                && !pos_is_frozen[i]
+                && pos_hand[i] == 1
+                && pos_is_thumb[i]
+            ) {
+                mouse_global_right_thumb_count++;
             }
         }
     }
@@ -1462,7 +1523,17 @@ __device__ void evaluate_single(
             float usage_scale = 1.0f + log1p_lookup(um, log1p_lut, lut_size) * 0.35f;
             float imp_scale = s->mouse_button_importance[layer][button];
             if (imp_scale <= 0.0f) imp_scale = 1.0f;
-            candidate_penalty += s->mouse_button_effort[layer][button] * imp_scale * usage_scale * 30.0f;
+            float button_weight = 1.0f;
+            if (button == 1) {
+                button_weight = 2.75f;
+            } else if (button == 2) {
+                button_weight = 3.40f;
+            } else if (button == 3) {
+                button_weight = 0.85f;
+            } else if (button == 4 || button == 5) {
+                button_weight = 0.65f;
+            }
+            candidate_penalty += s->mouse_button_effort[layer][button] * imp_scale * usage_scale * 30.0f * button_weight;
             if (s->mouse_button_right_thumb[layer][button] > 0) {
                 candidate_penalty += 20000.0f;
             }
@@ -1484,17 +1555,38 @@ __device__ void evaluate_single(
             candidate_penalty += dy * 500.0f;
         }
         if (s->mouse_button_right[layer][1] > 0 && s->mouse_button_right_thumb[layer][1] == 0) {
-            candidate_penalty += fabsf(s->mouse_button_x[layer][1] - 8.0f) * 12000.0f;
+            candidate_penalty += fabsf(s->mouse_button_x[layer][1] - 8.0f) * 28000.0f;
+            candidate_penalty += fabsf(s->mouse_button_y[layer][1] - 2.0f) * 30000.0f;
+            candidate_penalty += s->mouse_button_effort[layer][1] * 52000.0f;
         }
         if (s->mouse_button_right[layer][2] > 0 && s->mouse_button_right_thumb[layer][2] == 0) {
-            candidate_penalty += fabsf(s->mouse_button_x[layer][2] - 9.0f) * 12000.0f;
+            candidate_penalty += fabsf(s->mouse_button_x[layer][2] - 9.0f) * 32000.0f;
+            candidate_penalty += fabsf(s->mouse_button_y[layer][2] - 2.0f) * 30000.0f;
+            candidate_penalty += s->mouse_button_effort[layer][2] * 65000.0f;
+        }
+        if (s->mouse_button_right[layer][3] > 0 && s->mouse_button_right_thumb[layer][3] == 0) {
+            candidate_penalty += fabsf(s->mouse_button_x[layer][3] - 10.0f) * 6000.0f;
+            candidate_penalty += fabsf(s->mouse_button_y[layer][3] - 2.0f) * 5000.0f;
         }
         if (s->scroll_right_momentary[layer]) {
             int us = (int)s->scroll_right_momentary_usage[layer];
             float usage_scale = 1.0f + log1p_lookup(us, log1p_lut, lut_size) * 0.35f;
-            candidate_penalty += s->scroll_right_momentary_effort[layer] * usage_scale * 15000.0f;
+            candidate_penalty += s->scroll_right_momentary_effort[layer] * usage_scale * 70000.0f;
             if (s->scroll_right_momentary_x[layer] >= 0.0f) {
-                candidate_penalty += fabsf(s->scroll_right_momentary_x[layer] - 10.0f) * 12000.0f;
+                candidate_penalty += fabsf(s->scroll_right_momentary_x[layer] - 9.0f) * 36000.0f;
+                candidate_penalty += fabsf(s->scroll_right_momentary_y[layer] - 2.0f) * 42000.0f;
+                if (s->scroll_right_momentary_x[layer] == 7.0f || s->scroll_right_momentary_x[layer] == 8.0f) {
+                    candidate_penalty += 250000.0f;
+                }
+            }
+            for (int lower_button = 3; lower_button <= 4; lower_button++) {
+                if (s->mouse_button_right[layer][lower_button] > 0) {
+                    float effort_gap = s->scroll_right_momentary_effort[layer]
+                        - s->mouse_button_effort[layer][lower_button];
+                    if (effort_gap > 0.0f) {
+                        candidate_penalty += effort_gap * usage_scale * 90000.0f;
+                    }
+                }
             }
         } else {
             candidate_penalty += 25000.0f;
@@ -1522,6 +1614,8 @@ __device__ void evaluate_single(
             && s->mouse_non_right_count[layer] == 0
             && right_thumb_count == 0
             && s->scroll_right_momentary[layer]
+            && s->scroll_right_momentary_x[layer] != 7.0f
+            && s->scroll_right_momentary_x[layer] != 8.0f
             && !s->right_thumb_momentary_access[layer]
             && s->reachable_toggle_access[layer]
         ) {
@@ -1529,6 +1623,7 @@ __device__ void evaluate_single(
         }
     }
     dynamic_mouse_layer += (float)s->mouse_l7_count * 500.0f;
+    dynamic_mouse_layer += (float)mouse_global_right_thumb_count * 50000.0f;
 
     // Cleanup mouse duplicates after natural mouse layer exists
     if (natural_mouse_layer >= 0) {
@@ -1537,12 +1632,12 @@ __device__ void evaluate_single(
             if (sid < 0 || sid >= n_short) continue;
             if (!shortcut_is_mouse[sid]) continue;
             int layer = pos_layer[i];
-            if (layer == natural_mouse_layer || layer == 0 || layer == 7) continue;
+            if (layer == natural_mouse_layer || layer == 7) continue;
             if (pos_is_frozen[i]) continue;
             int ur = (int)shortcut_usage_count[sid];
             float usage_relief = log1p_lookup(ur, log1p_lut, lut_size) * 0.08f;
-            if (usage_relief > 0.75f) usage_relief = 0.75f;
-            mouse_scattered += 0.35f + (1.0f - usage_relief);
+            if (usage_relief > 0.35f) usage_relief = 0.35f;
+            mouse_scattered += 3.0f + (1.0f - usage_relief);
         }
     }
 
@@ -1648,23 +1743,25 @@ __device__ void evaluate_single(
     // -------------------------------------------------------------------------
     // Layer reachability and depth penalty
     // -------------------------------------------------------------------------
-    float total_demand = 0.0f;
-    for (int L = 0; L < MAX_LAYERS; L++) {
-        total_demand += s->layer_demand[L];
-    }
+    // Depth is the shortest number of layer changes from L0/root. Nested access
+    // remains explorable, but high-demand deep paths must lose to simpler
+    // access. Use raw layer demand, not normalized share, so important layers
+    // cannot hide inside a low proportional penalty.
     float layer_reachability = 0.0f;
     float layer_depth_penalty = 0.0f;
-    if (total_demand > 0.0f) {
-        for (int L = 0; L < MAX_LAYERS; L++) {
-            if (s->layer_demand[L] <= 0.0f) continue;
-            if (s->layer_access_cost[L] >= 999999.0f) {
-                layer_reachability += s->layer_demand[L];
-            } else {
-                int extra = s->layer_hop_depth[L] - 1;
-                if (extra > 0) {
-                    layer_depth_penalty += (float)extra * (s->layer_demand[L] / total_demand);
-                }
-            }
+    for (int L = 0; L < MAX_LAYERS; L++) {
+        float demand = s->layer_demand[L];
+        if (demand <= 0.0f) continue;
+        if (s->layer_access_cost[L] >= 999999.0f) {
+            layer_reachability += demand;
+            continue;
+        }
+        int depth = s->layer_hop_depth[L];
+        if (depth > 1) {
+            int capped_depth = depth;
+            if (capped_depth > 6) capped_depth = 6;
+            float depth_cost = powf(3.0f, (float)(capped_depth - 1)) - 1.0f;
+            layer_depth_penalty += depth_cost * demand;
         }
     }
 

@@ -103,15 +103,18 @@ Momentary Scroll is part of the core mouse group. It is highly important
 because scrolling is a major trackball/mouse action. Toggle Scroll may exist,
 but it does not satisfy the generated dynamic mouse-layer condition; the
 required capability is momentary Scroll on the right side and off the
-right-thumb area.
+right-thumb area. Momentary Scroll on x7 or x8 is uncomfortable and does not
+satisfy this condition.
 
 Mouse placement inside the generated mouse layer is usage-weighted rather than
 coordinate-fixed. More-used mouse buttons should get better positions unless a
-more important workflow shortcut earns that position. Mouse duplicates outside
-the generated mouse layer are allowed only when usage/access support justifies
-them, and they are harder to justify than ordinary shortcut duplicates. Keep
-small soft relative biases: MB1 left/close/same-row with MB2, and MB4
-left/close/same-row with MB5.
+more important workflow shortcut earns that position. MB2 is more valuable than
+MB3/MB4/MB5 and should win better placement when usage does not prove otherwise.
+Mouse duplicates outside the generated mouse layer are allowed only when
+usage/access support justifies them, and they are harder to justify than
+ordinary shortcut duplicates. Mouse buttons are forbidden on right-thumb
+positions on every generated layer. Keep small soft relative biases: MB1
+left/close/same-row with MB2, and MB4 left/close/same-row with MB5.
 
 After a natural generated mouse layer exists, it should dominate mouse
 interactions and create natural cleanup pressure against mouse buttons scattered

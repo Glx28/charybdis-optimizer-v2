@@ -32,15 +32,39 @@ if NUMBA_AVAILABLE:
 # Utilities
 # ---------------------------------------------------------------------------
 
-def _scalar(F, cv=None):
-    """Feasibility-first scalar fitness. Lower is better."""
+def _constraint_penalty_from_objectives(F, min_penalty=2.0, max_penalty=25.0, spread_fraction=0.25):
+    """Calibrate soft constraint pressure to the current objective scale.
+
+    This is deliberately not a hard feasibility wall. A broken mouse layer can
+    survive if it buys enough objective improvement to explore a new basin, but
+    exact archive/final ranking still rejects dynamic-mouse failure.
+    """
+    totals = F.sum(axis=1) if F.ndim == 2 else np.asarray(F, dtype=np.float32)
+    if totals.size < 2:
+        return float(min_penalty)
+    q25, q75 = np.percentile(totals.astype(np.float64), [25, 75])
+    spread = max(float(q75 - q25), float(np.std(totals)))
+    if not np.isfinite(spread) or spread <= 0.0:
+        return float(min_penalty)
+    return float(np.clip(spread * spread_fraction, min_penalty, max_penalty))
+
+
+def _scalar(F, cv=None, constraint_penalty=None):
+    """Exploration scalar fitness. Lower is better.
+
+    Constraint violations should guide selection without walling off useful
+    intermediate states. Archive/final-best ranking applies hard acceptance
+    tiers after exact evaluation.
+    """
     s = F.sum(axis=1) if F.ndim == 2 else np.asarray(F, dtype=np.float32)
     if cv is not None:
+        if constraint_penalty is None:
+            constraint_penalty = _constraint_penalty_from_objectives(np.asarray(F))
         penalty = np.maximum(cv, 0)
         if penalty.ndim > 1:
             penalty = penalty.sum(axis=1)
         if penalty.shape[0] == s.shape[0]:
-            s = s + 1e9 * penalty
+            s = s + float(constraint_penalty) * penalty
     return s
 
 
@@ -73,6 +97,41 @@ def _best_index(scalar_F):
     return int(np.argmin(scalar_F))
 
 
+def _select_feasibility_first_scalar(scalar, cv, n):
+    """Return indices of top-n survivors: all feasible first, then best infeasible."""
+    if cv is None or cv.shape[1] == 0:
+        return np.argpartition(scalar, n)[:n]
+    feasible = cv.sum(axis=1) == 0
+    n_feasible = int(feasible.sum())
+    idx = np.arange(len(scalar))
+    if n_feasible >= n:
+        feasible_idx = idx[feasible]
+        if n >= len(feasible_idx):
+            return feasible_idx
+        return feasible_idx[np.argpartition(scalar[feasible_idx], n)[:n]]
+    feasible_idx = idx[feasible]
+    infeasible_idx = idx[~feasible]
+    n_needed = n - n_feasible
+    if n_needed >= len(infeasible_idx):
+        return np.concatenate([feasible_idx, infeasible_idx])
+    ranked_infeasible = infeasible_idx[
+        np.argpartition(scalar[infeasible_idx], n_needed)[:n_needed]
+    ]
+    return np.concatenate([feasible_idx, ranked_infeasible])
+
+
+def _dynamic_mouse_failed(entry):
+    failed = set(entry.get("acceptance_failed_checks", []))
+    return "dynamic_mouse_layer_present" in failed
+
+
+def _display_gap(entry, target=-49.30):
+    gap = float(entry["total_score"]) - float(target)
+    if _dynamic_mouse_failed(entry):
+        return max(gap, 5.0)
+    return gap
+
+
 # ---------------------------------------------------------------------------
 # Main runner
 # ---------------------------------------------------------------------------
@@ -96,6 +155,7 @@ class CustomGARunner:
         perf,
         hard_constraints,
         mini_eval_count: int = 150,
+        n_constraints: int = 0,
     ):
         self.layout = layout
         self.evaluator = evaluator
@@ -111,6 +171,8 @@ class CustomGARunner:
         self.perf = perf
         self.hard_constraints = hard_constraints
         self.mini_eval_count = max(1, int(mini_eval_count))
+        self.n_factors = 3
+        self.n_constraints = int(n_constraints)
 
         # Background thread pool for concurrent mini exact eval during GPU predict
         self._eval_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -144,6 +206,42 @@ class CustomGARunner:
             "total_score": float(result.total_score),
         }
 
+    def _maybe_update_global_from_batch(self, batch_X, batch_F, batch_G, gen):
+        """Check a batch of exact evaluations and update the archive if a better feasible genome exists."""
+        if batch_X is None or len(batch_X) == 0:
+            return
+        totals = _scalar(batch_F, batch_G)
+        mini_best_i = int(np.argmin(totals))
+        mini_best_genome = batch_X[mini_best_i]
+        mini_entry = self._exact_entry(
+            type(
+                "obj",
+                (object,),
+                {
+                    "objectives": batch_F[mini_best_i].copy(),
+                    "constraints": batch_G[mini_best_i].copy(),
+                    "factor_scores": self.evaluator._factor_scores_from_objectives(
+                        batch_F[mini_best_i]
+                    ),
+                    "total_score": float(batch_F[mini_best_i].sum()),
+                },
+            )(),
+            gen,
+        )
+        mini_best_layout = self.layout.clone_with(
+            genome=mini_best_genome.astype(np.int32)
+        )
+        _, _, _, mini_acc = self._layout_reports(mini_best_layout)
+        self._annotate(mini_entry, mini_acc)
+        if self._is_better(mini_entry, self.global_best_exact):
+            self._update_archive(mini_best_genome, mini_entry)
+            gap = _display_gap(mini_entry)
+            print(
+                f"    Gen {gen}: global best improved to {mini_entry['total_score']:.4f}"
+                f" (gap={gap:+.2f}, source=exact_eval)",
+                flush=True,
+            )
+
     def _is_better(self, candidate, incumbent):
         if incumbent is None:
             return True
@@ -156,6 +254,10 @@ class CustomGARunner:
         inc_feasible = inc_cv == 0.0
         if cand_feasible != inc_feasible:
             return cand_feasible
+        cand_mouse_fail = _dynamic_mouse_failed(candidate)
+        inc_mouse_fail = _dynamic_mouse_failed(incumbent)
+        if cand_mouse_fail != inc_mouse_fail:
+            return not cand_mouse_fail
         cand_pass = bool(candidate.get("optimizer_side_pass", False))
         inc_pass = bool(incumbent.get("optimizer_side_pass", False))
         if cand_pass != inc_pass:
@@ -420,7 +522,7 @@ class CustomGARunner:
             # (diverse genomes are out-of-distribution) → selection is nearly random
             # for 500 gens until the next scheduled retrain.
             if sm is not None:
-                sm.add_exact_evaluations(eval_batch, new_F)
+                sm.add_exact_evaluations(eval_batch, new_F, new_G)
                 sm.async_retrain()
                 print(
                     f"    Surrogate async retrain submitted on {len(eval_batch)} injection evals.",
@@ -465,7 +567,7 @@ class CustomGARunner:
         improved = self._update_archive(best_genome, entry)
         if improved:
             self.archive_stagnation = 0
-            gap = entry['total_score'] + 49.30
+            gap = _display_gap(entry)
             print(
                 f"    Gen {gen}: global best improved to {entry['total_score']:.4f}"
                 f" (gap={gap:+.2f}, optimizer_side_pass={entry['optimizer_side_pass']})",
@@ -545,10 +647,10 @@ class CustomGARunner:
         exact_eval_every = sm.exact_eval_every
         if exact_eval_every > 0 and gen % exact_eval_every == 0:
             t0 = time.perf_counter()
-            exact_F, _ = self.evaluator.evaluate_batch(pop_X.astype(np.int32))
+            exact_F, exact_G = self.evaluator.evaluate_batch(pop_X.astype(np.int32))
             if self.perf:
                 self.perf.add("surrogate_teacher_eval", time.perf_counter() - t0)
-            sm.add_exact_evaluations(pop_X.astype(np.int32), exact_F)
+            sm.add_exact_evaluations(pop_X.astype(np.int32), exact_F, exact_G)
         sm.maybe_collect_retrain()
         if sm.should_retrain():
             t0 = time.perf_counter()
@@ -581,18 +683,28 @@ class CustomGARunner:
             if n_cleared > 0:
                 print(f"    Warmstart sanitized: {n_cleared} self-ref momentary hold keys cleared.", flush=True)
 
+        # Constraint columns: surrogate predicts objectives + constraints, so cv arrays
+        # must match the real constraint count.
+        n_constraint_cols = self.n_constraints if self.n_constraints > 0 else len(self.hard_constraints)
+
         # Initial surrogate evaluation
         sm = self.surrogate_manager
         if sm is not None and sm.trainer.mean is not None:
-            pop_F = sm.trainer.predict(pop_X)
+            pred = sm.trainer.predict(pop_X)
+            pop_F = pred[:, : self.n_factors].astype(np.float32)
+            pop_cv = np.maximum(pred[:, self.n_factors :], 0).astype(np.float32)
+            if pop_cv.shape[1] == 0 and n_constraint_cols > 0:
+                pop_cv = np.zeros((self.pop_size, n_constraint_cols), dtype=np.float32)
         else:
             t0 = time.perf_counter()
-            pop_F, _ = self.evaluator.evaluate_batch(pop_X)
+            pop_F, pop_G = self.evaluator.evaluate_batch(pop_X)
             if self.perf:
                 self.perf.add("exact_eval", time.perf_counter() - t0)
-        # constraint violations: tracked via mini_eval splice (see below)
-        # Initialised as zeros; updated in-place whenever exact evaluations run.
-        pop_cv = np.zeros((self.pop_size, 5), dtype=np.float32)
+            pop_cv = (
+                np.maximum(pop_G, 0).astype(np.float32)
+                if pop_G.shape[1] > 0
+                else np.zeros((self.pop_size, n_constraint_cols), dtype=np.float32)
+            )
 
         # Exact-evaluate slot 0 (warmstart) so the surrogate can't misprice it and
         # so it is immediately registered as the initial global best. Without this,
@@ -603,14 +715,7 @@ class CustomGARunner:
         if ws_G.shape[1] > 0:
             pop_cv[0] = np.maximum(ws_G[0], 0)
         if sm is not None:
-            sm.add_exact_evaluations(pop_X[:1].astype(np.int32), ws_F)
-        ws_total = float(ws_F[0].sum())
-        ws_gap = ws_total + 49.30
-        print(
-            f"    Warmstart slot-0 exact score={ws_total:.4f} (gap={ws_gap:+.2f},"
-            f" added to surrogate training data)",
-            flush=True,
-        )
+            sm.add_exact_evaluations(pop_X[:1].astype(np.int32), ws_F, ws_G)
         # Seed the archive with the warmstart so the first checkpoint can only improve.
         ws_layout = self.layout.clone_with(genome=pop_X[0].astype(np.int32))
         ws_exact = self.evaluator.evaluate(ws_layout)
@@ -618,6 +723,14 @@ class CustomGARunner:
         _, ws_comp, ws_arr, ws_acc = self._layout_reports(ws_layout)
         self._annotate(ws_entry, ws_acc)
         self._update_archive(pop_X[0].astype(np.int32), ws_entry)
+        ws_total = float(ws_F[0].sum())
+        ws_gap = _display_gap(ws_entry)
+        print(
+            f"    Warmstart slot-0 exact score={ws_total:.4f} (gap={ws_gap:+.2f},"
+            f" optimizer_side_pass={ws_entry['optimizer_side_pass']},"
+            f" added to surrogate training data)",
+            flush=True,
+        )
 
         gen_times = []
 
@@ -625,7 +738,7 @@ class CustomGARunner:
             t_gen = time.perf_counter()
 
             # --- Tournament selection (GPU) ---
-            scalar = _scalar(pop_F)
+            scalar = _scalar(pop_F, pop_cv)
             parent_idx = _tournament_select(scalar, self.pop_size)
 
             # --- Crossover ---
@@ -640,66 +753,52 @@ class CustomGARunner:
             self.sanitizer._do(None, children_X)
 
             # --- Hybrid exact/surrogate evaluation ---
+            n_children = len(children_X)
+            n_cv_cols = self.n_constraints if self.n_constraints > 0 else len(self.hard_constraints)
             if sm is not None and sm.trainer.mean is not None:
-                # Submit a small exact-eval mini batch to background before GPU predict.
-                # Exact scores for a subset of children act as selection "beacons" that
-                # guide the search toward hard-constraint-satisfying regions.
-                n_mini = min(self.mini_eval_count, len(children_X))
-                mini_idx = np.random.choice(len(children_X), n_mini, replace=False)
-                mini_batch = children_X[mini_idx].copy()
-                mini_future = self._eval_executor.submit(
-                    self.evaluator.evaluate_batch, mini_batch
-                )
-                children_F = sm.trainer.predict(children_X)
-                # Collect exact results and splice back — overrides surrogate predictions
-                # for these children with ground-truth fitness.
-                mini_F, mini_G = mini_future.result()
-                children_F[mini_idx] = mini_F
-                sm.add_exact_evaluations(mini_batch, mini_F)
-                # Track constraint violations for mini-eval children so hard constraints
-                # propagate into survival selection via _scalar(F, cv).
-                children_cv = np.zeros((len(children_X), mini_G.shape[1]), dtype=np.float32)
-                children_cv[mini_idx] = np.maximum(mini_G, 0)
-                # Check if any mini-eval genome beats the global_best.
-                # Reuse the already-computed batch exact scores instead of re-running
-                # a single-genome Numba evaluation.
-                mini_totals = mini_F.sum(axis=1)
-                mini_best_i = int(np.argmin(mini_totals))
-                gb_score = float(self.global_best_exact["total_score"]) if self.global_best_exact else float("inf")
-                if mini_totals[mini_best_i] < gb_score - 0.01:
-                    mini_best_genome = mini_batch[mini_best_i]
-                    mini_entry = self._exact_entry(
-                        type(
-                            "obj",
-                            (object,),
-                            {
-                                "objectives": mini_F[mini_best_i].copy(),
-                                "constraints": mini_G[mini_best_i].copy(),
-                                "factor_scores": self.evaluator._factor_scores_from_objectives(
-                                    mini_F[mini_best_i]
-                                ),
-                                "total_score": float(mini_totals[mini_best_i]),
-                            },
-                        )(),
-                        gen,
+                if self.mini_eval_count >= n_children:
+                    # Fix #2: exact-evaluate every child (mini_eval_fraction ≈ 1.0).
+                    t0 = time.perf_counter()
+                    children_F, children_G = self.evaluator.evaluate_batch(children_X)
+                    children_cv = np.maximum(children_G, 0).astype(np.float32)
+                    if self.perf:
+                        self.perf.add("exact_eval", time.perf_counter() - t0)
+                    sm.add_exact_evaluations(children_X, children_F, children_G)
+                    self._maybe_update_global_from_batch(
+                        children_X, children_F, children_G, gen
                     )
-                    # Lightweight acceptance check for archive updates; full report still
-                    # runs at checkpoint time.
-                    mini_best_layout = self.layout.clone_with(genome=mini_best_genome.astype(np.int32))
-                    _, _, _, mini_acc = self._layout_reports(mini_best_layout)
-                    self._annotate(mini_entry, mini_acc)
-                    if self._is_better(mini_entry, self.global_best_exact):
-                        self._update_archive(mini_best_genome, mini_entry)
-                        gap = mini_entry['total_score'] + 49.30
-                        print(
-                            f"    Gen {gen}: global best improved to {mini_entry['total_score']:.4f}"
-                            f" (gap={gap:+.2f}, source=mini_eval)",
-                            flush=True,
-                        )
+                else:
+                    # Submit a small exact-eval mini batch to background before GPU predict.
+                    # Exact scores for a subset of children act as selection "beacons" that
+                    # guide the search toward hard-constraint-satisfying regions.
+                    n_mini = min(self.mini_eval_count, n_children)
+                    mini_idx = np.random.choice(n_children, n_mini, replace=False)
+                    mini_batch = children_X[mini_idx].copy()
+                    mini_future = self._eval_executor.submit(
+                        self.evaluator.evaluate_batch, mini_batch
+                    )
+                    t0 = time.perf_counter()
+                    pred = sm.trainer.predict(children_X)
+                    if self.perf:
+                        self.perf.add("surrogate_predict", time.perf_counter() - t0)
+                    # Fix #1: surrogate now predicts objectives + constraints.
+                    children_F = pred[:, : self.n_factors].astype(np.float32)
+                    children_cv = np.maximum(pred[:, self.n_factors :], 0).astype(np.float32)
+                    if children_cv.shape[1] == 0:
+                        children_cv = np.zeros((n_children, n_cv_cols), dtype=np.float32)
+                    # Collect exact results and splice back — overrides surrogate predictions
+                    # for these children with ground-truth fitness and constraints.
+                    mini_F, mini_G = mini_future.result()
+                    children_F[mini_idx] = mini_F
+                    children_cv[mini_idx] = np.maximum(mini_G, 0)
+                    sm.add_exact_evaluations(mini_batch, mini_F, mini_G)
+                    self._maybe_update_global_from_batch(
+                        mini_batch, mini_F, mini_G, gen
+                    )
             else:
                 t0 = time.perf_counter()
                 children_F, children_G = self.evaluator.evaluate_batch(children_X)
-                children_cv = np.maximum(children_G, 0)
+                children_cv = np.maximum(children_G, 0).astype(np.float32)
                 if self.perf:
                     self.perf.add("exact_eval", time.perf_counter() - t0)
 
@@ -720,13 +819,16 @@ class CustomGARunner:
                 rand_idx = remaining[np.random.choice(len(remaining), min(random_n, len(remaining)), replace=False)]
                 survivors = np.concatenate([elite_idx, rand_idx])
             else:
+                # Soft survivor selection: infeasible states can survive when
+                # their objective improvement is large enough to explore a new
+                # basin. Exact archive/final ranking remains acceptance-hard.
                 survivors = np.argpartition(all_scalar, n_pop)[:n_pop]
             pop_X = all_X[survivors].astype(np.int32)
             pop_F = all_F[survivors]
             pop_cv = all_cv[survivors] if all_cv is not None else pop_cv
 
             # --- Adaptive mutation rate ---
-            best_quality = float(pop_F.sum(axis=1).min())
+            best_quality = float(_scalar(pop_F, pop_cv).min())
             self._adjust_mutation(best_quality, gen)
 
             # --- Periodic: teacher update, retrain, checkpoint ---

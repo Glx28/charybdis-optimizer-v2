@@ -1,0 +1,14 @@
+[tools]
+node = "22"
+
+[env]
+AI_AGENT_REPO = "1"
+
+[tasks.ai-status]
+run = "just ai-status"
+
+[tasks.ai-context]
+run = "just ai-context"
+
+[tasks.ai-smoke]
+run = "just ai-smoke"

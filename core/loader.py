@@ -56,6 +56,7 @@ L0_FROZEN_THUMB_RAW_KEYS = {"spacebar", "returnenter"}
 NON_GROUPABLE_KEYS = {"ScrollUp", "ScrollDown"}
 NON_EXPORTABLE_SEQUENCE_KEYS = {"Ctrl+K S", "gg", "gi", "yy"}
 MOUSE_CLICK_BASE_KEYS = {"Click", "Left Click", "Right Click", "Middle Click"}
+MODIFIER_PREFIXES = ("Ctrl+", "Alt+", "Shift+", "Win+", "Meta+", "Cmd+")
 
 
 def _normalize_raw_key_id(value: str) -> Optional[str]:
@@ -138,7 +139,7 @@ def _is_momentary_access(behavior: str) -> bool:
         return False  # return to base keys
     if 'travel_off' in behavior.lower():
         return False
-    
+
     # Momentary patterns
     if 'hold' in behavior.lower():
         return True
@@ -146,7 +147,7 @@ def _is_momentary_access(behavior: str) -> bool:
         return True
     if 'coach_l1_hold' in behavior or 'coach_l2_hold' in behavior or 'coach_l3_hold' in behavior or 'coach_l4_hold' in behavior:
         return True
-    
+
     return False
 
 
@@ -181,6 +182,11 @@ def _is_plain_keypress_shortcut(keys: str, sc_data: dict) -> bool:
     base_key = canonical_hid_parameter(sc_data.get("base_key", "")) or parsed_base
 
     if clean in NON_EXPORTABLE_SEQUENCE_KEYS:
+        return False
+    # Multi-stroke chords such as "Ctrl+K Ctrl+F" are useful usage signals,
+    # but they are not one ZMK Studio binding.  They must not occupy prime
+    # optimizer slots and then export as transparent.
+    if " " in clean and any(prefix in clean for prefix in MODIFIER_PREFIXES):
         return False
     if clean in NON_GROUPABLE_KEYS or base_key in NON_GROUPABLE_KEYS:
         return False
@@ -384,7 +390,7 @@ def load_shortcuts(path: str, layout_data: Optional[dict] = None) -> List[Shortc
                     preferred_hand="right", is_layer_access=True,
                     access_target_layer=tgt, access_is_momentary=True,
                 ))
-    
+
     raw_arrow_by_base: Dict[str, int] = {}
 
     for app_data in data.get("apps", []):
@@ -396,14 +402,14 @@ def load_shortcuts(path: str, layout_data: Optional[dict] = None) -> List[Shortc
             if not _is_plain_keypress_shortcut(keys, sc_data):
                 continue
             seen_keys.add(keys)
-            
+
             # Extract canonical HID base key from keys if not provided. Display
             # symbols are Norwegian OS-layout results and must not become Studio
             # parameters.
             base_key = canonical_hid_parameter(sc_data.get("base_key", ""))
             if not base_key:
                 _, base_key = parse_shortcut_keys_norwegian(keys)
-            
+
             # Extract modifiers from keys. Direct mouse-click names are mouse
             # actions, not keyboard words/modifiers. Modifier+Click remains one
             # mouse binding with held modifiers.
@@ -434,7 +440,7 @@ def load_shortcuts(path: str, layout_data: Optional[dict] = None) -> List[Shortc
                             preferred_hand=sc_data.get("preferred_hand", existing.preferred_hand),
                         )
                     continue
-            
+
             sc = Shortcut(
                 sid=len(shortcuts),
                 keys=keys,
@@ -452,7 +458,7 @@ def load_shortcuts(path: str, layout_data: Optional[dict] = None) -> List[Shortc
             shortcuts.append(sc)
             if not modifiers and base_key in RAW_ARROW_BASE_KEYS:
                 raw_arrow_by_base[base_key] = len(shortcuts) - 1
-    
+
     # Ensure the Norwegian raw completion-key family is always present as
     # assignable capabilities, even if the usage logger has never recorded an
     # unmodified PageUp/Home/End/etc.  Without these base shortcuts the
@@ -532,10 +538,10 @@ def load_usage_stats(path: str) -> Optional[UsageData]:
     """Load usage_stats.json if it exists."""
     if not os.path.exists(path):
         return None
-    
+
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    
+
     shortcut_sequences = data.get("shortcut_sequences") or data.get("sequences", {})
     shortcut_workflows = data.get("shortcut_workflows") or data.get("workflows", {})
     chains = data.get("chains", {})
@@ -600,7 +606,7 @@ def _extract_base_key_id(param: str, behavior: str, modifiers: List[str]) -> Opt
     """Extract base key identifier for _base_* shortcut lookup."""
     p = param.lower()
     b = behavior.lower()
-    
+
     # Coach behaviors
     coach_keys = {
         "coach_l1_hold", "coach_l2_hold", "coach_l3_hold", "coach_l4_hold",
@@ -609,40 +615,40 @@ def _extract_base_key_id(param: str, behavior: str, modifiers: List[str]) -> Opt
     }
     if b in coach_keys:
         return b
-    
+
     # Layer control
     if behavior in ("Momentary Layer", "Toggle Layer", "To Layer"):
         return f"{b.replace(' ', '_')}_{param}"
-    
+
     # Mouse buttons
     if "mouse key press" in b:
         mb_match = re.search(r"(?:select:\s*)?mb\s*([1-5])", p + " " + behavior, re.IGNORECASE)
         if mb_match:
             return f"select:mb{mb_match.group(1)}"
         return p if p else None
-    
+
     # Bluetooth/output
     if any(kw in b for kw in ["bluetooth", "output selection"]):
         return p if p else None
-    
+
     # Modifier keys
     for kw in ["spacebar", "return enter", "tab", "escape", "delete",
                "leftshift", "rightshift", "leftcontrol", "rightcontrol",
                "leftalt", "rightalt", "left gui"]:
         if kw in p:
             return _normalize_raw_key_id(kw) or kw
-    
+
     # Single raw key (no modifiers)
     if not modifiers:
         raw_id = _normalize_raw_key_id(p)
         if raw_id is not None:
             return raw_id
-    
+
     # F-keys
     f_match = re.search(r'\bf(\d+)\b', p)
     if f_match:
         return f"f{f_match.group(1)}"
-    
+
     return None
 
 
@@ -706,13 +712,13 @@ def build_layout(data_dir: str, config: dict = None) -> Layout:
     for layer in set(p.layer for p in positions):
         indices = [p.gene_idx for p in positions if p.layer == layer]
         layer_to_indices[layer] = np.array(indices, dtype=np.int32)
-    
+
     # Frozen-only genome — mutable positions are -1 for random sampler assignment.
     genome = build_frozen_genome(layout_data, positions, shortcuts)
-    
+
     # Discover dynamic groups from usage data
     dynamic_groups = _discover_dynamic_groups(usage, shortcuts) if usage else []
-    
+
     layout = Layout(
         genome=genome,
         positions=tuple(positions),
@@ -723,18 +729,18 @@ def build_layout(data_dir: str, config: dict = None) -> Layout:
         layer_access=tuple(layer_access),
         dynamic_groups=tuple(dynamic_groups),
     )
-    
+
     return layout
 
 
 def _discover_dynamic_groups(usage: UsageData, shortcuts: List[Shortcut]) -> List[Dict]:
     """Discover dynamic groups from usage sequences and chains.
-    
+
     Ported from v1 evolve/representation.py discover_dynamic_groups().
     """
     sid_lookup = {s.keys: s.sid for s in shortcuts if s.keys not in NON_GROUPABLE_KEYS}
     pair_weights = {}
-    
+
     # Build pair weights from usage sequences
     for seq_key, data in usage.sequences.items():
         count = data.get("count", 0) if isinstance(data, dict) else data
@@ -748,17 +754,17 @@ def _discover_dynamic_groups(usage: UsageData, shortcuts: List[Shortcut]) -> Lis
         if sid_a is not None and sid_b is not None:
             key = tuple(sorted([sid_a, sid_b]))
             pair_weights[key] = pair_weights.get(key, 0) + count
-    
+
     if not pair_weights:
         return []
-    
+
     max_w = max(pair_weights.values())
     if max_w <= 0:
         return []
-    
+
     groups = []
     used_sids = set()
-    
+
     # Chain-derived groups
     seen_sid_sets = set()
     for chain_key, chain_data in usage.chains.items():
@@ -789,7 +795,7 @@ def _discover_dynamic_groups(usage: UsageData, shortcuts: List[Shortcut]) -> Lis
         })
         for s in chain_sids:
             used_sids.add(s)
-    
+
     # Pair-derived groups from sequence weights
     sorted_pairs = sorted(pair_weights.items(), key=lambda x: -x[1])
     threshold = 0.15
@@ -810,5 +816,5 @@ def _discover_dynamic_groups(usage: UsageData, shortcuts: List[Shortcut]) -> Lis
         })
         used_sids.add(sid_a)
         used_sids.add(sid_b)
-    
+
     return groups

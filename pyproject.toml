@@ -1,0 +1,24 @@
+[tool.ruff]
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    ".codex",
+    ".claude",
+    ".kimi-code",
+    ".agents",
+    ".agent-tools",
+    ".ai",
+    "*.rules",
+    "*.envrc",
+    "justfile",
+    ".pre-commit-config.yaml",
+]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E402", "E701", "E702"]

@@ -3,52 +3,38 @@
 Replaces the old Windows-path-hardcoded workflow_analysis.py for v2.
 Usage: python3 tools/workflow_check.py [checkpoint.json]
 """
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import json, yaml, numpy as np, glob
 from collections import defaultdict
 
-class DC:
-    def __init__(self, d): self._d = d
-    def get(self, key, default=None):
-        parts = key.split('.'); v = self._d
-        for p in parts:
-            if isinstance(v, dict) and p in v: v = v[p]
-            else: return default
-        return v
+import numpy as np
+
+from tools._common import (
+    find_latest_checkpoint,
+    load_checkpoint,
+    load_evaluator,
+)
 
 VSCODE_KEYS = ['Ctrl+Shift+P', 'Ctrl+P', 'F5', 'F12', 'Ctrl+K Ctrl+S', 'Ctrl+`',
                'Ctrl+Shift+`', 'Shift+F5', 'Ctrl+Shift+F6', 'Ctrl+,', 'Ctrl+B', 'Ctrl+Shift+E']
 NORWEGIAN_KEYS = ['Å', 'Ø', 'Æ', 'å', 'ø', 'æ']
 
-def load_ev():
-    from core.loader import build_layout
-    from fitness.evaluator import FitnessEvaluator
-    cfg = DC(yaml.safe_load(open('config_v2.yaml')))
-    layout = build_layout('data', cfg.get('fitness', {}))
-    sf = np.array(json.load(open('build/v2_scale_factors.json'))['scale_factors'], dtype=np.float32)
-    ev = FitnessEvaluator(
-        weights=cfg.get('fitness.weights', {}), reference_layout=layout, scale_factors=sf,
-        violation_weights=cfg.get('fitness.violation_sub_weights', {}),
-        missing_important_threshold=cfg.get('fitness.missing_important_threshold', 6.0),
-        hard_constraints=cfg.get('fitness.hard_constraints', []),
-        toggle_effort_multiplier=float(cfg.get('fitness.toggle_effort_multiplier', 2.5)),
-    )
-    return ev, layout
-
 def main():
-    ckpt = sys.argv[1] if len(sys.argv) > 1 else None
-    if not ckpt:
-        files = sorted(glob.glob('build/v2_checkpoint_gen*.json'), key=os.path.getmtime)
-        ckpt = files[-1] if files else None
-    if not ckpt:
+    ckpt_path = sys.argv[1] if len(sys.argv) > 1 else None
+    if not ckpt_path:
+        ckpt_path = find_latest_checkpoint()
+    if not ckpt_path:
         print('No checkpoint'); sys.exit(1)
 
-    ev, layout = load_ev()
+    ev = load_evaluator()
+    layout = ev.model.layout
     arrays = ev.model.arrays
     pos_layer = arrays[1]; pos_effort = arrays[0]
 
-    g = np.array(json.load(open(ckpt))['best_genome'], dtype=np.int32)
+    ckpt = load_checkpoint(ckpt_path)
+    g = np.array(ckpt['best_genome'], dtype=np.int32)
 
     key_positions = defaultdict(list)
     for i, sid in enumerate(g):
@@ -57,7 +43,7 @@ def main():
         if not s.is_layer_access:
             key_positions[s.keys].append((i, int(pos_layer[i]), float(pos_effort[i])))
 
-    print(f'=== WORKFLOW CHECK: {os.path.basename(ckpt)} ===')
+    print(f'=== WORKFLOW CHECK: {os.path.basename(ckpt_path)} ===')
     print('\n--- VSCODE CLUSTERING ---')
     layers_seen = defaultdict(int)
     for k in VSCODE_KEYS:

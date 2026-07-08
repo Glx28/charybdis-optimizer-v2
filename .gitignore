@@ -26,8 +26,10 @@ Thumbs.db
 *~
 
 # Agent artifacts
-AGENTS.md
 .claude/
+.ai/context/
+*.bak-*
+*.bak
 
 # Logs
 *.log

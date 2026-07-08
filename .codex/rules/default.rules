@@ -1,0 +1,11 @@
+prefix_rule(
+  pattern = ["grep"],
+  decision = "forbidden",
+  justification = "Use `rg` instead of `grep`."
+)
+
+prefix_rule(
+  pattern = ["curl"],
+  decision = "prompt",
+  justification = "Network download requires explicit review."
+)

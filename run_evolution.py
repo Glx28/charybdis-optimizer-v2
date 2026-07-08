@@ -367,13 +367,54 @@ class ExactEvalCallback(Callback):
         """Select best individual: feasible first, then minimum sum of objectives."""
         if pop_F.ndim == 1 or pop_F.shape[1] == 1:
             return int(np.argmin(pop_F.ravel()))
-        n = pop_F.shape[0]
-        if pop_G is not None and pop_G.shape[1] > 0:
-            cv = np.maximum(pop_G, 0).sum(axis=1)
-        else:
-            cv = np.zeros(n, dtype=np.float32)
-        scalar = pop_F.sum(axis=1) + 1e9 * cv
+        scalar = self._quality_scalar(pop_F, pop_G)
         return int(np.argmin(scalar))
+
+    @staticmethod
+    @staticmethod
+    def _constraint_penalty_from_objectives(pop_F, min_penalty=2.0, max_penalty=25.0, spread_fraction=0.25):
+        totals = pop_F.sum(axis=1) if pop_F.ndim == 2 else np.asarray(pop_F, dtype=np.float64)
+        if totals.size < 2:
+            return float(min_penalty)
+        q25, q75 = np.percentile(totals.astype(np.float64), [25, 75])
+        spread = max(float(q75 - q25), float(np.std(totals)))
+        if not np.isfinite(spread) or spread <= 0.0:
+            return float(min_penalty)
+        return float(np.clip(spread * spread_fraction, min_penalty, max_penalty))
+
+    @classmethod
+    def _quality_scalar(cls, pop_F, pop_G=None, constraint_penalty=None):
+        """Exploration scalar quality for ranking and stagnation.
+
+        Constraint violations should be costly enough to guide the population,
+        but not so large that intermediate infeasible states cannot be explored.
+        Final/archive selection uses _is_better_exact for hard acceptance tiers.
+        """
+        pop_F = np.asarray(pop_F, dtype=np.float64)
+        if pop_F.ndim == 1:
+            base = pop_F.reshape(1, -1).sum(axis=1)
+        else:
+            base = pop_F.sum(axis=1)
+        if pop_G is not None and getattr(pop_G, "shape", (0, 0))[1] > 0:
+            if constraint_penalty is None:
+                constraint_penalty = cls._constraint_penalty_from_objectives(pop_F)
+            cv = np.maximum(np.asarray(pop_G, dtype=np.float64), 0.0).sum(axis=1)
+        else:
+            cv = np.zeros(base.shape[0], dtype=np.float64)
+            constraint_penalty = 0.0
+        return base + float(constraint_penalty) * cv
+
+    @staticmethod
+    def _dynamic_mouse_failed(exact_entry):
+        failed = set(exact_entry.get("acceptance_failed_checks", []))
+        return "dynamic_mouse_layer_present" in failed
+
+    @classmethod
+    def _display_gap(cls, exact_entry, target=-49.30):
+        gap = float(exact_entry["total_score"]) - float(target)
+        if cls._dynamic_mouse_failed(exact_entry):
+            return max(gap, 5.0)
+        return gap
 
     def _exact_entry(self, exact_result, gen):
         return {
@@ -391,6 +432,10 @@ class ExactEvalCallback(Callback):
         inc_cv = sum(max(0.0, float(x)) for x in incumbent_entry.get("constraints", []))
         if cand_cv != inc_cv:
             return cand_cv < inc_cv
+        cand_mouse_fail = self._dynamic_mouse_failed(candidate_entry)
+        inc_mouse_fail = self._dynamic_mouse_failed(incumbent_entry)
+        if cand_mouse_fail != inc_mouse_fail:
+            return not cand_mouse_fail
         cand_accept = bool(candidate_entry.get("optimizer_side_pass", False))
         inc_accept = bool(incumbent_entry.get("optimizer_side_pass", False))
         if cand_accept != inc_accept:
@@ -445,9 +490,10 @@ class ExactEvalCallback(Callback):
         if pop is None or pop.shape[0] == 0:
             return
 
-        # Overall layout quality improvement: any objective improving counts.
-        # Sum all objectives so effort/adjacency/workflow gains prevent false stagnation.
-        best_quality = float(np.min(pop.sum(axis=1)))
+        pop_G = algorithm.pop.get("G")
+        # Overall layout quality improvement, feasible first. Objective gains
+        # count only inside the same constraint-violation tier.
+        best_quality = float(np.min(self._quality_scalar(pop, pop_G)))
 
         if best_quality < self.last_best_quality * 0.999:
             if self.stagnation_count > 0:
@@ -492,8 +538,7 @@ class ExactEvalCallback(Callback):
         if len(mutable) < 2:
             return
 
-        cv = np.maximum(pop_G, 0).sum(axis=1) if pop_G is not None and pop_G.shape[1] > 0 else np.zeros(n_pop)
-        scalar = pop_F.sum(axis=1) + 1e9 * cv
+        scalar = self._quality_scalar(pop_F, pop_G)
         elite_count = max(2, n_pop // 20)
         elite_idx = set(np.argsort(scalar)[:elite_count].tolist())
         replace_order = [idx for idx in np.argsort(scalar)[::-1] if int(idx) not in elite_idx]
@@ -750,7 +795,13 @@ def main(argv=None):
             # 'best_exact' was set during local search with different scale factors.
             warmstart_genome = np.array(ws['genome'], dtype=np.int32)
             ws_score = ws.get('best_score', None)
-            score_str = f"score={ws_score:.4f}, gap={ws_score+49.30:+.2f}" if ws_score is not None else "score=N/A"
+            if ws_score is not None:
+                ws_exact = dict(ws.get("best_exact", {}))
+                ws_exact.setdefault("total_score", float(ws_score))
+                ws_gap = ExactEvalCallback._display_gap(ws_exact)
+                score_str = f"score={ws_score:.4f}, gap={ws_gap:+.2f}"
+            else:
+                score_str = "score=N/A"
             print(f"  Warmstart genome loaded from {warmstart_path} ({score_str})", flush=True)
         except Exception as e:
             print(f"  Warmstart load failed: {e}", flush=True)
@@ -806,6 +857,7 @@ def main(argv=None):
     maybe_validate_exact_evaluator(config, layout, evaluator)
     seed_result = evaluator.evaluate(layout)
     print(f"  Seed fitness (normalized): effort={seed_result.objectives[0]:.2f}, adj={seed_result.objectives[1]:.2f}, viol={seed_result.objectives[2]:.2f}", flush=True)
+    n_constraints = len(seed_result.constraints)
 
     surrogate_manager = None
 
@@ -815,6 +867,7 @@ def main(argv=None):
             layout.n_positions,
             layout.n_shortcuts,
             n_factors=3,
+            n_constraints=n_constraints,
             hidden_dim=config.get("surrogate.hidden_dim", 256),
             embedding_dim=config.get("surrogate.embedding_dim", 32),
         )
@@ -836,13 +889,16 @@ def main(argv=None):
         n_initial = int(config.get("surrogate.initial_exact_samples", 1000))
         t0_train = time.perf_counter()
         initial_layouts = generate_random_layouts(layout, n_initial, warmstart_genome=warmstart_genome)
-        initial_scores, _ = evaluate_exact_batch(
+        initial_scores, initial_constraints = evaluate_exact_batch(
             initial_layouts, layout, evaluator, perf=perf, label="surrogate_initial_teacher_eval",
         )
-        surrogate_manager.add_exact_evaluations(initial_layouts, initial_scores)
+        initial_combined = np.concatenate(
+            [initial_scores, initial_constraints], axis=1
+        ).astype(np.float32)
+        surrogate_manager.add_exact_evaluations(initial_layouts, initial_combined)
         trainer.train(
             initial_layouts,
-            initial_scores,
+            initial_combined,
             epochs=config.get("surrogate.train_epochs", 30),
             batch_size=config.get("surrogate.batch_size", 256),
         )
@@ -904,6 +960,7 @@ def main(argv=None):
         perf=perf,
         hard_constraints=hard_constraints,
         mini_eval_count=mini_eval_count,
+        n_constraints=n_constraints,
     )
     ga_result = runner.run(n_gen, initial_pop_X=initial_pop_X)
 
@@ -982,7 +1039,7 @@ def main(argv=None):
         "compiled_exact_parity": getattr(evaluator.model, "parity", None),
         "training_path": "cuda_surrogate_primary" if surrogate_enabled else "cpu_exact",
     }
-    
+
     results_path = os.path.join(args.output_dir, "v2_evolution_results.json")
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, default=str)

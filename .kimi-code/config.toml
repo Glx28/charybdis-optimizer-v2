@@ -1,0 +1,10 @@
+[core]
+model = "kimi-code/kimi-for-coding"
+
+[instructions]
+project = "KIMI.md"
+
+[[hooks]]
+name = "block-dangerous-bash"
+type = "PreToolUse"
+script = ".kimi-code/hooks/block-dangerous-bash.py"

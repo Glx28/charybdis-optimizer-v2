@@ -14,6 +14,7 @@ from core import Layout
 
 FAKE_SCROLL_KEYS = {"ScrollUp", "ScrollDown"}
 MOUSE_BUTTON_KEYS = {"MB1", "MB2", "MB3", "MB4", "MB5"}
+UNCOMFORTABLE_SCROLL_X = {7.0, 8.0}
 
 
 def _assigned_shortcuts(layout: Layout):
@@ -97,17 +98,7 @@ def _layer_access_assignments(layout: Layout) -> List[Dict]:
     return rows
 
 
-def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
-    """Detect the generated mouse workflow layer by contents, not layer number.
-
-    Required final shape:
-    - one non-L0/non-L7 layer contains MB1-MB5 on right-hand positions
-    - no mouse button on that layer occupies right-thumb positions
-    - the same layer contains right-hand non-thumb momentary Scroll access
-    - momentary access to the layer is not on the right thumb side
-    - the layer has a reachable toggle access path
-    """
-    access_rows = _layer_access_assignments(layout)
+def _reachable_layers_from_access_rows(access_rows: List[Dict]) -> Set[int]:
     reachable_layers: Set[int] = {0}
     for _ in range(32):
         changed = False
@@ -119,6 +110,21 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
                 changed = True
         if not changed:
             break
+    return reachable_layers
+
+
+def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
+    """Detect the generated mouse workflow layer by contents, not layer number.
+
+    Required final shape:
+    - one non-L0/non-L7 layer contains MB1-MB5 on right-hand positions
+    - no mouse button on that layer occupies right-thumb positions
+    - the same layer contains right-hand non-thumb momentary Scroll access
+    - momentary access to the layer is not on the right thumb side
+    - the layer has a reachable toggle access path
+    """
+    access_rows = _layer_access_assignments(layout)
+    reachable_layers = _reachable_layers_from_access_rows(access_rows)
     candidates = []
     by_layer: Dict[int, Dict] = {}
     for idx, pos, shortcut in _assigned_shortcuts(layout):
@@ -171,7 +177,21 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
         ]
         right_scroll_momentary = [
             row for row in item["scroll_access"]
-            if row["momentary"] and row["hand"] == "right" and not row["thumb"]
+            if (
+                row["momentary"]
+                and row["hand"] == "right"
+                and not row["thumb"]
+                and row["x"] not in UNCOMFORTABLE_SCROLL_X
+            )
+        ]
+        uncomfortable_right_scroll_momentary = [
+            row for row in item["scroll_access"]
+            if (
+                row["momentary"]
+                and row["hand"] == "right"
+                and not row["thumb"]
+                and row["x"] in UNCOMFORTABLE_SCROLL_X
+            )
         ]
         right_thumb_scroll_momentary = [
             row for row in item["scroll_access"]
@@ -213,6 +233,7 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
             "non_right_button_placements": left_buttons,
             "right_thumb_button_placements": right_thumb_buttons,
             "right_momentary_scroll_access": right_scroll_momentary,
+            "uncomfortable_right_momentary_scroll_access": uncomfortable_right_scroll_momentary,
             "right_thumb_momentary_scroll_access": right_thumb_scroll_momentary,
             "momentary_access": momentary_access,
             "right_thumb_momentary_access": right_thumb_momentary_access,
@@ -249,7 +270,14 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
             if best_candidate["right_thumb_button_placements"]:
                 failure_guidance.append("Move mouse-button placements off the right-thumb area on the candidate mouse layer.")
             if not best_candidate["right_momentary_scroll_access"]:
-                failure_guidance.append("Place a right-hand non-thumb momentary Scroll capability on the candidate mouse layer.")
+                if best_candidate.get("uncomfortable_right_momentary_scroll_access"):
+                    failure_guidance.append(
+                        "Move momentary Scroll away from uncomfortable x7/x8 positions on the candidate mouse layer."
+                    )
+                else:
+                    failure_guidance.append(
+                        "Place a right-hand non-thumb momentary Scroll capability on the candidate mouse layer."
+                    )
             if best_candidate["right_thumb_momentary_scroll_access"]:
                 failure_guidance.append("Move momentary Scroll off the right-thumb area on the candidate mouse layer.")
             if best_candidate["right_thumb_momentary_access"]:
@@ -273,39 +301,85 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
     }
 
 
+def _global_right_thumb_mouse_button_report(layout: Layout) -> Dict:
+    placements = []
+    for idx, pos, shortcut in _assigned_shortcuts(layout):
+        if shortcut.keys not in MOUSE_BUTTON_KEYS:
+            continue
+        if pos.layer == 7 or pos.is_frozen:
+            continue
+        if pos.hand == "right" and pos.is_thumb:
+            placements.append({
+                "keys": shortcut.keys,
+                "idx": int(idx),
+                "layer": int(pos.layer),
+                "x": float(pos.x),
+                "y": float(pos.y),
+                "hand": pos.hand,
+                "thumb": bool(pos.is_thumb),
+            })
+    return {
+        "acceptance_pass": len(placements) == 0,
+        "placements": placements,
+    }
+
+
 def _momentary_only_thumb_clearance_report(layout: Layout) -> Dict:
     """Check thumb areas occupied by momentary access to a layer.
 
     If a non-L0/non-L7 layer has reachable toggle access, both thumb areas are
-    available. If it has direct thumb momentary access from both sides, both
-    thumb areas are available. Otherwise, every thumb side used for direct
-    momentary access to that layer is restricted and must be empty on the
-    target layer.
+    available, but same-side thumb assignments are reported as effort-floor
+    positions because the thumb still has to do access/mode work. If it has
+    direct thumb momentary access from both sides, both thumb areas are freely
+    available. Otherwise, every thumb side used for direct reachable momentary
+    access to that layer is restricted and must be empty on the target layer.
     """
     access_rows = _layer_access_assignments(layout)
+    reachable_layers = _reachable_layers_from_access_rows(access_rows)
     rows = []
     violations = []
     for layer in sorted({row["target_layer"] for row in access_rows if row["target_layer"] not in (0, 7)}):
-        incoming = [row for row in access_rows if row["target_layer"] == layer]
+        incoming = [
+            row for row in access_rows
+            if row["target_layer"] == layer and row["source_layer"] in reachable_layers
+        ]
         toggles = [row for row in incoming if not row["momentary"]]
-        if toggles:
-            rows.append({
-                "layer": layer,
-                "rule_applies": False,
-                "reason": "toggle_access_present",
-                "toggle_access": toggles,
-            })
-            continue
         thumb_momentary_hands: Set[str] = {
             row["hand"] for row in incoming
             if row["momentary"] and row["thumb"]
         }
+        if toggles:
+            effort_floor_assignments = []
+            if thumb_momentary_hands != {"left", "right"}:
+                for idx, pos, shortcut in _assigned_shortcuts(layout):
+                    if pos.layer == layer and pos.is_thumb and pos.hand in thumb_momentary_hands:
+                        effort_floor_assignments.append({
+                            "keys": shortcut.keys,
+                            "idx": int(idx),
+                            "layer": int(pos.layer),
+                            "x": float(pos.x),
+                            "y": float(pos.y),
+                            "hand": pos.hand,
+                            "native_effort": float(pos.effort),
+                            "effective_effort_floor": 4.0,
+                        })
+            rows.append({
+                "layer": layer,
+                "rule_applies": False,
+                "reason": "reachable_toggle_access_present",
+                "momentary_thumb_hands": sorted(thumb_momentary_hands),
+                "toggle_access": toggles,
+                "effort_floor_assignments": effort_floor_assignments,
+                "acceptance_pass": True,
+            })
+            continue
         if len(thumb_momentary_hands) == 0:
             rows.append({
                 "layer": layer,
                 "rule_applies": False,
                 "reason": "no_thumb_momentary_access",
                 "momentary_thumb_hands": sorted(thumb_momentary_hands),
+                "acceptance_pass": True,
             })
             continue
         if thumb_momentary_hands == {"left", "right"}:
@@ -314,6 +388,7 @@ def _momentary_only_thumb_clearance_report(layout: Layout) -> Dict:
                 "rule_applies": False,
                 "reason": "both_thumb_sides_momentary_access_present",
                 "momentary_thumb_hands": sorted(thumb_momentary_hands),
+                "acceptance_pass": True,
             })
             continue
         occupied_assignments = []
@@ -367,17 +442,7 @@ def _mutable_bluetooth_assignments(layout: Layout) -> List[Dict]:
 def _layer7_access_report(layout: Layout) -> Dict:
     """L7 is frozen; only access mode is checked."""
     access_rows = _layer_access_assignments(layout)
-    reachable_layers: Set[int] = {0}
-    for _ in range(32):
-        changed = False
-        for row in access_rows:
-            source = int(row["source_layer"])
-            target = int(row["target_layer"])
-            if source in reachable_layers and target not in reachable_layers:
-                reachable_layers.add(target)
-                changed = True
-        if not changed:
-            break
+    reachable_layers = _reachable_layers_from_access_rows(access_rows)
     momentary = [
         row for row in access_rows
         if row["target_layer"] == 7 and row["momentary"] and row["source_layer"] in reachable_layers
@@ -549,6 +614,7 @@ def build_acceptance_report(
     fake_scroll = _fake_scroll_assignments(layout)
     scroll_access = _scroll_mode_access(layout)
     dynamic_mouse = _dynamic_mouse_layer_report(layout)
+    right_thumb_mouse = _global_right_thumb_mouse_button_report(layout)
     thumb_clearance = _momentary_only_thumb_clearance_report(layout)
     win_s = _find_assigned_keys(layout, "Win+S")
     mutable_bt = _mutable_bluetooth_assignments(layout)
@@ -561,6 +627,7 @@ def build_acceptance_report(
         "no_fake_scroll_keypresses": len(fake_scroll) == 0,
         "scroll_mode_access_present": len(scroll_access) > 0,
         "dynamic_mouse_layer_present": bool(dynamic_mouse.get("acceptance_pass")),
+        "no_mouse_buttons_on_right_thumb_area_global": bool(right_thumb_mouse.get("acceptance_pass")),
         "momentary_only_thumb_side_clear": bool(thumb_clearance.get("acceptance_pass")),
         "layer7_momentary_and_toggle_access": bool(layer7_access.get("acceptance_pass")),
         "no_mutable_bluetooth_or_output_keys": len(mutable_bt) == 0,
@@ -593,13 +660,19 @@ def build_acceptance_report(
             numeric_distances["mouse_toggle_access_ok"] = bool(best.get("reachable_toggle_access"))
         else:
             numeric_distances["mouse_no_candidate_layer"] = True
+    if not optimizer_side_checks["no_mouse_buttons_on_right_thumb_area_global"]:
+        numeric_distances["global_right_thumb_mouse_button_count"] = len(
+            right_thumb_mouse.get("placements", [])
+        )
     if not optimizer_side_checks["momentary_only_thumb_side_clear"]:
         numeric_distances["thumb_clearance_violations"] = len(thumb_clearance.get("violations", []))
     if not optimizer_side_checks["layer7_momentary_and_toggle_access"]:
         numeric_distances["l7_momentary_access_count"] = len(layer7_access.get("reachable_momentary_access", []))
         numeric_distances["l7_toggle_access_count"] = len(layer7_access.get("reachable_toggle_access", []))
 
-    failure_guidance = dynamic_mouse.get("failure_guidance", [])
+    failure_guidance = list(dynamic_mouse.get("failure_guidance", []))
+    if not optimizer_side_checks["no_mouse_buttons_on_right_thumb_area_global"]:
+        failure_guidance.append("Move all mouse buttons off right-thumb positions on generated layers.")
 
     return {
         "checks": checks,
@@ -619,6 +692,7 @@ def build_acceptance_report(
             "fake_scroll_assignments": fake_scroll,
             "scroll_mode_access": scroll_access,
             "dynamic_mouse_layer": dynamic_mouse,
+            "global_right_thumb_mouse_buttons": right_thumb_mouse,
             "momentary_only_thumb_clearance": thumb_clearance,
             "layer7_access": layer7_access,
             "mutable_bluetooth_or_output_assignments": mutable_bt,

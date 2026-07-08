@@ -625,6 +625,9 @@ if NUMBA_AVAILABLE:
         direct_left_thumb_momentary = np.zeros(32, dtype=np.bool_)
         direct_right_thumb_momentary = np.zeros(32, dtype=np.bool_)
         direct_toggle_access = np.zeros(32, dtype=np.bool_)
+        l0_direct_hold_count = np.zeros(32, dtype=np.int32)
+        l0_direct_toggle_count = np.zeros(32, dtype=np.int32)
+        l0_direct_access_cost = np.zeros(32, dtype=np.float32)
         layer_has_return_toggle = np.zeros(32, dtype=np.bool_)
         layer_has_mutable = np.zeros(32, dtype=np.bool_)
         direct_l0_thumb_access = np.zeros(32, dtype=np.bool_)
@@ -645,12 +648,14 @@ if NUMBA_AVAILABLE:
         mouse_button_importance = np.zeros((32, 6), dtype=np.float32)
         mouse_button_usage = np.zeros((32, 6), dtype=np.float32)
         mouse_non_right_count = np.zeros(32, dtype=np.int32)
+        mouse_global_right_thumb_count = 0
         mouse_l7_count = 0
         scroll_right_momentary = np.zeros(32, dtype=np.bool_)
         scroll_right_momentary_thumb = np.zeros(32, dtype=np.bool_)
         scroll_right_momentary_effort = np.zeros(32, dtype=np.float32)
         scroll_right_momentary_usage = np.zeros(32, dtype=np.float32)
         scroll_right_momentary_x = np.full(32, -1.0, dtype=np.float32)
+        scroll_right_momentary_y = np.full(32, -1.0, dtype=np.float32)
 
         # Pre-scan: which layers have at least one mutable (non-frozen, non-L7) position.
         # Used to determine if the optimizer CAN place a return toggle on a given layer.
@@ -671,6 +676,12 @@ if NUMBA_AVAILABLE:
             source = pos_layer[i]
             if source < 0 or source >= 32 or source == target:
                 continue
+            if source == 0:
+                l0_direct_access_cost[target] += pos_effort_waste[i]
+                if shortcut_access_momentary[sid]:
+                    l0_direct_hold_count[target] += 1
+                else:
+                    l0_direct_toggle_count[target] += 1
             if shortcut_access_momentary[sid]:
                 if pos_is_thumb[i] and pos_hand[i] == 1:
                     right_thumb_momentary_access[target] = True
@@ -717,9 +728,15 @@ if NUMBA_AVAILABLE:
                         continue
                     nested = 0.0
                     if source != 0:
-                        nested += 8.0
+                        # Nested access compounds. A chain through an already
+                        # expensive layer should be much worse than a direct
+                        # access edge, especially for hold-into-hold paths.
+                        src_factor = source_cost
+                        if src_factor > 80.0:
+                            src_factor = 80.0
+                        nested += 10.0 + src_factor * 0.45
                         if momentary_edge[source, target]:
-                            nested += 12.0
+                            nested += 22.0 + src_factor * 0.35
                     cand = source_cost + ec + nested
                     if cand < layer_access_cost[target]:
                         layer_access_cost[target] = cand
@@ -863,11 +880,30 @@ if NUMBA_AVAILABLE:
             pos_eff = pos_effort[i]
             if shortcut_access_target[sid] >= 0 and not shortcut_access_momentary[sid]:
                 pos_eff = pos_effort[i] + pos_effort_waste[i]
+            if layer == 0 and pos_is_thumb[i] and not pos_is_frozen[i] and shortcut_access_target[sid] < 0:
+                # L0 thumb shortcuts are allowed, but must earn base-layer
+                # real estate from usage. This discourages random low-use app
+                # shortcuts on thumbs without banning genuinely frequent ones.
+                _uc_l0 = int(shortcut_usage_count[sid])
+                usage_relief = log1p_lut[_uc_l0 if _uc_l0 < lut_size else lut_size - 1] * 0.12
+                if usage_relief > 0.85:
+                    usage_relief = 0.85
+                access_layout += imp * pos_effort_waste[i] * (1.0 - usage_relief) * 18.0
             # Quadratic effort-importance: high-imp keys at high-effort positions are
             # punished superlinearly. imp×pos_eff×(1+imp×pos_eff×0.5) grows ~imp²
             # while access_cost stays linear (layer structure is harder to change).
             _pos_cost = pos_eff * imp * (1.0 + pos_eff * imp * 0.5)
             effort += _pos_cost + imp * access_cost
+            if shortcut_access_target[sid] < 0:
+                _uc_essential = int(shortcut_usage_count[sid])
+                usage_value = log1p_lut[_uc_essential if _uc_essential < lut_size else lut_size - 1]
+                essential_raw = imp + usage_value * 0.65 - 12.0
+                _ek = essential_raw * 0.45
+                essential_gate = 0.5 + 0.5 * _ek / (1.0 + (_ek if _ek >= 0.0 else -_ek))
+                effective_effort = pos_eff + access_cost
+                over_home = effective_effort - 1.0
+                if over_home > 0.0:
+                    effort += essential_gate * imp * over_home * over_home * 18.0
             if 0 <= layer < 32 and shortcut_access_target[sid] < 0:
                 layer_demand[layer] += imp
                 if layer != 0 and layer != 7 and not pos_is_frozen[i]:
@@ -919,6 +955,7 @@ if NUMBA_AVAILABLE:
                                 scroll_right_momentary_effort[layer] = pos_effort[i]
                                 scroll_right_momentary_usage[layer] = shortcut_usage_count[sid]
                                 scroll_right_momentary_x[layer] = pos_x[i]
+                                scroll_right_momentary_y[layer] = pos_y[i]
                 proximity = 1.0 - trackball_dist[i] * 0.25
                 if proximity > 0.0:
                     _uc = int(shortcut_usage_count[sid]); trackball += imp * proximity * (1.0 + log1p_lut[_uc if _uc < lut_size else lut_size - 1] * 0.25)
@@ -957,6 +994,8 @@ if NUMBA_AVAILABLE:
                             mouse_non_right_count[layer] += 1
                 if pos_hand[i] == 0:
                     hand_bias += imp * 5.0
+                if button > 0 and pos_hand[i] == 1 and pos_is_thumb[i] and not pos_is_frozen[i] and layer != 7:
+                    mouse_global_right_thumb_count += 1
                 if 0 <= layer < 32 and layer_right_required[layer]:
                     mouse_layer_access += imp * 100.0
                 _uc = int(shortcut_usage_count[sid]); usage_scale = 1.0 + log1p_lut[_uc if _uc < lut_size else lut_size - 1] * 0.25
@@ -1188,12 +1227,18 @@ if NUMBA_AVAILABLE:
                             uncertainty_factor = 0.25 + 0.10 * max(0.0, float(count - 3))
                             if uncertainty_factor > 0.75:
                                 uncertainty_factor = 0.75
-                        exception_raw = shortcut_importance[sid] + duplicate_support[sid] * 10.0 - 16.0
+                        _uc_dup = int(shortcut_usage_count[sid])
+                        usage_bonus = log1p_lut[_uc_dup if _uc_dup < lut_size else lut_size - 1] * 0.35
+                        exception_raw = shortcut_importance[sid] + duplicate_support[sid] * 10.0 + usage_bonus - 16.0
                         if shortcut_is_mouse[sid]:
-                            exception_raw -= 4.0
+                            # Mouse duplicates outside the natural mouse layer are
+                            # harder to justify; the mouse layer itself receives
+                            # the positive mouse-workflow pressure.
+                            exception_raw -= 7.0
                         _xk = exception_raw * 0.45; exception_score = 0.5 + 0.5 * _xk / (1.0 + (_xk if _xk >= 0.0 else -_xk))
                         novelty_cost = 0.15 + (1.0 - exception_score) * (1.0 - exception_score)
-                        duplicate_value_gap += unsupported_extra * gap * uncertainty_factor * novelty_cost
+                        saturation = 1.0 + 0.18 * max(0.0, float(count - 2)) * max(0.0, float(count - 2))
+                        duplicate_value_gap += unsupported_extra * gap * uncertainty_factor * novelty_cost * saturation
 
         cross_dup = 0.0
         for sid in range(n_short):
@@ -1209,12 +1254,15 @@ if NUMBA_AVAILABLE:
                     uncertainty_factor = 1.0
                     if duplicate_support[sid] <= 0.0:
                         uncertainty_factor = 0.35
-                    exception_raw = shortcut_importance[sid] + duplicate_support[sid] * 10.0 - 16.0
+                    _uc_cross = int(shortcut_usage_count[sid])
+                    usage_bonus = log1p_lut[_uc_cross if _uc_cross < lut_size else lut_size - 1] * 0.35
+                    exception_raw = shortcut_importance[sid] + duplicate_support[sid] * 10.0 + usage_bonus - 16.0
                     if shortcut_is_mouse[sid]:
-                        exception_raw -= 4.0
+                        exception_raw -= 7.0
                     _xk = exception_raw * 0.45; exception_score = 0.5 + 0.5 * _xk / (1.0 + (_xk if _xk >= 0.0 else -_xk))
                     novelty_cost = 0.15 + (1.0 - exception_score) * (1.0 - exception_score)
-                    cross_dup += extra * extra * uncertainty_factor * novelty_cost
+                    saturation = 1.0 + 0.18 * max(0.0, float(layers - 2)) * max(0.0, float(layers - 2))
+                    cross_dup += extra * extra * uncertainty_factor * novelty_cost * saturation
 
         group_split = 0.0
         for g in range(group_matrix.shape[0]):
@@ -1253,8 +1301,6 @@ if NUMBA_AVAILABLE:
 
         thumb_occ = 0.0
         for target_layer in range(32):
-            if direct_toggle_access[target_layer]:
-                continue
             if direct_left_thumb_momentary[target_layer] and direct_right_thumb_momentary[target_layer]:
                 continue
             restrict_left = direct_left_thumb_momentary[target_layer]
@@ -1270,7 +1316,15 @@ if NUMBA_AVAILABLE:
                 if (pos_hand[i] == 0 and restrict_left) or (
                     pos_hand[i] == 1 and restrict_right
                 ):
-                    thumb_occ += 1.0 + shortcut_importance[sid] * 0.5
+                    if reachable_toggle_access[target_layer]:
+                        # Toggle access lets the user release the momentary
+                        # thumb, so this is allowed, but it is still awkward:
+                        # treat that same-side thumb area as effort >= 4.
+                        effort_gap = 4.0 - pos_effort[i]
+                        if effort_gap > 0.0:
+                            thumb_occ += effort_gap * (1.0 + shortcut_importance[sid] * 0.5)
+                    else:
+                        thumb_occ += 1.0 + shortcut_importance[sid] * 0.5
 
         for layer in range(1, 32):
             demand = layer_demand[layer]
@@ -1282,6 +1336,16 @@ if NUMBA_AVAILABLE:
                 access_layout += math.log1p(demand) * 12.0
             if layer_access_cost[layer] > 3.0:
                 access_layout += math.log1p(demand) * (layer_access_cost[layer] - 3.0)
+            direct_l0_accesses = l0_direct_hold_count[layer] + l0_direct_toggle_count[layer]
+            if direct_l0_accesses > 1:
+                # Both direct hold and direct toggle to the same target on L0 can
+                # be useful, but it consumes scarce thumb real estate. Prefer one
+                # excellent direct access plus cheaper secondary paths unless the
+                # layer demand truly justifies both.
+                redundant = float(direct_l0_accesses - 1)
+                mixed_mode = 1.0 if (l0_direct_hold_count[layer] > 0 and l0_direct_toggle_count[layer] > 0) else 0.0
+                access_layout += redundant * (60.0 + math.log1p(demand) * 22.0)
+                access_layout += mixed_mode * (90.0 + l0_direct_access_cost[layer] * 0.6)
 
         layer7_access = 0.0
         if not reachable_momentary_access[7]:
@@ -1697,7 +1761,16 @@ if NUMBA_AVAILABLE:
                     continue
                 _um = int(mouse_button_usage[layer, button]); usage_scale = 1.0 + log1p_lut[_um if _um < lut_size else lut_size - 1] * 0.35
                 imp_scale = mouse_button_importance[layer, button] if mouse_button_importance[layer, button] > 0.0 else 1.0
-                candidate_penalty += mouse_button_effort[layer, button] * imp_scale * usage_scale * 30.0
+                button_weight = 1.0
+                if button == 1:
+                    button_weight = 2.75
+                elif button == 2:
+                    button_weight = 3.40
+                elif button == 3:
+                    button_weight = 0.85
+                elif button == 4 or button == 5:
+                    button_weight = 0.65
+                candidate_penalty += mouse_button_effort[layer, button] * imp_scale * usage_scale * 30.0 * button_weight
                 if mouse_button_right_thumb[layer, button] > 0:
                     candidate_penalty += 20000.0
             if mouse_button_right[layer, 1] > 0 and mouse_button_right[layer, 2] > 0:
@@ -1716,19 +1789,37 @@ if NUMBA_AVAILABLE:
                     candidate_penalty += (1.0 - dx) * 800.0
                 candidate_penalty += dist45 * 180.0
                 candidate_penalty += dy * 500.0
-            # Prefer MB1 at x=8 (index finger), MB2 at x=9 (middle), scroll at x=10 (ring).
-            # Both index-home and pinky-home have eff=0 — x-penalty differentiates them.
+            # Prefer primary mouse buttons on the home row, with MB2 weighted
+            # above MB3/MB4/MB5 because right-click is a high-value action.
+            # Both index-home and pinky-home can have eff=0; x/y penalties
+            # differentiate the mouse-button pattern inside the dynamic layer.
             # Only applies to non-thumb right-hand placements (thumbs are penalized separately).
             if mouse_button_right[layer, 1] > 0 and mouse_button_right_thumb[layer, 1] == 0:
-                candidate_penalty += abs(mouse_button_x[layer, 1] - 8.0) * 12000.0
+                candidate_penalty += abs(mouse_button_x[layer, 1] - 8.0) * 28000.0
+                candidate_penalty += abs(mouse_button_y[layer, 1] - 2.0) * 30000.0
+                candidate_penalty += mouse_button_effort[layer, 1] * 52000.0
             if mouse_button_right[layer, 2] > 0 and mouse_button_right_thumb[layer, 2] == 0:
-                candidate_penalty += abs(mouse_button_x[layer, 2] - 9.0) * 12000.0
+                candidate_penalty += abs(mouse_button_x[layer, 2] - 9.0) * 32000.0
+                candidate_penalty += abs(mouse_button_y[layer, 2] - 2.0) * 30000.0
+                candidate_penalty += mouse_button_effort[layer, 2] * 65000.0
+            if mouse_button_right[layer, 3] > 0 and mouse_button_right_thumb[layer, 3] == 0:
+                candidate_penalty += abs(mouse_button_x[layer, 3] - 10.0) * 6000.0
+                candidate_penalty += abs(mouse_button_y[layer, 3] - 2.0) * 5000.0
             if scroll_right_momentary[layer]:
                 _us = int(scroll_right_momentary_usage[layer]); usage_scale = 1.0 + log1p_lut[_us if _us < lut_size else lut_size - 1] * 0.35
-                # High coefficient: eff=1.0 costs 15000, eff=1.75 costs 26250 (worse than missing scroll @25000)
-                candidate_penalty += scroll_right_momentary_effort[layer] * usage_scale * 15000.0
+                # Scroll is part of the mouse core group. It should beat MB3-5
+                # for a prime non-thumb right-side position when usage supports it.
+                candidate_penalty += scroll_right_momentary_effort[layer] * usage_scale * 70000.0
                 if scroll_right_momentary_x[layer] >= 0.0:
-                    candidate_penalty += abs(scroll_right_momentary_x[layer] - 10.0) * 12000.0
+                    candidate_penalty += abs(scroll_right_momentary_x[layer] - 9.0) * 36000.0
+                    candidate_penalty += abs(scroll_right_momentary_y[layer] - 2.0) * 42000.0
+                    if scroll_right_momentary_x[layer] == 7.0 or scroll_right_momentary_x[layer] == 8.0:
+                        candidate_penalty += 250000.0
+                for lower_button in (3, 4):
+                    if mouse_button_right[layer, lower_button] > 0:
+                        effort_gap = scroll_right_momentary_effort[layer] - mouse_button_effort[layer, lower_button]
+                        if effort_gap > 0.0:
+                            candidate_penalty += effort_gap * usage_scale * 90000.0
             else:
                 candidate_penalty += 25000.0
             if scroll_right_momentary_thumb[layer]:
@@ -1749,11 +1840,14 @@ if NUMBA_AVAILABLE:
                 and mouse_non_right_count[layer] == 0
                 and right_thumb_count == 0
                 and scroll_right_momentary[layer]
+                and scroll_right_momentary_x[layer] != 7.0
+                and scroll_right_momentary_x[layer] != 8.0
                 and not right_thumb_momentary_access[layer]
                 and reachable_toggle_access[layer]
             ):
                 natural_mouse_layer = layer
         dynamic_mouse_layer += float(mouse_l7_count) * 500.0
+        dynamic_mouse_layer += float(mouse_global_right_thumb_count) * 50000.0
 
         if natural_mouse_layer >= 0:
             # Once a natural generated mouse layer exists, it should dominate
@@ -1767,14 +1861,14 @@ if NUMBA_AVAILABLE:
                 if not shortcut_is_mouse[sid]:
                     continue
                 layer = pos_layer[i]
-                if layer == natural_mouse_layer or layer == 0 or layer == 7:
+                if layer == natural_mouse_layer or layer == 7:
                     continue
                 if pos_is_frozen[i]:
                     continue
                 _ur = int(shortcut_usage_count[sid]); usage_relief = log1p_lut[_ur if _ur < lut_size else lut_size - 1] * 0.08
-                if usage_relief > 0.75:
-                    usage_relief = 0.75
-                mouse_scattered += 0.35 + (1.0 - usage_relief)
+                if usage_relief > 0.35:
+                    usage_relief = 0.35
+                mouse_scattered += 3.0 + (1.0 - usage_relief)
 
         best_everything_layer = -1
         best_everything_value = 0.0
@@ -1896,21 +1990,30 @@ if NUMBA_AVAILABLE:
             effort += gate * layer_factor * demand_scale * 20.0
 
         # Layer graph: reachability and depth penalty.
-        total_demand = 0.0
-        for L in range(32):
-            total_demand += layer_demand[L]
+        #
+        # Depth is the shortest number of layer changes from L0/root. Nested
+        # access is allowed, but it must earn its cost: a 2-hop path is much
+        # worse than a direct path, and 3/4-hop paths become exponentially
+        # worse. The penalty is weighted by raw layer demand, not normalized
+        # share, so heavily used layers are strongly pushed toward shallow
+        # access while low-demand spillover layers may remain nested.
         layer_reachability = 0.0
         layer_depth_penalty = 0.0
-        if total_demand > 0.0:
-            for L in range(32):
-                if layer_demand[L] <= 0.0:
-                    continue
-                if layer_access_cost[L] >= 999999.0:
-                    layer_reachability += layer_demand[L]
-                else:
-                    extra = layer_hop_depth[L] - 1
-                    if extra > 0:
-                        layer_depth_penalty += float(extra) * (layer_demand[L] / total_demand)
+        for L in range(32):
+            demand = layer_demand[L]
+            if demand <= 0.0:
+                continue
+            if layer_access_cost[L] >= 999999.0:
+                layer_reachability += demand
+                continue
+            depth = layer_hop_depth[L]
+            if depth <= 1:
+                continue
+            capped_depth = depth
+            if capped_depth > 6:
+                capped_depth = 6
+            depth_cost = 3.0 ** float(capped_depth - 1) - 1.0
+            layer_depth_penalty += depth_cost * demand
 
         # Raw violation scores (0 = feasible).
         # toggle_back_to_l0: count mutable layers reachable via toggle that lack a return toggle.
