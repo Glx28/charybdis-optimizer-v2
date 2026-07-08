@@ -888,9 +888,20 @@ def main(argv=None):
         )
         n_initial = int(config.get("surrogate.initial_exact_samples", 1000))
         t0_train = time.perf_counter()
+        print(f"  Preparing {n_initial} initial surrogate teacher layouts...", flush=True)
         initial_layouts = generate_random_layouts(layout, n_initial, warmstart_genome=warmstart_genome)
+        print(
+            f"  Initial teacher layouts generated in {time.perf_counter() - t0_train:.1f}s; "
+            "evaluating exact teacher labels...",
+            flush=True,
+        )
         initial_scores, initial_constraints = evaluate_exact_batch(
             initial_layouts, layout, evaluator, perf=perf, label="surrogate_initial_teacher_eval",
+        )
+        print(
+            f"  Initial teacher labels evaluated in {time.perf_counter() - t0_train:.1f}s; "
+            "training surrogate...",
+            flush=True,
         )
         initial_combined = np.concatenate(
             [initial_scores, initial_constraints], axis=1
