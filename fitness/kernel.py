@@ -896,11 +896,21 @@ if NUMBA_AVAILABLE:
                 # L0 thumb shortcuts are allowed, but must earn base-layer
                 # real estate from usage. This discourages random low-use app
                 # shortcuts on thumbs without banning genuinely frequent ones.
+                # Capped so that occupying the slot with any valid shortcut is
+                # never scored worse (in violations_raw terms) than leaving it
+                # empty would now cost via empty_pos_waste's L0 multiplier —
+                # otherwise evolution is incentivized to evacuate rather than
+                # fill L0 thumb slots.
                 _uc_l0 = int(shortcut_usage_count[sid])
                 usage_relief = log1p_lut[_uc_l0 if _uc_l0 < lut_size else lut_size - 1] * 0.12
                 if usage_relief > 0.85:
                     usage_relief = 0.85
-                access_layout += imp * pos_effort_waste[i] * (1.0 - usage_relief) * 18.0
+                _l0_occupy_raw = imp * pos_effort_waste[i] * (1.0 - usage_relief) * 18.0
+                if violation_weights[13] > 0.0:
+                    _l0_occupy_cap = (violation_weights[16] / violation_weights[13]) * pos_effort_waste[i] * 3.0
+                    if _l0_occupy_raw > _l0_occupy_cap:
+                        _l0_occupy_raw = _l0_occupy_cap
+                access_layout += _l0_occupy_raw
             # Quadratic effort-importance: high-imp keys at high-effort positions are
             # punished superlinearly. imp×pos_eff×(1+imp×pos_eff×0.5) grows ~imp²
             # while access_cost stays linear (layer structure is harder to change).
@@ -2067,8 +2077,8 @@ if NUMBA_AVAILABLE:
             everything_layer = math.log1p(best_everything_value) * coverage * access_bonus
 
         # Empty-position penalty.
-        # Each mutable, non-L0, non-L7, unassigned slot on a reachable layer
-        # receives a sigmoid-weighted penalty that rises sharply for the best
+        # Each mutable, non-L7, unassigned slot on a reachable layer receives a
+        # sigmoid-weighted penalty that rises sharply for the best
         # (lowest-effort) positions and stays negligible for far/hard positions.
         #
         # Formula per empty slot i on layer L:
@@ -2078,7 +2088,9 @@ if NUMBA_AVAILABLE:
         #   demand_scale = 1 + log1p(layer_demand[L]) * 0.1
         #   penalty   += gate * layer_factor * demand_scale
         #
-        # Excluded: L0 (base typing), L7 (frozen), frozen positions, unreachable layers.
+        # Excluded: L7 (frozen), frozen positions, unreachable layers. L0 is
+        # NOT excluded: it is the only zero-cost, always-reachable layer, so an
+        # empty L0 slot gets an extra multiplier rather than a pass.
         # Soft pressure only; never a hard acceptance constraint.
         # Empty-position penalty added directly to effort objective so it isn't
         # drowned by the violation scale factor (2.3e12 vs effort scale ~39k).
@@ -2090,7 +2102,7 @@ if NUMBA_AVAILABLE:
             if pos_is_frozen[i]:
                 continue
             layer = pos_layer[i]
-            if layer == 0 or layer == 7:
+            if layer == 7:
                 continue
             if layer_access_cost[layer] >= 999999.0:
                 continue
@@ -2103,7 +2115,10 @@ if NUMBA_AVAILABLE:
                 layer_factor = 4.0
             ld = layer_demand[layer]
             demand_scale = 1.0 + ld / (1.0 + ld * 2.0) * 0.6
-            effort += gate * layer_factor * demand_scale * 20.0
+            _empty_penalty = gate * layer_factor * demand_scale * 20.0
+            if layer == 0:
+                _empty_penalty *= 3.0
+            effort += _empty_penalty
 
         # Layer graph: reachability and depth penalty.
         #
@@ -2172,12 +2187,17 @@ if NUMBA_AVAILABLE:
         # Empty position penalty: waste = 200*exp(-2*eff). Prime slots (eff≈0) left
         # empty cost ~200, far slots (eff≥4) cost ~0. This pushes high-value shortcuts
         # into home-row positions on each layer (especially mouse layer MB1/MB2/scroll).
-        # L0 and L7 are exempt: L0 naturally has many empty slots; L7 is frozen/arrows.
+        # L7 is exempt (frozen/arrows). L0 is NOT exempt: it is the only zero-cost,
+        # always-reachable layer, so an empty L0 slot is worse than an equally-effort
+        # empty slot elsewhere and gets an extra multiplier.
         empty_pos_waste = 0.0
         for i in range(n_pos):
             lyr = pos_layer[i]
-            if genome[i] < 0 and not pos_is_frozen[i] and lyr != 7 and lyr != 0:
-                empty_pos_waste += pos_effort_waste[i]
+            if genome[i] < 0 and not pos_is_frozen[i] and lyr != 7:
+                if lyr == 0:
+                    empty_pos_waste += pos_effort_waste[i] * 3.0
+                else:
+                    empty_pos_waste += pos_effort_waste[i]
 
         raw_scores = np.empty(24, dtype=np.float32)
         raw_scores[0] = duplicate

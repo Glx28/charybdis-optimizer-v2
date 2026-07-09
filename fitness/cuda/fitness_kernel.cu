@@ -539,7 +539,17 @@ __device__ void evaluate_single(
             int uc_l0 = (int)shortcut_usage_count[sid];
             float usage_relief = log1p_lookup(uc_l0, log1p_lut, lut_size) * 0.12f;
             if (usage_relief > 0.85f) usage_relief = 0.85f;
-            access_layout += imp * pos_effort_waste[i] * (1.0f - usage_relief) * 18.0f;
+            // Capped so occupying is never scored worse (in violations_raw terms)
+            // than leaving the slot empty now costs via empty_pos_waste's L0
+            // multiplier — see the matching comment in fitness/kernel.py.
+            float l0_occupy_raw = imp * pos_effort_waste[i] * (1.0f - usage_relief) * 18.0f;
+            if (violation_weights[13] > 0.0f) {
+                float l0_occupy_cap = (violation_weights[16] / violation_weights[13]) * pos_effort_waste[i] * 3.0f;
+                if (l0_occupy_raw > l0_occupy_cap) {
+                    l0_occupy_raw = l0_occupy_cap;
+                }
+            }
+            access_layout += l0_occupy_raw;
         }
         float pos_cost = pos_eff * imp * (1.0f + pos_eff * imp * 0.5f);
         effort += pos_cost + imp * access_cost;
@@ -1847,7 +1857,7 @@ __device__ void evaluate_single(
         if (genome[i] >= 0) continue;
         if (pos_is_frozen[i]) continue;
         int layer = pos_layer[i];
-        if (layer == 0 || layer == 7) continue;
+        if (layer == 7) continue;
         if (s->layer_access_cost[layer] >= 999999.0f) continue;
         float pv = 1.0f / (1.0f + pos_effort[i]);
         float xk = 8.0f * (pv - 0.5f);
@@ -1857,7 +1867,11 @@ __device__ void evaluate_single(
         if (layer_factor > 4.0f) layer_factor = 4.0f;
         float ld = s->layer_demand[layer];
         float demand_scale = 1.0f + ld / (1.0f + ld * 2.0f) * 0.6f;
-        effort += gate * layer_factor * demand_scale * 20.0f;
+        float empty_penalty = gate * layer_factor * demand_scale * 20.0f;
+        if (layer == 0) {
+            empty_penalty *= 3.0f;
+        }
+        effort += empty_penalty;
     }
 
     // -------------------------------------------------------------------------
@@ -1940,8 +1954,12 @@ __device__ void evaluate_single(
     float empty_pos_waste = 0.0f;
     for (int i = 0; i < n_pos; i++) {
         int lyr = pos_layer[i];
-        if (genome[i] < 0 && !pos_is_frozen[i] && lyr != 7 && lyr != 0) {
-            empty_pos_waste += pos_effort_waste[i];
+        if (genome[i] < 0 && !pos_is_frozen[i] && lyr != 7) {
+            if (lyr == 0) {
+                empty_pos_waste += pos_effort_waste[i] * 3.0f;
+            } else {
+                empty_pos_waste += pos_effort_waste[i];
+            }
         }
     }
 

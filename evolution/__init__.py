@@ -938,6 +938,20 @@ def _numba_thumb_exclude_mask(genome, mutable_arr, mutable_layer, mutable_hand,
 
 
 @njit(cache=True)
+def _numba_effort_sort(positions, efforts, n):
+    # Insertion sort `positions` ascending by `efforts[positions[k]]`, so the
+    # lowest-effort (best) candidate slots come first.
+    for i in range(1, n):
+        key_pos = positions[i]
+        key_eff = efforts[key_pos]
+        j = i - 1
+        while j >= 0 and efforts[positions[j]] > key_eff:
+            positions[j + 1] = positions[j]
+            j -= 1
+        positions[j + 1] = key_pos
+
+
+@njit(cache=True)
 def _numba_propose_mouse_workflow_layer(genome, pos_map, thumb_exclude, state,
                                         mouse_candidate_layers,
                                         right_non_thumb_flat, right_non_thumb_start,
@@ -946,7 +960,7 @@ def _numba_propose_mouse_workflow_layer(genome, pos_map, thumb_exclude, state,
                                         safe_access_positions, l0_safe_access_positions,
                                         layer_access_hold, layer_access_toggle,
                                         layer_scroll_access, return_toggle_sid,
-                                        mouse_button_sids, n_shortcuts):
+                                        mouse_button_sids, n_shortcuts, pos_effort_arr):
     n_candidates = len(mouse_candidate_layers)
     if n_candidates == 0:
         return False
@@ -959,16 +973,21 @@ def _numba_propose_mouse_workflow_layer(genome, pos_map, thumb_exclude, state,
         return False
 
     chosen = _numba_sample_distinct(right_non_thumb_flat[start:start + n_pos], 6, state)
-    _numba_insertion_sort(chosen, 6)
+    # Sort the 6 sampled positions by effort (ascending), not raw index, so the
+    # lowest-effort slots go to the highest-priority mouse-group members
+    # instead of an arbitrary index-order mapping. Priority (matching
+    # fitness/kernel.py's button_weight and scroll effort-priority terms):
+    # Scroll > MB2 > MB1 > MB3 ~= MB4 ~= MB5.
+    _numba_effort_sort(chosen, pos_effort_arr, 6)
 
     sids = np.empty(9, dtype=np.int32)
     targets = np.empty(9, dtype=np.int32)
-    sids[0] = mouse_button_sids[1]
+    sids[0] = layer_scroll_access[layer]
     sids[1] = mouse_button_sids[2]
-    sids[2] = mouse_button_sids[3]
-    sids[3] = mouse_button_sids[4]
-    sids[4] = mouse_button_sids[5]
-    sids[5] = layer_scroll_access[layer]
+    sids[2] = mouse_button_sids[1]
+    sids[3] = mouse_button_sids[3]
+    sids[4] = mouse_button_sids[4]
+    sids[5] = mouse_button_sids[5]
     for k in range(6):
         targets[k] = chosen[k]
     n_total = 6
@@ -1343,6 +1362,7 @@ def _semantic_mutations_batch_numba(
     is_group_sid_lut, n_shortcuts,
     is_raw_arrow_lut, assignable_not_arrow,
     assignable_arr, pos_layer_arr, mo_access_target_lut, is_important_sid_lut,
+    pos_effort_arr,
 ):
     """Parallel semantic-mutation pass (Pass 1/1b) for SwapMutation._do.
 
@@ -1372,7 +1392,7 @@ def _semantic_mutations_batch_numba(
                 safe_access_positions, l0_safe_access_positions,
                 layer_access_hold, layer_access_toggle, layer_scroll_access,
                 return_toggle_sid,
-                mouse_button_sids, n_shortcuts,
+                mouse_button_sids, n_shortcuts, pos_effort_arr,
             ):
                 handled[i] = True
                 continue
@@ -2132,14 +2152,19 @@ class SwapMutation(Mutation):
         layer = random.choice(candidate_layers)
         right_positions = self.right_non_thumb_by_layer[layer]
         target_positions = random.sample(right_positions[:min(len(right_positions), 12)], 6)
-        target_positions.sort()  # position index order only — fitness scoring drives quality placement
+        # Sort by effort (ascending), not position index, so the lowest-effort
+        # slots go to the highest-priority mouse-group members instead of an
+        # arbitrary index-order mapping. Priority (matching fitness/kernel.py's
+        # button_weight and scroll effort-priority terms):
+        # Scroll > MB2 > MB1 > MB3 ~= MB4 ~= MB5.
+        target_positions.sort(key=lambda pos: self._pos_effort_arr[pos])
         sids = [
-            self.mouse_button_sids[1],
+            self.scroll_access_by_target[layer],
             self.mouse_button_sids[2],
+            self.mouse_button_sids[1],
             self.mouse_button_sids[3],
             self.mouse_button_sids[4],
             self.mouse_button_sids[5],
-            self.scroll_access_by_target[layer],
         ]
 
         blocked = set(target_positions)
@@ -2908,6 +2933,7 @@ class SwapMutation(Mutation):
                 self._pos_layer_arr,
                 self._mo_access_target_lut,
                 self._is_important_sid_lut,
+                self._pos_effort_arr,
             )
         else:
             def _attempt(mutation_fn, prob, need_pos_map=False, need_thumb=False):

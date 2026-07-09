@@ -834,6 +834,75 @@ class TestSurrogate(unittest.TestCase):
         report = _dynamic_mouse_layer_report(layout.clone_with(genome=moved))
         self.assertTrue(report["acceptance_pass"], report)
 
+    def test_mouse_workflow_mutation_assigns_by_effort_priority(self):
+        """Freshly-proposed mouse layer must put Scroll/MB2/MB1 on the
+        lowest-effort candidate slots, not an arbitrary position-index order."""
+        import evolution
+        random.seed(301)
+        positions = tuple([
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.1, is_thumb=True),
+            Position(1, 0, 4.0, 4.0, "left", 0, 0.1, is_thumb=True),
+            Position(2, 0, 5.0, 4.0, "left", 0, 0.1, is_thumb=True),
+            Position(3, 0, 0.0, 0.0, "left", 1, 1.0),
+            # 6 right-non-thumb candidate slots with distinct, deliberately
+            # scrambled efforts (position index order != effort order).
+            Position(4, 1, 7.0, 1.0, "right", 1, 1.75),
+            Position(5, 1, 8.0, 1.0, "right", 1, 0.0),
+            Position(6, 1, 9.0, 1.0, "right", 1, 1.0),
+            Position(7, 1, 10.0, 1.0, "right", 1, 1.25),
+            Position(8, 1, 11.0, 1.0, "right", 1, 0.5),
+            Position(9, 1, 12.0, 1.0, "right", 1, 0.75),
+            *(Position(i, 1, float(i - 10), 2.0, "left", 1, 1.0) for i in range(10, 14)),
+        ])
+        shortcuts = tuple([
+            Shortcut(0, "MB1", "Left click", "Mouse", 10.0, category="mouse", base_key="MB1"),
+            Shortcut(1, "MB2", "Right click", "Mouse", 9.0, category="mouse", base_key="MB2"),
+            Shortcut(2, "MB3", "Middle click", "Mouse", 7.0, category="mouse", base_key="MB3"),
+            Shortcut(3, "MB4", "Back", "Mouse", 6.0, category="mouse", base_key="MB4"),
+            Shortcut(4, "MB5", "Forward", "Mouse", 6.0, category="mouse", base_key="MB5"),
+            Shortcut(5, "@scroll:L1:hold", "Scroll Mode Layer 1", "Layer Access", 15.0, category="layer_access", base_key="Scroll_L1", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
+            Shortcut(6, "@access:L1:hold", "Momentary Layer 1", "Layer Access", 12.0, category="layer_access", base_key="L1", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
+            Shortcut(7, "@access:L1:toggle", "Toggle Layer 1", "Layer Access", 12.0, category="layer_access", base_key="L1", is_layer_access=True, access_target_layer=1, access_is_momentary=False),
+            Shortcut(8, "@access:L7:hold", "Momentary Layer 7", "Layer Access", 12.0, category="layer_access", base_key="L7", is_layer_access=True, access_target_layer=7, access_is_momentary=True),
+            Shortcut(9, "@access:L7:toggle", "Toggle Layer 7", "Layer Access", 12.0, category="layer_access", base_key="L7", is_layer_access=True, access_target_layer=7, access_is_momentary=False),
+            *(Shortcut(i, f"K{i}", "", "App", 1.0, base_key=f"K{i}") for i in range(10, 14)),
+        ])
+        genome = np.arange(14, dtype=np.int32)
+        layout = Layout(genome.copy(), positions, shortcuts, np.zeros(14, dtype=np.bool_))
+
+        for use_numba in (True, False):
+            orig = evolution.NUMBA_AVAILABLE
+            evolution.NUMBA_AVAILABLE = use_numba
+            try:
+                mutation = SwapMutation(
+                    prob=0.0,
+                    frozen_mask=layout.frozen_mask,
+                    layout=layout,
+                    group_overwrite_prob=0.0,
+                    mouse_workflow_prob=1.0,
+                    l7_access_prob=0.0,
+                )
+                moved = mutation._do(None, genome.reshape(1, -1).copy())[0]
+            finally:
+                evolution.NUMBA_AVAILABLE = orig
+
+            pos_of = {sid: int(idx) for idx, sid in enumerate(moved) if 0 <= sid < 6}
+            effort_of = {i: positions[i].effort for i in range(4, 10)}
+            # Position 5 (effort 0.0) is the single lowest-effort slot: Scroll (sid 5)
+            # must win it, matching Scroll's dominant effort-priority weight.
+            self.assertEqual(pos_of.get(5), 5, f"[numba={use_numba}] Scroll should occupy the lowest-effort slot")
+            # MB2 (sid 1) must land on a lower-effort slot than MB1 (sid 0).
+            self.assertLess(
+                effort_of[pos_of[1]], effort_of[pos_of[0]],
+                f"[numba={use_numba}] MB2 should have lower effort than MB1",
+            )
+            # MB1 must land on a lower-effort slot than MB3/MB4/MB5.
+            for lower_sid in (2, 3, 4):
+                self.assertLess(
+                    effort_of[pos_of[0]], effort_of[pos_of[lower_sid]],
+                    f"[numba={use_numba}] MB1 should have lower effort than sid {lower_sid}",
+                )
+
     def test_l7_access_mutation_proposes_hold_and_toggle(self):
         random.seed(400)
         positions = tuple(
@@ -2175,6 +2244,93 @@ class TestEvaluator(unittest.TestCase):
             evaluator.evaluate(single_right).objectives[2],
         )
 
+    def test_l0_empty_position_is_no_longer_exempt(self):
+        positions = (
+            Position(0, 0, 5.0, 5.0, "left", 1, 1.5, is_thumb=True),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+Z", "Undo", "App", 5.0),
+        )
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        empty_l0 = Layout(np.array([-1], dtype=np.int32), positions, shortcuts, frozen)
+        filled_l0 = Layout(np.array([0], dtype=np.int32), positions, shortcuts, frozen)
+
+        # Violations objective (empty_pos_waste, raw_scores[16]): empty L0 must
+        # now cost something (it was previously fully exempt).
+        weights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["weights"]}
+        weights["violations"] = 1.0
+        vweights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
+        vweights["empty_position"] = 1.0
+        evaluator = FitnessEvaluator(weights=weights, reference_layout=filled_l0, violation_weights=vweights,
+                                     hard_constraints=[], missing_important_threshold=99.0)
+        self.assertGreater(evaluator.evaluate(empty_l0).objectives[2], 0.0)
+
+        # Effort objective (the sigmoid empty-position penalty added directly
+        # to effort): empty L0 must score worse than filled L0.
+        weights2 = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["weights"]}
+        weights2["effort"] = 1.0
+        vweights2 = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
+        evaluator2 = FitnessEvaluator(weights=weights2, reference_layout=filled_l0, violation_weights=vweights2,
+                                      hard_constraints=[], missing_important_threshold=99.0)
+        self.assertGreater(
+            evaluator2.evaluate(empty_l0).objectives[0],
+            evaluator2.evaluate(filled_l0).objectives[0],
+        )
+
+    def test_l0_empty_position_excludes_frozen(self):
+        positions = (
+            Position(0, 0, 5.0, 5.0, "left", 1, 1.5, is_thumb=True, is_frozen=True),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+Z", "Undo", "App", 5.0),
+        )
+        frozen = np.array([True])
+        empty_l0_frozen = Layout(np.array([-1], dtype=np.int32), positions, shortcuts, frozen)
+        weights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["weights"]}
+        weights["violations"] = 1.0
+        weights["effort"] = 1.0
+        vweights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
+        vweights["empty_position"] = 1.0
+        evaluator = FitnessEvaluator(weights=weights, reference_layout=empty_l0_frozen, violation_weights=vweights,
+                                     hard_constraints=[], missing_important_threshold=99.0)
+        r = evaluator.evaluate(empty_l0_frozen)
+        self.assertEqual(r.objectives[2], 0.0)
+
+    def test_l0_thumb_occupied_never_worse_than_empty(self):
+        # A low-importance, zero-usage shortcut occupying an L0 thumb slot
+        # must not score worse (in violations_raw terms) than leaving the
+        # exact same slot empty.
+        positions = (
+            Position(0, 0, 5.0, 5.0, "left", 1, 1.5, is_thumb=True),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+Z", "Undo", "App", 5.0),
+        )
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        empty_l0 = Layout(np.array([-1], dtype=np.int32), positions, shortcuts, frozen)
+        filled_l0 = Layout(np.array([0], dtype=np.int32), positions, shortcuts, frozen)
+        weights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["weights"]}
+        weights["violations"] = 1.0
+        vweights = dict(DEFAULT_CONFIG["fitness"]["violation_sub_weights"])
+        evaluator = FitnessEvaluator(weights=weights, reference_layout=filled_l0, violation_weights=vweights,
+                                     hard_constraints=[], missing_important_threshold=99.0)
+        self.assertLessEqual(
+            evaluator.evaluate(filled_l0).objectives[2],
+            evaluator.evaluate(empty_l0).objectives[2],
+        )
+
+    def test_archive_bootstrap_never_accepts_infeasible_first_entry(self):
+        from evolution.custom_ga import CustomGARunner
+        infeasible = {"constraints": [1.0, 0.0], "total_score": -500.0}
+        feasible = {"constraints": [0.0, 0.0], "total_score": -10.0}
+        # No incumbent yet: an infeasible candidate must NOT become the archive seed.
+        self.assertFalse(CustomGARunner._is_better(None, infeasible, None))
+        # A feasible candidate may become the archive seed.
+        self.assertTrue(CustomGARunner._is_better(None, feasible, None))
+        # Once a feasible incumbent exists, a worse-scoring feasible candidate loses,
+        # and an infeasible candidate never beats a feasible incumbent.
+        self.assertFalse(CustomGARunner._is_better(None, infeasible, feasible))
+
     def test_same_layer_duplicate_hard_constraint_basic(self):
         positions = (
             Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
@@ -2485,6 +2641,8 @@ class TestEmptyPositionPenalty(unittest.TestCase):
     - Low-effort (prime) positions → high penalty when empty.
     - High-effort (far/corner) positions → near-zero penalty when empty.
     - L7 frozen content is never penalised.
+    - L0 is NOT exempt (it is the only zero-cost, always-reachable layer) and
+      gets an extra multiplier on top of the base penalty.
     - Penalty is soft: it adds to the violations objective but never causes a
       hard acceptance failure by itself.
     """
@@ -2592,8 +2750,11 @@ class TestEmptyPositionPenalty(unittest.TestCase):
         self.assertEqual(result.total_score, 0.0,
                          f"L7 frozen empty position must not be penalised; got {result.total_score}")
 
-    def test_l0_empty_not_penalised_by_empty_position(self):
-        """L0 empty positions are excluded from the empty_position penalty."""
+    def test_l0_empty_is_penalised_by_empty_position(self):
+        """L0 empty positions are NOT excluded from empty_position: L0 is the
+        only zero-cost, always-reachable layer, so an empty L0 slot must cost
+        at least as much as an equivalent-effort empty slot elsewhere (and, per
+        fitness/kernel.py's L0 multiplier, more)."""
         positions = (
             Position(0, 0, 7.0, 2.0, "right", 1, 0.3),   # L0, prime effort, empty
             Position(1, 0, 0.0, 0.0, "right", 4, 4.5),   # L0, far, empty
@@ -2605,8 +2766,8 @@ class TestEmptyPositionPenalty(unittest.TestCase):
         layout = Layout(np.array([-1, -1], dtype=np.int32), positions, shortcuts, frozen)
         ev = self._make_evaluator(layout, empty_position_weight=50.0)
         result = ev.evaluate(layout)
-        self.assertEqual(result.total_score, 0.0,
-                         f"L0 empty positions must not be penalised; got {result.total_score}")
+        self.assertGreater(result.total_score, 0.0,
+                           f"L0 empty positions must now be penalised; got {result.total_score}")
 
     def test_penalty_is_soft_not_hard_constraint(self):
         """empty_position never appears as a hard constraint."""

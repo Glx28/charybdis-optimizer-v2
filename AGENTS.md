@@ -186,11 +186,22 @@ slot on a far, high-effort position incurs only a small penalty. The penalty
 uses a sigmoid-weighted position-value function: `pos_value = 1/(1+effort)`,
 gate = sigmoid(8×(pos_value − 0.5)), scaled by layer access cost and layer
 demand. Cheap-access, high-demand layers produce stronger empty-position
-pressure. L0 (base typing), L7 (frozen), frozen positions, and positions on
-unreachable layers are excluded from this penalty. This is a soft scoring
-pressure (violation sub-weight `empty_position`, default 3.0), not a hard
-acceptance constraint. Intentional transparent fall-through is not banned,
-but it competes against placing useful actions at each position.
+pressure. L7 (frozen), frozen positions, and positions on unreachable layers
+are excluded from this penalty. This is a soft scoring pressure (violation
+sub-weight `empty_position`, default 3.0), not a hard acceptance constraint.
+Intentional transparent fall-through is not banned, but it competes against
+placing useful actions at each position.
+
+L0 is deliberately NOT excluded from empty-position pressure, and gets an
+extra multiplier on top: it is the only zero-cost, always-reachable layer, so
+every L0 key is high-value and should be fiercely contested. An empty L0 slot
+must never be cheaper than filling it with any valid shortcut — the L0-thumb
+occupied-position penalty (which discourages low-usage shortcuts from
+squatting on L0 thumb slots) is capped so it can never exceed what leaving
+the same slot empty would cost. This is still soft pressure, not a hard
+constraint, matching how mouse-layer effort quality is handled — but it
+should be strong enough that a mutable L0 position sitting empty for
+thousands of generations should not happen.
 
 Thumb clearance is strict and dynamic. If a layer is accessed by a momentary
 thumb key from one side, that same side's thumb area on the target layer is

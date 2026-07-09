@@ -243,9 +243,15 @@ class CustomGARunner:
             )
 
     def _is_better(self, candidate, incumbent):
-        if incumbent is None:
-            return True
         cand_cv = sum(max(0.0, float(x)) for x in candidate.get("constraints", []))
+        if incumbent is None:
+            # Never seed the archive with an infeasible candidate: until a
+            # feasible individual is found, global_best_genome/global_best_exact
+            # stay None and checkpoint writing falls back to
+            # population_best_genome (see run_evolution.py). This guarantees
+            # any checkpoint's best_genome (best_source="global_exact_archive")
+            # has zero hard-constraint violations by construction.
+            return cand_cv == 0.0
         inc_cv = sum(max(0.0, float(x)) for x in incumbent.get("constraints", []))
         # Only prefer lower constraint violation when one solution is feasible (cv=0)
         # and the other isn't. When both violate constraints the violation penalty is
