@@ -221,3 +221,20 @@ or two rows with `Left Down Right` on the bottom row and `Up` directly above
 ## Agent Tooling Rules
 
 Before editing: run `just ai-status` and `just ai-context`. Prefer existing repo tools (rg, fd, ast-grep, just recipes, MCP, tests, linters) over custom scripts. Make minimal diffs. Do not rewrite broad systems. Do not replace CUDA/GPU/Numba/Triton/NVIDIA logic with CPU-only logic. Do not add processor-side escape hatches to hide CUDA bugs. Do not delete tests. Keep final answers short unless asked for detail. For CUDA work: reproduce the GPU failure, inspect the smallest failing path, fix the GPU path, run relevant tests, then `just ai-guard`. Before finishing: `just ai-guard` and `just ai-smoke`.
+
+**MANDATORY performance check.** On 2026-07-09, a correctness fix added O(n_pos)
+full-genome rescans into the per-individual mutation hot path in
+`evolution/__init__.py`, silently halving real training throughput (~4-5
+gen/sec to ~2 gen/sec) for hours before anyone noticed. This must never
+happen again. Any change to `fitness/kernel.py`, `fitness/cuda/fitness_kernel.cu`,
+or `evolution/__init__.py`'s mutation/genome-generation operators is not
+considered done until `python3 tools/perf_benchmark.py` has been run and shows
+no regression beyond its tolerance against `tools/perf_baseline.json`. This is
+already wired into `just ai-guard`, which runs it automatically and blocks
+(non-zero exit) on regression whenever those files changed — do not bypass or
+weaken that check. When adding correctness logic to a hot path (duplicate
+checks, safety guards, validation), always reach for an existing precomputed
+index (e.g. a per-layer position index) instead of a full O(n) rescan; if a
+regression is genuinely unavoidable and accepted, update the baseline
+explicitly with `--update-baseline --reason "<why>"`, never by deleting or
+ignoring `tools/perf_baseline.json`.

@@ -1,0 +1,6 @@
+{
+  "eval_genomes_per_sec": 13118.958381828308,
+  "mutation_individuals_per_sec": 24198.95911834637,
+  "recorded_at": "2026-07-09T13:34:28Z",
+  "reason": "Initial baseline established 2026-07-09 after fixing the O(n_pos) full-genome-rescan regression in evolution/__init__.py's duplicate-safety mutation checks (same-layer-duplicate feature); this is the restored/optimized reference point, not the original pre-regression number."
+}

@@ -347,20 +347,31 @@ if NUMBA_AVAILABLE:
         return best_layer
 
     @njit(cache=True)
-    def _numba_layer_sid_count(genome, pos_layer_arr, layer, sid, exclude_a, exclude_b):
-        # Count how many positions on `layer` already hold `sid`, excluding
-        # the two positions involved in the swap under consideration (their
-        # current contents are about to move elsewhere).
+    def _numba_layer_sid_count(genome, layer_mutable_flat, layer_mutable_start, layer, sid, exclude_a, exclude_b):
+        # Count how many mutable positions on `layer` already hold `sid`,
+        # excluding the two positions involved in the swap under consideration
+        # (their current contents are about to move elsewhere). Scoped to just
+        # this layer's mutable positions via the precomputed per-layer index
+        # (O(positions-on-layer), not O(n_pos)) — frozen positions are excluded
+        # since they never change and each frozen sid occupies exactly one
+        # fixed slot, so they carry no duplicate risk for this check.
+        n_layers = len(layer_mutable_start)
+        if layer < 0 or layer + 1 >= n_layers:
+            return 0
+        start = layer_mutable_start[layer]
+        end = layer_mutable_start[layer + 1]
         count = 0
-        for i in range(len(genome)):
+        for p in range(start, end):
+            i = layer_mutable_flat[p]
             if i == exclude_a or i == exclude_b:
                 continue
-            if pos_layer_arr[i] == layer and genome[i] == sid:
+            if genome[i] == sid:
                 count += 1
         return count
 
     @njit(cache=True)
-    def _numba_swap_creates_illegal_duplicate(genome, pos_layer_arr, src_pos, target_pos, mouse_layer, mouse_button_sids):
+    def _numba_swap_creates_illegal_duplicate(genome, pos_layer_arr, src_pos, target_pos, mouse_layer, mouse_button_sids,
+                                              layer_mutable_flat, layer_mutable_start):
         # No shortcut may appear more than once on the same layer, except one
         # left+one right copy of a core mouse button on the dynamic mouse
         # layer (layer 7 is frozen and fully excluded). This is a mutation-
@@ -376,7 +387,7 @@ if NUMBA_AVAILABLE:
                     if mouse_button_sids[b] == moving_sid:
                         cap = 2
                         break
-            existing = _numba_layer_sid_count(genome, pos_layer_arr, target_layer, moving_sid, src_pos, target_pos)
+            existing = _numba_layer_sid_count(genome, layer_mutable_flat, layer_mutable_start, target_layer, moving_sid, src_pos, target_pos)
             if existing + 1 > cap:
                 return True
         displaced_sid = genome[target_pos]
@@ -388,7 +399,7 @@ if NUMBA_AVAILABLE:
                     if mouse_button_sids[b] == displaced_sid:
                         cap = 2
                         break
-            existing = _numba_layer_sid_count(genome, pos_layer_arr, src_layer, displaced_sid, src_pos, target_pos)
+            existing = _numba_layer_sid_count(genome, layer_mutable_flat, layer_mutable_start, src_layer, displaced_sid, src_pos, target_pos)
             if existing + 1 > cap:
                 return True
         return False
@@ -396,7 +407,7 @@ if NUMBA_AVAILABLE:
     @njit(cache=True)
     def _numba_effort_swap(genome, state, mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr,
                            pos_effort_arr, sid_importance_arr, is_group_sid_lut, mouse_button_sids,
-                           n_shortcuts):
+                           n_shortcuts, layer_mutable_flat, layer_mutable_start):
         n_mut = len(mutable_arr)
         if n_mut < 2 or len(sid_importance_arr) == 0:
             return False
@@ -466,7 +477,8 @@ if NUMBA_AVAILABLE:
                 candidate = same_layer_positions[_rand_int(state, n_same)]
             else:
                 candidate = lower_positions[_rand_int(state, n_lower)]
-            if not _numba_swap_creates_illegal_duplicate(genome, pos_layer_arr, src_pos, candidate, mouse_layer, mouse_button_sids):
+            if not _numba_swap_creates_illegal_duplicate(genome, pos_layer_arr, src_pos, candidate, mouse_layer, mouse_button_sids,
+                                                          layer_mutable_flat, layer_mutable_start):
                 target_pos = candidate
                 break
         if target_pos < 0:
@@ -769,7 +781,7 @@ if NUMBA_AVAILABLE:
             if _rand_float(state) < probs[1]:
                 if _numba_effort_swap(X[i], state, mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr,
                                       pos_effort_arr, sid_importance_arr, is_group_sid_lut, mouse_button_sids,
-                                      n_shortcuts):
+                                      n_shortcuts, layer_mutable_flat, layer_mutable_start):
                     handled[i] = True
                     continue
 
@@ -939,13 +951,19 @@ def _numba_thumb_exclude_mask(genome, mutable_arr, mutable_layer, mutable_hand,
 
 @njit(cache=True)
 def _numba_effort_sort(positions, efforts, n):
-    # Insertion sort `positions` ascending by `efforts[positions[k]]`, so the
-    # lowest-effort (best) candidate slots come first.
+    # Insertion sort `positions` ascending by (effort, position index), so the
+    # lowest-effort (best) candidate slots come first, and ties resolve to a
+    # fixed, deterministic order (not whatever order the random sample
+    # happened to produce) — matching the old raw-index-sort's determinism
+    # for equal-effort candidates.
     for i in range(1, n):
         key_pos = positions[i]
         key_eff = efforts[key_pos]
         j = i - 1
-        while j >= 0 and efforts[positions[j]] > key_eff:
+        while j >= 0 and (
+            efforts[positions[j]] > key_eff
+            or (efforts[positions[j]] == key_eff and positions[j] > key_pos)
+        ):
             positions[j + 1] = positions[j]
             j -= 1
         positions[j + 1] = key_pos
@@ -960,7 +978,7 @@ def _numba_propose_mouse_workflow_layer(genome, pos_map, thumb_exclude, state,
                                         safe_access_positions, l0_safe_access_positions,
                                         layer_access_hold, layer_access_toggle,
                                         layer_scroll_access, return_toggle_sid,
-                                        mouse_button_sids, n_shortcuts, pos_effort_arr):
+                                        mouse_button_sids, n_shortcuts, pos_effort_arr, pos_x_arr):
     n_candidates = len(mouse_candidate_layers)
     if n_candidates == 0:
         return False
@@ -979,6 +997,17 @@ def _numba_propose_mouse_workflow_layer(genome, pos_map, thumb_exclude, state,
     # fitness/kernel.py's button_weight and scroll effort-priority terms):
     # Scroll > MB2 > MB1 > MB3 ~= MB4 ~= MB5.
     _numba_effort_sort(chosen, pos_effort_arr, 6)
+    # Momentary Scroll on x=7/x=8 is uncomfortable and fails final acceptance
+    # outright (not just a soft scoring preference) — never propose it there.
+    # If the best (chosen[0]) slot is x7/x8, swap it with the first later
+    # slot that isn't, keeping the rest of the priority order intact.
+    if pos_x_arr[chosen[0]] == 7.0 or pos_x_arr[chosen[0]] == 8.0:
+        for k in range(1, 6):
+            if pos_x_arr[chosen[k]] != 7.0 and pos_x_arr[chosen[k]] != 8.0:
+                tmp = chosen[0]
+                chosen[0] = chosen[k]
+                chosen[k] = tmp
+                break
 
     sids = np.empty(9, dtype=np.int32)
     targets = np.empty(9, dtype=np.int32)
@@ -1392,7 +1421,7 @@ def _semantic_mutations_batch_numba(
                 safe_access_positions, l0_safe_access_positions,
                 layer_access_hold, layer_access_toggle, layer_scroll_access,
                 return_toggle_sid,
-                mouse_button_sids, n_shortcuts, pos_effort_arr,
+                mouse_button_sids, n_shortcuts, pos_effort_arr, pos_x,
             ):
                 handled[i] = True
                 continue
@@ -2157,7 +2186,16 @@ class SwapMutation(Mutation):
         # arbitrary index-order mapping. Priority (matching fitness/kernel.py's
         # button_weight and scroll effort-priority terms):
         # Scroll > MB2 > MB1 > MB3 ~= MB4 ~= MB5.
-        target_positions.sort(key=lambda pos: self._pos_effort_arr[pos])
+        target_positions.sort(key=lambda pos: (self._pos_effort_arr[pos], pos))
+        # Momentary Scroll on x=7/x=8 is uncomfortable and fails final
+        # acceptance outright (not just a soft scoring preference) — never
+        # propose it there. If the best slot is x7/x8, swap it with the
+        # first later slot that isn't, keeping the rest of the priority order.
+        if self._pos_x[target_positions[0]] in (7.0, 8.0):
+            for k in range(1, 6):
+                if self._pos_x[target_positions[k]] not in (7.0, 8.0):
+                    target_positions[0], target_positions[k] = target_positions[k], target_positions[0]
+                    break
         sids = [
             self.scroll_access_by_target[layer],
             self.mouse_button_sids[2],
@@ -2646,10 +2684,17 @@ class SwapMutation(Mutation):
         displaced_sid = int(genome[target_pos])
 
         def layer_count(layer, sid):
-            count = int(np.sum((self._pos_layer_arr == layer) & (genome == sid)))
-            if int(genome[src_pos]) == sid:
+            # Scoped to this layer's mutable positions only (precomputed
+            # per-layer index), not a full-genome scan.
+            if layer < 0 or layer + 1 >= len(self._layer_mutable_start):
+                return 0
+            start = self._layer_mutable_start[layer]
+            end = self._layer_mutable_start[layer + 1]
+            layer_positions = self._layer_mutable_flat[start:end]
+            count = int(np.sum(genome[layer_positions] == sid))
+            if int(genome[src_pos]) == sid and layer_positions.size and src_pos in layer_positions:
                 count -= 1
-            if int(genome[target_pos]) == sid:
+            if int(genome[target_pos]) == sid and layer_positions.size and target_pos in layer_positions:
                 count -= 1
             return count
 

@@ -845,10 +845,13 @@ class TestSurrogate(unittest.TestCase):
             Position(2, 0, 5.0, 4.0, "left", 0, 0.1, is_thumb=True),
             Position(3, 0, 0.0, 0.0, "left", 1, 1.0),
             # 6 right-non-thumb candidate slots with distinct, deliberately
-            # scrambled efforts (position index order != effort order).
+            # scrambled efforts (position index order != effort order). x=7/8
+            # are deliberately given the two highest efforts so they're never
+            # "best" and don't collide with the separate x7/x8 scroll-comfort
+            # rule under test elsewhere.
             Position(4, 1, 7.0, 1.0, "right", 1, 1.75),
-            Position(5, 1, 8.0, 1.0, "right", 1, 0.0),
-            Position(6, 1, 9.0, 1.0, "right", 1, 1.0),
+            Position(5, 1, 9.0, 1.0, "right", 1, 0.0),
+            Position(6, 1, 8.0, 1.0, "right", 1, 1.0),
             Position(7, 1, 10.0, 1.0, "right", 1, 1.25),
             Position(8, 1, 11.0, 1.0, "right", 1, 0.5),
             Position(9, 1, 12.0, 1.0, "right", 1, 0.75),
@@ -902,6 +905,68 @@ class TestSurrogate(unittest.TestCase):
                     effort_of[pos_of[0]], effort_of[pos_of[lower_sid]],
                     f"[numba={use_numba}] MB1 should have lower effort than sid {lower_sid}",
                 )
+
+    def test_mouse_workflow_mutation_never_proposes_scroll_on_uncomfortable_x(self):
+        """Regression test: when the lowest-effort candidate slot happens to
+        be at x=7 or x=8 (uncomfortable for momentary Scroll per policy),
+        Scroll must be moved to a different slot instead of landing there —
+        this is a final-acceptance-reject condition, not a soft preference."""
+        import evolution
+        random.seed(301)
+        positions = tuple([
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.1, is_thumb=True),
+            Position(1, 0, 4.0, 4.0, "left", 0, 0.1, is_thumb=True),
+            Position(2, 0, 5.0, 4.0, "left", 0, 0.1, is_thumb=True),
+            Position(3, 0, 0.0, 0.0, "left", 1, 1.0),
+            # The single lowest-effort slot (0.0) sits at x=8, deliberately
+            # colliding with the uncomfortable-x rule.
+            Position(4, 1, 7.0, 1.0, "right", 1, 1.75),
+            Position(5, 1, 8.0, 1.0, "right", 1, 0.0),
+            Position(6, 1, 9.0, 1.0, "right", 1, 1.0),
+            Position(7, 1, 10.0, 1.0, "right", 1, 1.25),
+            Position(8, 1, 11.0, 1.0, "right", 1, 0.5),
+            Position(9, 1, 12.0, 1.0, "right", 1, 0.75),
+            *(Position(i, 1, float(i - 10), 2.0, "left", 1, 1.0) for i in range(10, 14)),
+        ])
+        shortcuts = tuple([
+            Shortcut(0, "MB1", "Left click", "Mouse", 10.0, category="mouse", base_key="MB1"),
+            Shortcut(1, "MB2", "Right click", "Mouse", 9.0, category="mouse", base_key="MB2"),
+            Shortcut(2, "MB3", "Middle click", "Mouse", 7.0, category="mouse", base_key="MB3"),
+            Shortcut(3, "MB4", "Back", "Mouse", 6.0, category="mouse", base_key="MB4"),
+            Shortcut(4, "MB5", "Forward", "Mouse", 6.0, category="mouse", base_key="MB5"),
+            Shortcut(5, "@scroll:L1:hold", "Scroll Mode Layer 1", "Layer Access", 15.0, category="layer_access", base_key="Scroll_L1", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
+            Shortcut(6, "@access:L1:hold", "Momentary Layer 1", "Layer Access", 12.0, category="layer_access", base_key="L1", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
+            Shortcut(7, "@access:L1:toggle", "Toggle Layer 1", "Layer Access", 12.0, category="layer_access", base_key="L1", is_layer_access=True, access_target_layer=1, access_is_momentary=False),
+            Shortcut(8, "@access:L7:hold", "Momentary Layer 7", "Layer Access", 12.0, category="layer_access", base_key="L7", is_layer_access=True, access_target_layer=7, access_is_momentary=True),
+            Shortcut(9, "@access:L7:toggle", "Toggle Layer 7", "Layer Access", 12.0, category="layer_access", base_key="L7", is_layer_access=True, access_target_layer=7, access_is_momentary=False),
+            *(Shortcut(i, f"K{i}", "", "App", 1.0, base_key=f"K{i}") for i in range(10, 14)),
+        ])
+        genome = np.arange(14, dtype=np.int32)
+        layout = Layout(genome.copy(), positions, shortcuts, np.zeros(14, dtype=np.bool_))
+
+        for use_numba in (True, False):
+            orig = evolution.NUMBA_AVAILABLE
+            evolution.NUMBA_AVAILABLE = use_numba
+            try:
+                mutation = SwapMutation(
+                    prob=0.0,
+                    frozen_mask=layout.frozen_mask,
+                    layout=layout,
+                    group_overwrite_prob=0.0,
+                    mouse_workflow_prob=1.0,
+                    l7_access_prob=0.0,
+                )
+                moved = mutation._do(None, genome.reshape(1, -1).copy())[0]
+            finally:
+                evolution.NUMBA_AVAILABLE = orig
+
+            scroll_pos = int(np.where(moved == 5)[0][0])
+            scroll_x = positions[scroll_pos].x
+            self.assertNotIn(
+                scroll_x, (7.0, 8.0),
+                f"[numba={use_numba}] Scroll must never be proposed at x=7/8 (uncomfortable, "
+                f"final-acceptance reject), landed at x={scroll_x}",
+            )
 
     def test_l7_access_mutation_proposes_hold_and_toggle(self):
         random.seed(400)
