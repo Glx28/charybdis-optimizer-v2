@@ -1815,6 +1815,19 @@ if NUMBA_AVAILABLE:
                 natural_mouse_layer = layer
 
         # Pass 2: per-candidate-layer soft scoring (dynamic_mouse_layer).
+        # natural_mouse_layer_penalty tracks the candidate_penalty of the
+        # SPECIFIC layer already accepted as natural_mouse_layer (Pass 1),
+        # separately from the layer-wide minimum. Without this, once a real
+        # mouse layer exists, its own effort/positional refinement terms
+        # (summed across 5 buttons + scroll) make its candidate_penalty
+        # LARGER than a totally empty candidate layer's small flat baseline
+        # (~330-340k) — so dynamic_mouse_layer's min() permanently locks onto
+        # that unrelated empty layer, and no amount of improving the real
+        # mouse layer's button/scroll placement ever changes the reported
+        # score. natural_mouse_layer_penalty is what actually drives ongoing
+        # refinement once a mouse layer is established; the layer-wide min is
+        # kept only to guide search toward completeness before one exists.
+        natural_mouse_layer_penalty = dynamic_mouse_layer
         for layer in range(32):
             if layer == 0 or layer == 7:
                 continue
@@ -1934,6 +1947,10 @@ if NUMBA_AVAILABLE:
                 candidate_penalty += 30000.0
             if candidate_penalty < dynamic_mouse_layer:
                 dynamic_mouse_layer = candidate_penalty
+            if layer == natural_mouse_layer:
+                natural_mouse_layer_penalty = candidate_penalty
+        if natural_mouse_layer >= 0:
+            dynamic_mouse_layer = natural_mouse_layer_penalty
         dynamic_mouse_layer += float(mouse_l7_count) * 500.0
         dynamic_mouse_layer += float(mouse_global_right_thumb_count) * 50000.0
 

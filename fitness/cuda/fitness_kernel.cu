@@ -1571,6 +1571,17 @@ __device__ void evaluate_single(
     }
 
     // Pass 2: per-candidate-layer soft scoring (dynamic_mouse_layer).
+    // natural_mouse_layer_penalty tracks the candidate_penalty of the one
+    // layer Pass 1 already settled on as the real, accepted natural mouse
+    // layer. Without this, dynamic_mouse_layer (the min() below) permanently
+    // locks onto whichever layer has the lowest flat baseline penalty --
+    // almost always a near-empty candidate layer -- and becomes decoupled
+    // from the real mouse layer's own quality once one exists: refining the
+    // real mouse layer's effort ordering can never move dynamic_mouse_layer
+    // because its cumulative candidate_penalty is numerically larger than
+    // the empty candidate's flat "missing 5 buttons" baseline. This silently
+    // made the effort-ordering pressure on the accepted mouse layer inert.
+    float natural_mouse_layer_penalty = dynamic_mouse_layer;
     for (int layer = 0; layer < MAX_LAYERS; layer++) {
         if (layer == 0 || layer == 7) continue;
         int button_count = 0;
@@ -1712,6 +1723,15 @@ __device__ void evaluate_single(
         if (candidate_penalty < dynamic_mouse_layer) {
             dynamic_mouse_layer = candidate_penalty;
         }
+        if (layer == natural_mouse_layer) {
+            natural_mouse_layer_penalty = candidate_penalty;
+        }
+    }
+    // Once a natural_mouse_layer is settled, dynamic_mouse_layer must track
+    // THAT layer's own candidate_penalty, not the layer-wide minimum -- see
+    // comment above Pass 2 for why the plain min() decouples from it.
+    if (natural_mouse_layer >= 0) {
+        dynamic_mouse_layer = natural_mouse_layer_penalty;
     }
     dynamic_mouse_layer += (float)s->mouse_l7_count * 500.0f;
     dynamic_mouse_layer += (float)mouse_global_right_thumb_count * 50000.0f;

@@ -1794,13 +1794,21 @@ class TestEvaluator(unittest.TestCase):
             Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
             Position(1, 0, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
             Position(2, 3, 2.0, 1.0, "left", 1, 1.0),
-            Position(3, 3, 8.0, 1.0, "right", 1, 1.0),
-            Position(4, 3, 9.0, 1.0, "right", 1, 1.0),
-            Position(5, 3, 10.0, 1.0, "right", 2, 1.0),
-            Position(6, 3, 11.0, 1.0, "right", 3, 1.0),
-            Position(7, 3, 12.0, 1.0, "right", 4, 1.2),
+            # Mouse-button/scroll positions use effort=0.0: this is the
+            # "complete AND optimally-placed" natural mouse layer, so its
+            # own candidate_penalty should be near zero. Before the
+            # dynamic_mouse_layer fix, these carried effort=1.0 and the
+            # test still passed by accident, because the min()-across-
+            # layers bug capped every scenario at an unrelated empty
+            # candidate layer's flat baseline instead of the natural
+            # layer's real (inflated) penalty.
+            Position(3, 3, 8.0, 2.0, "right", 1, 0.0),
+            Position(4, 3, 9.0, 2.0, "right", 1, 0.0),
+            Position(5, 3, 10.0, 2.0, "right", 2, 0.0),
+            Position(6, 3, 11.0, 2.0, "right", 3, 0.0),
+            Position(7, 3, 12.0, 2.0, "right", 4, 0.0),
             Position(8, 3, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
-            Position(9, 3, 9.0, 2.0, "right", 1, 1.0),
+            Position(9, 3, 9.0, 2.0, "right", 1, 0.0),
         )
         shortcuts = (
             Shortcut(
@@ -1917,6 +1925,76 @@ class TestEvaluator(unittest.TestCase):
             frozen,
         )
         self.assertGreater(evaluator.evaluate(uncomfortable_scroll).objectives[2], valid_score)
+
+        # Regression test for the min()-across-all-layers decoupling bug: once
+        # a natural_mouse_layer exists (all Pass-1 qualifying conditions
+        # still hold -- unlike `uncomfortable_scroll` above, which moves
+        # Scroll onto x=7/8 and so *disqualifies* the layer from being
+        # natural_mouse_layer entirely, never exercising the override path),
+        # dynamic_mouse_layer must track THAT layer's own candidate_penalty,
+        # not the flat baseline of an unrelated near-empty candidate layer
+        # (~338,000, i.e. missing_buttons(5)*50000 + no-scroll(25000) +
+        # no-button-no-scroll(30000) + no-toggle(25000) + no-safe-
+        # momentary(8000)). Before the fix, a natural mouse layer with a
+        # badly-placed-but-still-qualifying Scroll (e.g. far from its ideal
+        # y-row) still scored BELOW that baseline because dynamic_mouse_layer
+        # capped out at the empty layer's minimum instead of reporting the
+        # real, much larger penalty -- silently making further refinement of
+        # the natural layer invisible to the scoring gradient.
+        empty_layer_baseline = 338000.0
+        bad_scroll_row_positions = tuple(
+            Position(
+                p.gene_idx,
+                p.layer,
+                p.x,
+                4.0 if i == 9 else p.y,
+                p.hand,
+                p.finger,
+                p.effort,
+                is_thumb=p.is_thumb,
+                is_frozen=p.is_frozen,
+            )
+            for i, p in enumerate(positions)
+        )
+        bad_scroll_row = Layout(
+            np.array([0, 1, -1, 2, 3, 4, 5, 6, -1, 7], dtype=np.int32),
+            bad_scroll_row_positions,
+            shortcuts,
+            frozen,
+        )
+        bad_scroll_row_score = evaluator.evaluate(bad_scroll_row).objectives[2]
+        self.assertGreater(bad_scroll_row_score, empty_layer_baseline)
+        self.assertGreater(bad_scroll_row_score, valid_score)
+
+        even_worse_scroll_row_positions = tuple(
+            Position(
+                p.gene_idx,
+                p.layer,
+                p.x,
+                6.0 if i == 9 else p.y,
+                p.hand,
+                p.finger,
+                p.effort,
+                is_thumb=p.is_thumb,
+                is_frozen=p.is_frozen,
+            )
+            for i, p in enumerate(positions)
+        )
+        even_worse_scroll_row = Layout(
+            np.array([0, 1, -1, 2, 3, 4, 5, 6, -1, 7], dtype=np.int32),
+            even_worse_scroll_row_positions,
+            shortcuts,
+            frozen,
+        )
+        # Degrading the natural layer's own Scroll placement further must
+        # keep making the score strictly worse -- proving the objective
+        # keeps responding to changes on the natural layer itself, rather
+        # than being frozen at whatever unrelated empty layer's baseline
+        # happened to be lowest.
+        self.assertGreater(
+            evaluator.evaluate(even_worse_scroll_row).objectives[2],
+            bad_scroll_row_score,
+        )
 
     def test_dynamic_mouse_layer_penalty_uses_mouse_usage_for_placement(self):
         positions = (
@@ -2191,14 +2269,20 @@ class TestEvaluator(unittest.TestCase):
             Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
             Position(1, 0, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
             Position(2, 3, 2.0, 1.0, "left", 1, 1.0),
-            Position(3, 3, 8.0, 1.0, "right", 1, 1.0),
-            Position(4, 3, 9.0, 1.0, "right", 1, 1.0),
-            Position(5, 3, 10.0, 1.0, "right", 2, 1.0),
-            Position(6, 3, 11.0, 1.0, "right", 3, 1.0),
-            Position(7, 3, 12.0, 1.0, "right", 4, 1.2),
+            # effort=0.0 on the mouse-button/scroll positions: a valid
+            # natural mouse layer here must be optimally placed, or its own
+            # candidate_penalty (post dynamic_mouse_layer fix, which reports
+            # the natural layer's real penalty instead of an unrelated empty
+            # candidate layer's flat baseline) would legitimately exceed the
+            # baseline and break the "valid beats broken" comparisons below.
+            Position(3, 3, 8.0, 2.0, "right", 1, 0.0),
+            Position(4, 3, 9.0, 2.0, "right", 1, 0.0),
+            Position(5, 3, 10.0, 2.0, "right", 2, 0.0),
+            Position(6, 3, 11.0, 2.0, "right", 3, 0.0),
+            Position(7, 3, 12.0, 2.0, "right", 4, 0.0),
             Position(8, 3, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
-            Position(9, 3, 9.0, 2.0, "right", 1, 1.0),
-            Position(10, 3, 13.0, 1.0, "right", 4, 1.5),
+            Position(9, 3, 9.0, 2.0, "right", 1, 0.0),
+            Position(10, 3, 13.0, 1.0, "right", 4, 0.0),
         )
         shortcuts = (
             Shortcut(
@@ -2447,14 +2531,20 @@ class TestEvaluator(unittest.TestCase):
             Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
             Position(1, 0, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
             Position(2, 3, 2.0, 1.0, "left", 1, 1.0),
-            Position(3, 3, 8.0, 1.0, "right", 1, 1.0),
-            Position(4, 3, 9.0, 1.0, "right", 1, 1.0),
-            Position(5, 3, 10.0, 1.0, "right", 2, 1.0),
-            Position(6, 3, 11.0, 1.0, "right", 3, 1.0),
-            Position(7, 3, 12.0, 1.0, "right", 4, 1.2),
+            # effort=0.0 on the mouse-button/scroll positions: a valid
+            # natural mouse layer here must be optimally placed, or its own
+            # candidate_penalty (post dynamic_mouse_layer fix, which reports
+            # the natural layer's real penalty instead of an unrelated empty
+            # candidate layer's flat baseline) would legitimately exceed the
+            # baseline and break the "valid beats broken" comparisons below.
+            Position(3, 3, 8.0, 2.0, "right", 1, 0.0),
+            Position(4, 3, 9.0, 2.0, "right", 1, 0.0),
+            Position(5, 3, 10.0, 2.0, "right", 2, 0.0),
+            Position(6, 3, 11.0, 2.0, "right", 3, 0.0),
+            Position(7, 3, 12.0, 2.0, "right", 4, 0.0),
             Position(8, 3, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
-            Position(9, 3, 9.0, 2.0, "right", 1, 1.0),
-            Position(10, 3, 13.0, 1.0, "right", 4, 1.5),
+            Position(9, 3, 9.0, 2.0, "right", 1, 0.0),
+            Position(10, 3, 13.0, 1.0, "right", 4, 0.0),
         )
         shortcuts = (
             Shortcut(
