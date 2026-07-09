@@ -7,7 +7,7 @@ Three acceptance tiers:
 
 This module intentionally does not claim export success.
 """
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from core import Layout
 
@@ -171,6 +171,28 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
             row for rows in buttons.values() for row in rows
             if row["hand"] != "right"
         ]
+        # A second copy of the same mouse button on the dynamic mouse layer is
+        # only acceptable as exactly one left-side + one right-side pair.
+        # Two right-side copies, two left-side copies, or a lone left-side
+        # copy without a matching right-side copy, are all duplicate
+        # violations on this layer.
+        right_counts: Dict[str, int] = {}
+        left_counts: Dict[str, int] = {}
+        for key, rows in buttons.items():
+            for row in rows:
+                if row["hand"] == "right":
+                    right_counts[key] = right_counts.get(key, 0) + 1
+                else:
+                    left_counts[key] = left_counts.get(key, 0) + 1
+        duplicate_same_side = [
+            key for key, count in right_counts.items() if count > 1
+        ] + [
+            key for key, count in left_counts.items() if count > 1
+        ]
+        unpaired_left_buttons = [
+            key for key, count in left_counts.items()
+            if not (count == 1 and right_counts.get(key, 0) == 1)
+        ]
         right_thumb_buttons = [
             row for rows in buttons.values() for row in rows
             if row["hand"] == "right" and row["thumb"]
@@ -220,7 +242,8 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
         ]
         passed = (
             not missing
-            and not left_buttons
+            and not duplicate_same_side
+            and not unpaired_left_buttons
             and not right_thumb_buttons
             and not right_thumb_momentary_access
             and bool(right_scroll_momentary)
@@ -231,6 +254,8 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
             "button_keys_present": sorted(buttons),
             "missing_buttons": missing,
             "non_right_button_placements": left_buttons,
+            "duplicate_same_side_buttons": duplicate_same_side,
+            "unpaired_left_buttons": unpaired_left_buttons,
             "right_thumb_button_placements": right_thumb_buttons,
             "right_momentary_scroll_access": right_scroll_momentary,
             "uncomfortable_right_momentary_scroll_access": uncomfortable_right_scroll_momentary,
@@ -265,8 +290,17 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
                     "Concentrate missing mouse buttons on the best candidate layer: "
                     + ", ".join(best_candidate["missing_buttons"])
                 )
-            if best_candidate["non_right_button_placements"]:
-                failure_guidance.append("Move mouse-button placements on the candidate layer to right-hand positions.")
+            if best_candidate["duplicate_same_side_buttons"]:
+                failure_guidance.append(
+                    "Remove same-side duplicate mouse buttons on the candidate mouse layer (only one "
+                    "left + one right copy of the same button is allowed): "
+                    + ", ".join(best_candidate["duplicate_same_side_buttons"])
+                )
+            if best_candidate["unpaired_left_buttons"]:
+                failure_guidance.append(
+                    "Remove left-side mouse-button copies on the candidate mouse layer that have no "
+                    "matching single right-side copy: " + ", ".join(best_candidate["unpaired_left_buttons"])
+                )
             if best_candidate["right_thumb_button_placements"]:
                 failure_guidance.append("Move mouse-button placements off the right-thumb area on the candidate mouse layer.")
             if not best_candidate["right_momentary_scroll_access"]:
@@ -298,6 +332,58 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
             "no_right_thumb_momentary_mouse_layer_access": True,
             "reachable_toggle_access": True,
         },
+    }
+
+
+def _no_same_layer_duplicates_report(layout: Layout) -> Dict:
+    """No shortcut may appear more than once on the same layer.
+
+    Exactly two exceptions: Layer 7 is frozen and fully excluded, and the
+    dynamic mouse layer allows exactly one extra copy of a core mouse button
+    (MB1-MB5), as one left-side + one right-side placement only — never two
+    copies on the same side. The mouse exception is tied to the layer's live,
+    fully-qualifying dynamic-mouse-layer status this generation (the same
+    layer `_dynamic_mouse_layer_report` identifies as `mouse_layer`), not
+    merely to whether the layer holds mouse buttons: if the layer stops fully
+    qualifying as the dynamic mouse layer, its left-side copy immediately
+    becomes an ordinary same-layer duplicate here too.
+    """
+    dynamic_mouse = _dynamic_mouse_layer_report(layout)
+    natural_layer = dynamic_mouse.get("mouse_layer")
+
+    counts: Dict[Tuple[int, int], List[Dict]] = {}
+    for idx, pos, shortcut in _assigned_shortcuts(layout):
+        if pos.layer == 7:
+            continue
+        key = (int(pos.layer), int(shortcut.sid))
+        counts.setdefault(key, []).append({
+            "idx": int(idx),
+            "keys": shortcut.keys,
+            "hand": pos.hand,
+        })
+
+    offenders = []
+    for (layer, sid), rows in counts.items():
+        if len(rows) <= 1:
+            continue
+        cap = 1
+        if layer == natural_layer and rows[0]["keys"] in MOUSE_BUTTON_KEYS:
+            right_ct = sum(1 for r in rows if r["hand"] == "right")
+            left_ct = sum(1 for r in rows if r["hand"] != "right")
+            if len(rows) == 2 and right_ct == 1 and left_ct == 1:
+                cap = 2
+        if len(rows) > cap:
+            offenders.append({
+                "layer": layer,
+                "sid": sid,
+                "keys": rows[0]["keys"],
+                "count": len(rows),
+                "positions": rows,
+            })
+
+    return {
+        "acceptance_pass": len(offenders) == 0,
+        "offenders": offenders,
     }
 
 
@@ -620,6 +706,7 @@ def build_acceptance_report(
     mutable_bt = _mutable_bluetooth_assignments(layout)
     layer7_access = _layer7_access_report(layout)
     transparent = _transparent_keys_report(layout)
+    no_same_layer_dup = _no_same_layer_duplicates_report(layout)
 
     optimizer_side_checks = {
         "norwegian_completion_cluster": bool(completion_cluster_report.get("acceptance_pass")),
@@ -633,6 +720,7 @@ def build_acceptance_report(
         "no_mutable_bluetooth_or_output_keys": len(mutable_bt) == 0,
         "win_s_present": len(win_s) > 0,
         "mutable_raw_arrows_ok": bool(arrow_report.get("acceptance_pass")),
+        "no_same_layer_duplicates": bool(no_same_layer_dup.get("acceptance_pass")),
     }
     # Export check is always False during training; set externally after export.
     export_checks = {
@@ -669,10 +757,19 @@ def build_acceptance_report(
     if not optimizer_side_checks["layer7_momentary_and_toggle_access"]:
         numeric_distances["l7_momentary_access_count"] = len(layer7_access.get("reachable_momentary_access", []))
         numeric_distances["l7_toggle_access_count"] = len(layer7_access.get("reachable_toggle_access", []))
+    if not optimizer_side_checks["no_same_layer_duplicates"]:
+        numeric_distances["same_layer_duplicate_offenders"] = len(no_same_layer_dup.get("offenders", []))
 
     failure_guidance = list(dynamic_mouse.get("failure_guidance", []))
     if not optimizer_side_checks["no_mouse_buttons_on_right_thumb_area_global"]:
         failure_guidance.append("Move all mouse buttons off right-thumb positions on generated layers.")
+    if not optimizer_side_checks["no_same_layer_duplicates"]:
+        offenders = no_same_layer_dup.get("offenders", [])
+        preview = ", ".join(f"{o['keys']} x{o['count']} on L{o['layer']}" for o in offenders[:5])
+        failure_guidance.append(
+            "Remove same-layer duplicate shortcuts (only the dynamic mouse layer's "
+            f"MB1-MB5 may have one left+one right copy): {preview}"
+        )
 
     return {
         "checks": checks,
@@ -697,5 +794,6 @@ def build_acceptance_report(
             "layer7_access": layer7_access,
             "mutable_bluetooth_or_output_assignments": mutable_bt,
             "transparent_keys": transparent,
+            "no_same_layer_duplicates": no_same_layer_dup,
         },
     }

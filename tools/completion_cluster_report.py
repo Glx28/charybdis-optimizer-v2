@@ -33,6 +33,9 @@ def main():
     print(f"Layers used by family: {sorted(comp.get('layers_used_by_family', []))}")
     print(f"Compactness order score: {comp.get('compactness_order_score', 0.0):.3f}")
     print(f"Ordered left-to-right: {comp.get('ordered_left_to_right', False)}")
+    print(f"Exact fixed shape: {comp.get('exact_shape_preserved', False)}")
+    if comp.get("wrong_shape_members"):
+        print(f"Wrong shape members: {comp.get('wrong_shape_members', [])}")
     print(f"Raw total count: {comp.get('raw_total_count', 0)}")
 
 

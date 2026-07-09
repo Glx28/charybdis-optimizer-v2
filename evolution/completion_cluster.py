@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from core import Layout, Shortcut
+from evolution.group_shapes import NORWEGIAN_CLUSTER_OFFSETS
 
 
 # Norwegian extra keys: the 5 physical keys that differ between Norwegian and
@@ -143,6 +144,8 @@ def analyze_completion_cluster(layout: Layout) -> Dict:
 
     compactness_order_score = 0.0
     ordered_left_to_right = False
+    exact_shape_preserved = False
+    wrong_shape_members = []
     anchor_x_by_order: Dict[int, float] = {}
     if anchor_layer is not None:
         xs = []
@@ -173,28 +176,33 @@ def analyze_completion_cluster(layout: Layout) -> Dict:
                 - max(0.0, y_span - 1.0) * 4.0
                 - inversions * 5.0
             )
-            from evolution.group_shapes import NORWEGIAN_CLUSTER_OFFSETS
-            ordered_left_to_right = False
             if 2 in base_positions:
                 _, ax, ay = base_positions[2]
-                n_correct = sum(
-                    1 for order, (dx, dy) in NORWEGIAN_CLUSTER_OFFSETS.items()
-                    if order in base_positions
-                    and abs(base_positions[order][1] - (ax + dx)) <= 0.5
-                    and abs(base_positions[order][2] - (ay + dy)) <= 0.5
-                )
-                ordered_left_to_right = (n_correct == len(NORWEGIAN_CLUSTER_OFFSETS))
+                n_correct = 0
+                for order, (dx, dy) in NORWEGIAN_CLUSTER_OFFSETS.items():
+                    expected_x = ax + dx
+                    expected_y = ay + dy
+                    if (
+                        order in base_positions
+                        and abs(base_positions[order][1] - expected_x) <= 0.5
+                        and abs(base_positions[order][2] - expected_y) <= 0.5
+                    ):
+                        n_correct += 1
+                    else:
+                        wrong_shape_members.append(_ORDER_TO_DISPLAY_NAME[order])
+                exact_shape_preserved = n_correct == len(NORWEGIAN_CLUSTER_OFFSETS)
+                ordered_left_to_right = exact_shape_preserved
 
     raw_base_layers = sorted(int(l) for l in raw_base_layers_all if l != 7)
     modified_variant_layers = sorted(int(l) for l in modified_layers_all if l != 7)
     all_family_layers = sorted(int(l) for l in all_layers if l != 7)
     anchor_contains_all_reachable = len(raw_base_keys_missing) == 0
-    raw_base_concentrated = len(raw_base_layers) <= 2
+    raw_base_concentrated = len(raw_base_layers) == 1
     compactness_positive = compactness_order_score > 0.0
-    # Acceptance: all 5 on ≤2 layers and compactness positive.
-    # Exact shape and anchor completeness are enforced by the group-move
-    # mutation, not by this check.
-    acceptance_pass = raw_base_concentrated and compactness_positive
+    # Acceptance: the 5 unmodified Norwegian extra physical keys must appear as
+    # one exact-shape movable cluster. The layer/anchor may change; the relative
+    # offsets are fixed in evolution.group_shapes.NORWEGIAN_CLUSTER_OFFSETS.
+    acceptance_pass = anchor_contains_all_reachable and raw_base_concentrated and exact_shape_preserved
 
     return {
         "anchor_layer": anchor_layer,
@@ -209,8 +217,11 @@ def analyze_completion_cluster(layout: Layout) -> Dict:
         "all_family_layers": all_family_layers,
         "compactness_order_score": round(compactness_order_score, 3),
         "ordered_left_to_right": ordered_left_to_right,
+        "exact_shape_preserved": exact_shape_preserved,
+        "wrong_shape_members": wrong_shape_members,
         "anchor_contains_all_reachable_raw_base_keys": anchor_contains_all_reachable,
-        "raw_base_concentrated_le_2_layers": raw_base_concentrated,
+        "raw_base_concentrated_one_layer": raw_base_concentrated,
+        "raw_base_concentrated_le_2_layers": len(raw_base_layers) <= 2,
         "compactness_order_score_positive": compactness_positive,
         "acceptance_pass": acceptance_pass,
         "raw_base_layers_used": raw_base_layers_used,

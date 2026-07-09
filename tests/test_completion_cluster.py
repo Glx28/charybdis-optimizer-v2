@@ -95,6 +95,41 @@ class TestCompletionCluster(unittest.TestCase):
             analyze_completion_cluster(inverted)["compactness_order_score"],
         )
 
+    def test_acceptance_requires_exact_fixed_shape(self):
+        shortcuts = (
+            self._make_shortcut(0, "-", "Dash and Underscore"),
+            self._make_shortcut(1, "=", "Equals and Plus"),
+            self._make_shortcut(2, "`", "Grave Accent and Tilde"),
+            self._make_shortcut(3, "]", "Right Brace"),
+            self._make_shortcut(4, "\\", "Backslash and Pipe"),
+        )
+        frozen = np.array([False] * 5)
+        # Equals is the anchor at x=10,y=1. Required offsets are:
+        # Dash(-1,0), Equals(0,0), Grave(-2,0), RightBrace(-2,1), Backslash(-2,3).
+        valid_positions = (
+            Position(0, 4, 9.0, 1.0, "right", 1, 1.0),
+            Position(1, 4, 10.0, 1.0, "right", 1, 1.0),
+            Position(2, 4, 8.0, 1.0, "right", 1, 1.0),
+            Position(3, 4, 8.0, 2.0, "right", 1, 1.0),
+            Position(4, 4, 8.0, 4.0, "right", 1, 1.0),
+        )
+        wrong_positions = (
+            Position(0, 4, 9.0, 1.0, "right", 1, 1.0),
+            Position(1, 4, 10.0, 1.0, "right", 1, 1.0),
+            Position(2, 4, 8.0, 1.0, "right", 1, 1.0),
+            Position(3, 4, 8.0, 2.0, "right", 1, 1.0),
+            Position(4, 4, 11.0, 4.0, "right", 1, 1.0),
+        )
+        genome = np.array([0, 1, 2, 3, 4], dtype=np.int32)
+
+        valid = analyze_completion_cluster(Layout(genome, valid_positions, shortcuts, frozen))
+        wrong = analyze_completion_cluster(Layout(genome, wrong_positions, shortcuts, frozen))
+
+        self.assertTrue(valid["exact_shape_preserved"])
+        self.assertTrue(valid["acceptance_pass"])
+        self.assertFalse(wrong["exact_shape_preserved"])
+        self.assertFalse(wrong["acceptance_pass"])
+
 
 if __name__ == "__main__":
     unittest.main()

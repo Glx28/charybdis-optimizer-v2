@@ -1562,6 +1562,70 @@ class TestEvaluator(unittest.TestCase):
             global_right_thumb_mouse["numeric_distances"],
         )
 
+    def test_dynamic_mouse_layer_report_same_side_duplicate_policy(self):
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
+            Position(1, 0, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
+            Position(2, 3, 8.0, 1.0, "right", 1, 1.0),
+            Position(3, 3, 9.0, 1.0, "right", 1, 1.0),
+            Position(4, 3, 10.0, 1.0, "right", 2, 1.0),
+            Position(5, 3, 11.0, 1.0, "right", 3, 1.0),
+            Position(6, 3, 12.0, 1.0, "right", 4, 1.2),
+            Position(7, 3, 9.0, 2.0, "right", 1, 1.0),
+            Position(8, 3, 2.0, 1.0, "left", 1, 1.0),
+            Position(9, 3, 13.0, 1.0, "right", 4, 1.5),
+        )
+        shortcuts = (
+            Shortcut(
+                0, "@access:L0->L3:hold:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=True,
+            ),
+            Shortcut(
+                1, "@access:L0->L3:toggle:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=False,
+            ),
+            Shortcut(2, "MB1", "Click", "Mouse", 20.0, "mouse"),
+            Shortcut(3, "MB2", "Click", "Mouse", 15.0, "mouse"),
+            Shortcut(4, "MB3", "Click", "Mouse", 10.0, "mouse"),
+            Shortcut(5, "MB4", "Click", "Mouse", 8.0, "mouse"),
+            Shortcut(6, "MB5", "Click", "Mouse", 8.0, "mouse"),
+            Shortcut(
+                7, "@access:L3->L6:hold:Scroll", "Scroll", "Layer Access", 12.0,
+                "layer_access", is_layer_access=True, access_target_layer=6,
+                access_is_momentary=True,
+            ),
+        )
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        single_right = Layout(
+            np.array([0, 1, 2, 3, 4, 5, 6, 7, -1, -1], dtype=np.int32),
+            positions, shortcuts, frozen,
+        )
+        self.assertTrue(_dynamic_mouse_layer_report(single_right)["acceptance_pass"])
+
+        left_right_pair = Layout(
+            np.array([0, 1, 2, 3, 4, 5, 6, 7, 2, -1], dtype=np.int32),
+            positions, shortcuts, frozen,
+        )
+        self.assertTrue(_dynamic_mouse_layer_report(left_right_pair)["acceptance_pass"])
+
+        two_right_copies = Layout(
+            np.array([0, 1, 2, 3, 4, 5, 6, 7, -1, 2], dtype=np.int32),
+            positions, shortcuts, frozen,
+        )
+        two_right_report = _dynamic_mouse_layer_report(two_right_copies)
+        self.assertFalse(two_right_report["acceptance_pass"])
+        self.assertIn("MB1", two_right_report["best_candidate"]["duplicate_same_side_buttons"])
+
+        unpaired_left_only = Layout(
+            np.array([0, 1, -1, 3, 4, 5, 6, 7, 2, -1], dtype=np.int32),
+            positions, shortcuts, frozen,
+        )
+        unpaired_report = _dynamic_mouse_layer_report(unpaired_left_only)
+        self.assertFalse(unpaired_report["acceptance_pass"])
+        self.assertIn("MB1", unpaired_report["best_candidate"]["unpaired_left_buttons"])
+
     def test_layer7_acceptance_checks_access_modes_only(self):
         positions = (
             Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
@@ -1874,6 +1938,7 @@ class TestEvaluator(unittest.TestCase):
         frozen = np.zeros(len(positions), dtype=np.bool_)
         redundant = Layout(np.array([0, 1, 6, -1, -1], dtype=np.int32), positions, shortcuts, frozen)
         single_direct = Layout(np.array([0, -1, 6, -1, -1], dtype=np.int32), positions, shortcuts, frozen)
+        toggle_only = Layout(np.array([1, -1, 6, -1, -1], dtype=np.int32), positions, shortcuts, frozen)
         nested = Layout(np.array([0, -1, 2, 6, -1], dtype=np.int32), positions, shortcuts, frozen)
         direct = Layout(np.array([3, -1, -1, 6, -1], dtype=np.int32), positions, shortcuts, frozen)
         deep_nested = Layout(np.array([0, -1, 2, 4, 6], dtype=np.int32), positions, shortcuts, frozen)
@@ -1886,6 +1951,7 @@ class TestEvaluator(unittest.TestCase):
         evaluator = FitnessEvaluator(weights=weights, reference_layout=redundant, violation_weights=vweights,
                                      hard_constraints=[], missing_important_threshold=99.0)
         self.assertGreater(evaluator.evaluate(redundant).objectives[2], evaluator.evaluate(single_direct).objectives[2])
+        self.assertGreater(evaluator.evaluate(toggle_only).objectives[2], evaluator.evaluate(single_direct).objectives[2])
         self.assertGreater(evaluator.evaluate(nested).objectives[2], evaluator.evaluate(direct).objectives[2])
         self.assertGreater(
             evaluator.evaluate(deep_nested).objectives[2],
@@ -1979,6 +2045,277 @@ class TestEvaluator(unittest.TestCase):
             missing_important_threshold=99.0,
         )
         self.assertGreater(evaluator.evaluate(extra_mouse).objectives[2], evaluator.evaluate(natural).objectives[2])
+
+    def test_dynamic_mouse_layer_same_side_duplicate_policy(self):
+        # Positions 0-9 and the shortcuts below are the exact fixture from
+        # test_dynamic_mouse_layer_penalty_rewards_natural_complete_layer,
+        # which is already verified to make layer 3 the winning (lowest
+        # penalty) dynamic-mouse-layer candidate. Positions 10-11 are extra
+        # layer-3 slots (one right non-thumb, one left) used only to place
+        # duplicate MB1 copies for this test.
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
+            Position(1, 0, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
+            Position(2, 3, 2.0, 1.0, "left", 1, 1.0),
+            Position(3, 3, 8.0, 1.0, "right", 1, 1.0),
+            Position(4, 3, 9.0, 1.0, "right", 1, 1.0),
+            Position(5, 3, 10.0, 1.0, "right", 2, 1.0),
+            Position(6, 3, 11.0, 1.0, "right", 3, 1.0),
+            Position(7, 3, 12.0, 1.0, "right", 4, 1.2),
+            Position(8, 3, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
+            Position(9, 3, 9.0, 2.0, "right", 1, 1.0),
+            Position(10, 3, 13.0, 1.0, "right", 4, 1.5),
+        )
+        shortcuts = (
+            Shortcut(
+                0, "@access:L0->L3:hold:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=True,
+            ),
+            Shortcut(
+                1, "@access:L0->L3:toggle:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=False,
+            ),
+            Shortcut(2, "MB1", "Click", "Mouse", 20.0, "mouse"),
+            Shortcut(3, "MB2", "Click", "Mouse", 15.0, "mouse"),
+            Shortcut(4, "MB3", "Click", "Mouse", 10.0, "mouse"),
+            Shortcut(5, "MB4", "Click", "Mouse", 8.0, "mouse"),
+            Shortcut(6, "MB5", "Click", "Mouse", 8.0, "mouse"),
+            Shortcut(
+                7, "@access:L3->L6:hold:Scroll", "Scroll", "Layer Access", 12.0,
+                "layer_access", is_layer_access=True, access_target_layer=6,
+                access_is_momentary=True,
+            ),
+            Shortcut(
+                8, "@access:L0->L3:hold:MouseRightThumb", "Mouse", "Layer Access", 10.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=True,
+            ),
+        )
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        base = Layout(
+            np.array([0, 1, -1, 2, 3, 4, 5, 6, -1, 7, -1], dtype=np.int32),
+            positions, shortcuts, frozen,
+        )
+        two_right_mb1 = Layout(
+            np.array([0, 1, -1, 2, 3, 4, 5, 6, -1, 7, 2], dtype=np.int32),
+            positions, shortcuts, frozen,
+        )
+        left_right_pair_mb1 = Layout(
+            np.array([0, 1, 2, 2, 3, 4, 5, 6, -1, 7, -1], dtype=np.int32),
+            positions, shortcuts, frozen,
+        )
+        weights = {
+            "effort": 0.0, "adjacency": 0.0, "finger_balance": 0.0, "same_finger": 0.0,
+            "violations": 1.0, "workflow_coherence": 0.0, "app_coherence": 0.0,
+            "trackball_proximity": 0.0, "familiarity": 0.0, "layer_specialization": 0.0,
+        }
+        vweights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
+        vweights["dynamic_mouse_layer"] = 1.0
+        evaluator = FitnessEvaluator(weights=weights, reference_layout=base, violation_weights=vweights,
+                                     hard_constraints=[], missing_important_threshold=99.0)
+        base_score = evaluator.evaluate(base).objectives[2]
+        two_right_score = evaluator.evaluate(two_right_mb1).objectives[2]
+        left_right_score = evaluator.evaluate(left_right_pair_mb1).objectives[2]
+        # A single right-side MB1 copy (the valid dynamic mouse layer) beats
+        # two right-side copies of the same button.
+        self.assertGreater(two_right_score, base_score)
+        # One right + one left copy of the same button is a much smaller
+        # departure from the single-copy baseline than two right-side copies
+        # (adding any extra mouse-button placement carries a small unrelated
+        # access-cost baseline, so this isn't an exact equality check).
+        self.assertLess(
+            left_right_score - base_score,
+            (two_right_score - base_score) * 0.5,
+        )
+        # Two right-side copies must score strictly worse than the
+        # one-left-plus-one-right pairing.
+        self.assertGreater(two_right_score, left_right_score)
+
+    def test_dynamic_mouse_layer_incomplete_candidate_duplicate_penalty(self):
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
+            Position(1, 0, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
+            Position(2, 5, 8.0, 1.0, "right", 1, 1.0),
+            Position(3, 5, 3.0, 1.0, "left", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(
+                0, "@access:L0->L3:hold:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=True,
+            ),
+            Shortcut(
+                1, "@access:L0->L3:toggle:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=False,
+            ),
+            Shortcut(2, "MB1", "Click", "Mouse", 20.0, "mouse"),
+        )
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        single_right = Layout(
+            np.array([0, 1, 2, -1], dtype=np.int32), positions, shortcuts, frozen,
+        )
+        duplicate_pair = Layout(
+            np.array([0, 1, 2, 2], dtype=np.int32), positions, shortcuts, frozen,
+        )
+        weights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["weights"]}
+        weights["violations"] = 1.0
+        vweights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
+        vweights["dynamic_mouse_layer"] = 1.0
+        evaluator = FitnessEvaluator(weights=weights, reference_layout=single_right, violation_weights=vweights,
+                                     hard_constraints=[], missing_important_threshold=99.0)
+        # Layer 5 is an incomplete mouse-layer candidate (only MB1 present).
+        # Keeping only the right-side copy must score better than adding a
+        # left-side duplicate, because incomplete candidates don't get the
+        # paired-duplicate exception.
+        self.assertGreater(
+            evaluator.evaluate(duplicate_pair).objectives[2],
+            evaluator.evaluate(single_right).objectives[2],
+        )
+
+    def test_same_layer_duplicate_hard_constraint_basic(self):
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
+            Position(1, 3, 8.0, 1.0, "right", 1, 1.0),
+            Position(2, 3, 9.0, 1.0, "right", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+A", "Action", "App", 10.0),
+            Shortcut(1, "Ctrl+B", "Action", "App", 10.0),
+        )
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        clean = Layout(np.array([-1, 0, 1], dtype=np.int32), positions, shortcuts, frozen)
+        duplicated = Layout(np.array([-1, 0, 0], dtype=np.int32), positions, shortcuts, frozen)
+        evaluator = FitnessEvaluator(
+            weights=DEFAULT_CONFIG["fitness"]["weights"],
+            reference_layout=clean,
+            violation_weights=DEFAULT_CONFIG["fitness"]["violation_sub_weights"],
+            hard_constraints=["same_layer_duplicate"],
+            missing_important_threshold=99.0,
+        )
+        self.assertEqual(evaluator.evaluate(clean).constraints[0], 0.0)
+        self.assertGreater(evaluator.evaluate(duplicated).constraints[0], 0.0)
+
+    def test_same_layer_duplicate_excludes_l7(self):
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
+            Position(1, 7, 8.0, 1.0, "right", 1, 1.0, is_frozen=True),
+            Position(2, 7, 9.0, 1.0, "right", 1, 1.0, is_frozen=True),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+A", "Action", "App", 10.0),
+        )
+        frozen = np.array([False, True, True])
+        duplicated_on_l7 = Layout(np.array([-1, 0, 0], dtype=np.int32), positions, shortcuts, frozen)
+        evaluator = FitnessEvaluator(
+            weights=DEFAULT_CONFIG["fitness"]["weights"],
+            reference_layout=duplicated_on_l7,
+            violation_weights=DEFAULT_CONFIG["fitness"]["violation_sub_weights"],
+            hard_constraints=["same_layer_duplicate"],
+            missing_important_threshold=99.0,
+        )
+        self.assertEqual(evaluator.evaluate(duplicated_on_l7).constraints[0], 0.0)
+
+    def test_same_layer_duplicate_mouse_pair_exception_and_orphan(self):
+        # Reuses the verified fixture from
+        # test_dynamic_mouse_layer_same_side_duplicate_policy: layer 3 is the
+        # winning dynamic-mouse-layer candidate with positions 0-9 as-is.
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
+            Position(1, 0, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
+            Position(2, 3, 2.0, 1.0, "left", 1, 1.0),
+            Position(3, 3, 8.0, 1.0, "right", 1, 1.0),
+            Position(4, 3, 9.0, 1.0, "right", 1, 1.0),
+            Position(5, 3, 10.0, 1.0, "right", 2, 1.0),
+            Position(6, 3, 11.0, 1.0, "right", 3, 1.0),
+            Position(7, 3, 12.0, 1.0, "right", 4, 1.2),
+            Position(8, 3, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
+            Position(9, 3, 9.0, 2.0, "right", 1, 1.0),
+            Position(10, 3, 13.0, 1.0, "right", 4, 1.5),
+        )
+        shortcuts = (
+            Shortcut(
+                0, "@access:L0->L3:hold:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=True,
+            ),
+            Shortcut(
+                1, "@access:L0->L3:toggle:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=False,
+            ),
+            Shortcut(2, "MB1", "Click", "Mouse", 20.0, "mouse"),
+            Shortcut(3, "MB2", "Click", "Mouse", 15.0, "mouse"),
+            Shortcut(4, "MB3", "Click", "Mouse", 10.0, "mouse"),
+            Shortcut(5, "MB4", "Click", "Mouse", 8.0, "mouse"),
+            Shortcut(6, "MB5", "Click", "Mouse", 8.0, "mouse"),
+            Shortcut(
+                7, "@access:L3->L6:hold:Scroll", "Scroll", "Layer Access", 12.0,
+                "layer_access", is_layer_access=True, access_target_layer=6,
+                access_is_momentary=True,
+            ),
+        )
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        evaluator = FitnessEvaluator(
+            weights=DEFAULT_CONFIG["fitness"]["weights"],
+            reference_layout=Layout(
+                np.array([0, 1, -1, 2, 3, 4, 5, 6, -1, 7, -1], dtype=np.int32), positions, shortcuts, frozen,
+            ),
+            violation_weights=DEFAULT_CONFIG["fitness"]["violation_sub_weights"],
+            hard_constraints=["same_layer_duplicate"],
+            missing_important_threshold=99.0,
+        )
+        # Valid left+right MB1 pair on the actual dynamic mouse layer: allowed.
+        left_right_pair = Layout(
+            np.array([0, 1, 2, 2, 3, 4, 5, 6, -1, 7, -1], dtype=np.int32), positions, shortcuts, frozen,
+        )
+        self.assertEqual(evaluator.evaluate(left_right_pair).constraints[0], 0.0)
+
+        # Two right-side copies of MB1: never allowed, even on the mouse layer.
+        two_right = Layout(
+            np.array([0, 1, -1, 2, 3, 4, 5, 6, -1, 7, 2], dtype=np.int32), positions, shortcuts, frozen,
+        )
+        self.assertGreater(evaluator.evaluate(two_right).constraints[0], 0.0)
+
+        # Same left+right pair, but Scroll has moved to an uncomfortable x=7
+        # position, so layer 3 no longer qualifies as natural_mouse_layer.
+        # The left-side MB1 copy must immediately become an illegal duplicate.
+        disqualified_positions = tuple(
+            Position(
+                p.gene_idx, p.layer,
+                7.0 if p.gene_idx == 9 else p.x,
+                p.y, p.hand, p.finger, p.effort,
+                is_thumb=p.is_thumb, is_frozen=p.is_frozen,
+            )
+            for p in positions
+        )
+        orphaned_pair = Layout(
+            np.array([0, 1, 2, 2, 3, 4, 5, 6, -1, 7, -1], dtype=np.int32),
+            disqualified_positions, shortcuts, frozen,
+        )
+        self.assertGreater(evaluator.evaluate(orphaned_pair).constraints[0], 0.0)
+
+    def test_no_same_layer_duplicates_report(self):
+        from evolution.acceptance import _no_same_layer_duplicates_report
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
+            Position(1, 3, 8.0, 1.0, "right", 1, 1.0),
+            Position(2, 3, 9.0, 1.0, "right", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+A", "Action", "App", 10.0),
+            Shortcut(1, "Ctrl+B", "Action", "App", 10.0),
+        )
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        clean = Layout(np.array([-1, 0, 1], dtype=np.int32), positions, shortcuts, frozen)
+        duplicated = Layout(np.array([-1, 0, 0], dtype=np.int32), positions, shortcuts, frozen)
+        self.assertTrue(_no_same_layer_duplicates_report(clean)["acceptance_pass"])
+        report = _no_same_layer_duplicates_report(duplicated)
+        self.assertFalse(report["acceptance_pass"])
+        self.assertEqual(len(report["offenders"]), 1)
+        self.assertEqual(report["offenders"][0]["keys"], "Ctrl+A")
 
     def test_everything_layer_rewards_common_shortcuts_on_one_accessible_layer(self):
         positions = (

@@ -97,16 +97,33 @@ def is_valid_arrow_cluster(positions_by_type: dict, pos_layer: list, pos_x: list
     return False
 
 
-def is_valid_completion_cluster(positions_by_order: dict, pos_layer: list) -> bool:
-    """Check if all 5 Norwegian extra-key base keys are on the same layer.
+def is_valid_completion_cluster(positions_by_order: dict, pos_layer: list, pos_x=None, pos_y=None) -> bool:
+    """Check the fixed 5-key Norwegian extra-key cluster.
 
-    Shape validation is handled by the kernel (cluster shape penalty).
-    Here we only require all-on-one-layer.
+    The cluster may move to any mutable non-L7 layer and any valid anchor, but
+    its relative shape is fixed by NORWEGIAN_CLUSTER_OFFSETS.
     """
     if len(positions_by_order) != 5:
         return False
     layers = set()
+    reps = {}
     for order, idxs in positions_by_order.items():
         for idx in idxs:
             layers.add(pos_layer[idx])
-    return len(layers) == 1
+            reps.setdefault(order, idx)
+    if len(layers) != 1:
+        return False
+    if pos_x is None or pos_y is None:
+        return True
+    anchor_idx = reps.get(2)
+    if anchor_idx is None:
+        return False
+    ax = pos_x[anchor_idx]
+    ay = pos_y[anchor_idx]
+    for order, (dx, dy) in NORWEGIAN_CLUSTER_OFFSETS.items():
+        idx = reps.get(order)
+        if idx is None:
+            return False
+        if abs(pos_x[idx] - (ax + dx)) > 0.5 or abs(pos_y[idx] - (ay + dy)) > 0.5:
+            return False
+    return True

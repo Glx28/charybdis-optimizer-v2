@@ -47,6 +47,7 @@ struct PerThreadScratch {
     int layer_finger_count[MAX_LAYERS][8];
     int layer_base_counts[MAX_LAYERS][MAX_SHORT];
     float layer_base_exception[MAX_LAYERS][MAX_SHORT];
+    int layer_sid_counts[MAX_LAYERS][MAX_SHORT];
     int app_layer_counts[MAX_APPS][MAX_LAYERS];
     int app_total[MAX_APPS];
     float app_layer_importance[MAX_APPS][MAX_LAYERS];
@@ -76,6 +77,8 @@ struct PerThreadScratch {
 
     int mouse_button_right[MAX_LAYERS][6];
     int mouse_button_right_thumb[MAX_LAYERS][6];
+    int mouse_button_right_count[MAX_LAYERS][6];
+    int mouse_button_left_count[MAX_LAYERS][6];
     float mouse_button_x[MAX_LAYERS][6];
     float mouse_button_y[MAX_LAYERS][6];
     float mouse_button_effort[MAX_LAYERS][6];
@@ -247,6 +250,7 @@ __device__ void evaluate_single(
             s->layer_base_exception[l][b] = 0.0f;
             s->layer_base_support[l][b] = 0.0f;
             s->layer_base_position_value[l][b] = 0.0f;
+            s->layer_sid_counts[l][b] = 0;
         }
         for (int a = 0; a < n_apps && a < MAX_APPS; a++) {
             s->app_layer_counts[a][l] = 0;
@@ -261,6 +265,8 @@ __device__ void evaluate_single(
         for (int b = 0; b < 6; b++) {
             s->mouse_button_right[l][b] = 0;
             s->mouse_button_right_thumb[l][b] = 0;
+            s->mouse_button_right_count[l][b] = 0;
+            s->mouse_button_left_count[l][b] = 0;
             s->mouse_button_x[l][b] = -1.0f;
             s->mouse_button_y[l][b] = -1.0f;
             s->mouse_button_effort[l][b] = 0.0f;
@@ -509,6 +515,9 @@ __device__ void evaluate_single(
         s->sid_pos[sid] = i;
         int layer = pos_layer[i];
         int finger = pos_finger[i];
+        if (layer >= 0 && layer < MAX_LAYERS && sid < MAX_SHORT) {
+            s->layer_sid_counts[layer][sid]++;
+        }
         if (layer >= 0 && layer < MAX_LAYERS && !pos_is_frozen[i] && layer != 7) {
             s->sid_layer_seen[sid][layer] = true;
         }
@@ -645,6 +654,7 @@ __device__ void evaluate_single(
                 } else if (layer != 0 && !pos_is_frozen[i]) {
                     if (pos_hand[i] == 1) {
                         s->mouse_button_right[layer][button] = 1;
+                        s->mouse_button_right_count[layer][button]++;
                         if (pos_is_thumb[i]) {
                             s->mouse_button_right_thumb[layer][button] = 1;
                         }
@@ -655,6 +665,7 @@ __device__ void evaluate_single(
                         s->mouse_button_usage[layer][button] = shortcut_usage_count[sid];
                     } else {
                         s->mouse_non_right_count[layer]++;
+                        s->mouse_button_left_count[layer][button]++;
                     }
                 }
             }
@@ -945,7 +956,8 @@ __device__ void evaluate_single(
                     float exception_score = sigmoid_like(exception_raw * 0.45f);
                     float novelty_cost = 0.15f + (1.0f - exception_score) * (1.0f - exception_score);
                     float count_extra = max_f(0.0f, (float)(count - 2));
-                    float saturation = 1.0f + 0.18f * count_extra * count_extra;
+                    float saturation = 1.0f + 0.35f * count_extra * count_extra
+                        + 0.04f * count_extra * count_extra * count_extra;
                     duplicate_value_gap += unsupported_extra * gap * uncertainty_factor * novelty_cost * saturation;
                 }
             }
@@ -976,7 +988,8 @@ __device__ void evaluate_single(
                 float exception_score = sigmoid_like(exception_raw * 0.45f);
                 float novelty_cost = 0.15f + (1.0f - exception_score) * (1.0f - exception_score);
                 float layer_extra = max_f(0.0f, (float)(layers - 2));
-                float saturation = 1.0f + 0.18f * layer_extra * layer_extra;
+                float saturation = 1.0f + 0.35f * layer_extra * layer_extra
+                    + 0.04f * layer_extra * layer_extra * layer_extra;
                 cross_dup += extra * extra * uncertainty_factor * novelty_cost * saturation;
             }
         }
@@ -1053,6 +1066,13 @@ __device__ void evaluate_single(
             access_layout += log1pf(demand) * (s->layer_access_cost[layer] - 3.0f);
         }
         int direct_l0_accesses = s->l0_direct_hold_count[layer] + s->l0_direct_toggle_count[layer];
+        if (s->l0_direct_toggle_count[layer] > 0 && s->l0_direct_hold_count[layer] == 0) {
+            // L0 should prefer quick momentary holds. A direct toggle is still
+            // allowed, but if it is the only direct L0 path to a demanded layer
+            // it must lose to an equivalent hold unless toggle-mode usage earns it.
+            access_layout += (float)s->l0_direct_toggle_count[layer] *
+                (35.0f + log1pf(demand) * 18.0f + s->l0_direct_access_cost[layer] * 0.8f);
+        }
         if (direct_l0_accesses > 1) {
             float redundant = (float)(direct_l0_accesses - 1);
             float mixed_mode = (s->l0_direct_hold_count[layer] > 0 && s->l0_direct_toggle_count[layer] > 0) ? 1.0f : 0.0f;
@@ -1322,8 +1342,8 @@ __device__ void evaluate_single(
     }
 
     if (raw_total > 0) {
-        if (raw_base_layers_used > 2) {
-            float extra_layers = (float)(raw_base_layers_used - 2);
+        if (raw_base_layers_used > 1) {
+            float extra_layers = (float)(raw_base_layers_used - 1);
             raw_keyboard_completion_norwegian += extra_layers * extra_layers * 8000.0f;
         }
         if (raw_layers_used > 2) {
@@ -1446,8 +1466,10 @@ __device__ void evaluate_single(
                             }
                             if (!shape_found) n_wrong_shape++;
                         }
-                        raw_keyboard_completion_norwegian += (float)n_wrong_shape * 5000.0f;
+                        raw_keyboard_completion_norwegian += (float)n_wrong_shape * 50000.0f;
                     }
+                } else {
+                    raw_keyboard_completion_norwegian += 250000.0f;
                 }
             }
         }
@@ -1502,10 +1524,15 @@ __device__ void evaluate_single(
     // -------------------------------------------------------------------------
     float dynamic_mouse_layer = 100000.0f;
     int natural_mouse_layer = -1;
+    // Pass 1: determine the final natural_mouse_layer up front, from the same
+    // conditions used below, so pair_bonus_eligible (Pass 2) and the global
+    // same-layer-duplicate rule can both test `layer == natural_mouse_layer`
+    // directly instead of re-deriving a subset of the qualifying conditions.
     for (int layer = 0; layer < MAX_LAYERS; layer++) {
         if (layer == 0 || layer == 7) continue;
         int button_count = 0;
         int right_thumb_count = 0;
+        bool duplicate_violation = false;
         for (int button = 1; button < 6; button++) {
             if (s->mouse_button_right[layer][button] > 0) {
                 button_count++;
@@ -1513,10 +1540,73 @@ __device__ void evaluate_single(
                     right_thumb_count++;
                 }
             }
+            if (s->mouse_button_right_count[layer][button] > 1 || s->mouse_button_left_count[layer][button] > 1) {
+                duplicate_violation = true;
+            }
+        }
+        int missing_buttons = 5 - button_count;
+        if (
+            natural_mouse_layer < 0
+            && missing_buttons == 0
+            && !duplicate_violation
+            && right_thumb_count == 0
+            && s->scroll_right_momentary[layer]
+            && s->scroll_right_momentary_x[layer] != 7.0f
+            && s->scroll_right_momentary_x[layer] != 8.0f
+            && !s->right_thumb_momentary_access[layer]
+            && s->reachable_toggle_access[layer]
+        ) {
+            natural_mouse_layer = layer;
+        }
+    }
+
+    // Pass 2: per-candidate-layer soft scoring (dynamic_mouse_layer).
+    for (int layer = 0; layer < MAX_LAYERS; layer++) {
+        if (layer == 0 || layer == 7) continue;
+        int button_count = 0;
+        int right_thumb_count = 0;
+        bool duplicate_violation = false;
+        for (int button = 1; button < 6; button++) {
+            if (s->mouse_button_right[layer][button] > 0) {
+                button_count++;
+                if (s->mouse_button_right_thumb[layer][button] > 0) {
+                    right_thumb_count++;
+                }
+            }
+            if (s->mouse_button_right_count[layer][button] > 1 || s->mouse_button_left_count[layer][button] > 1) {
+                duplicate_violation = true;
+            }
         }
         int missing_buttons = 5 - button_count;
         float candidate_penalty = (float)missing_buttons * 50000.0f;
-        candidate_penalty += (float)s->mouse_non_right_count[layer] * 40000.0f;
+        // Duplicate mouse-button policy: a second copy of the same button on
+        // this layer is only acceptable as one left-side + one right-side
+        // pair, and only when this layer is the actual, currently-recognized
+        // dynamic mouse layer (natural_mouse_layer, settled in Pass 1 above)
+        // — not merely "looks complete" by a narrower subset of conditions.
+        // Two right-side copies, or any duplicate on a layer that isn't
+        // natural_mouse_layer, pay a heavy penalty so evolution keeps a
+        // single right-side copy instead of scattering same-layer spam.
+        bool pair_bonus_eligible = (layer == natural_mouse_layer);
+        for (int button = 1; button < 6; button++) {
+            int rc = s->mouse_button_right_count[layer][button];
+            int lc = s->mouse_button_left_count[layer][button];
+            if (rc > 1) {
+                candidate_penalty += (float)(rc - 1) * 180000.0f;
+            }
+            if (lc > 1) {
+                candidate_penalty += (float)(lc - 1) * 120000.0f;
+            }
+            if (lc > 0) {
+                bool valid_pair = pair_bonus_eligible && rc == 1 && lc == 1;
+                if (!valid_pair) {
+                    candidate_penalty += (float)lc * 40000.0f;
+                }
+            }
+            if (button_count < 5 && (rc + lc) > 1) {
+                candidate_penalty += (float)(rc + lc - 1) * 120000.0f;
+            }
+        }
         for (int button = 1; button < 6; button++) {
             if (s->mouse_button_right[layer][button] <= 0) continue;
             int um = (int)s->mouse_button_usage[layer][button];
@@ -1571,16 +1661,16 @@ __device__ void evaluate_single(
         if (s->scroll_right_momentary[layer]) {
             int us = (int)s->scroll_right_momentary_usage[layer];
             float usage_scale = 1.0f + log1p_lookup(us, log1p_lut, lut_size) * 0.35f;
-            candidate_penalty += s->scroll_right_momentary_effort[layer] * usage_scale * 120000.0f;
+            candidate_penalty += s->scroll_right_momentary_effort[layer] * usage_scale * 250000.0f;
             if (s->scroll_right_momentary_x[layer] >= 0.0f) {
-                candidate_penalty += fabsf(s->scroll_right_momentary_x[layer] - 9.0f) * 42000.0f;
+                candidate_penalty += fabsf(s->scroll_right_momentary_x[layer] - 9.0f) * 80000.0f;
                 float y_gap = fabsf(s->scroll_right_momentary_y[layer] - 2.0f);
-                candidate_penalty += y_gap * 95000.0f;
+                candidate_penalty += y_gap * 180000.0f;
                 if (y_gap > 0.0f) {
-                    candidate_penalty += y_gap * y_gap * usage_scale * 180000.0f;
+                    candidate_penalty += y_gap * y_gap * usage_scale * 320000.0f;
                 }
                 if (s->scroll_right_momentary_x[layer] == 7.0f || s->scroll_right_momentary_x[layer] == 8.0f) {
-                    candidate_penalty += 250000.0f;
+                    candidate_penalty += 400000.0f;
                 }
             }
             for (int lower_button = 3; lower_button <= 4; lower_button++) {
@@ -1588,7 +1678,7 @@ __device__ void evaluate_single(
                     float effort_gap = s->scroll_right_momentary_effort[layer]
                         - s->mouse_button_effort[layer][lower_button];
                     if (effort_gap > 0.0f) {
-                        candidate_penalty += effort_gap * usage_scale * 240000.0f;
+                        candidate_penalty += effort_gap * usage_scale * 600000.0f;
                     }
                 }
             }
@@ -1612,22 +1702,36 @@ __device__ void evaluate_single(
         if (candidate_penalty < dynamic_mouse_layer) {
             dynamic_mouse_layer = candidate_penalty;
         }
-        if (
-            natural_mouse_layer < 0
-            && missing_buttons == 0
-            && s->mouse_non_right_count[layer] == 0
-            && right_thumb_count == 0
-            && s->scroll_right_momentary[layer]
-            && s->scroll_right_momentary_x[layer] != 7.0f
-            && s->scroll_right_momentary_x[layer] != 8.0f
-            && !s->right_thumb_momentary_access[layer]
-            && s->reachable_toggle_access[layer]
-        ) {
-            natural_mouse_layer = layer;
-        }
     }
     dynamic_mouse_layer += (float)s->mouse_l7_count * 500.0f;
     dynamic_mouse_layer += (float)mouse_global_right_thumb_count * 50000.0f;
+
+    // Global same-layer-duplicate rule: no shortcut may appear more than once
+    // on the same layer. L7 is fully excluded (frozen). The dynamic mouse
+    // layer allows exactly one extra copy of a core mouse button, as one
+    // left-side + one right-side placement — never two on the same side, and
+    // only on the currently-recognized natural_mouse_layer, not merely a
+    // layer that happens to hold mouse buttons.
+    float same_layer_duplicate = 0.0f;
+    for (int layer = 0; layer < MAX_LAYERS; layer++) {
+        if (layer == 7) continue;
+        for (int sid = 0; sid < n_short; sid++) {
+            int c = s->layer_sid_counts[layer][sid];
+            if (c <= 1) continue;
+            int cap = 1;
+            if (layer == natural_mouse_layer && shortcut_is_mouse[sid] && shortcut_mouse_button[sid] > 0) {
+                int button = shortcut_mouse_button[sid];
+                int rc = s->mouse_button_right_count[layer][button];
+                int lc = s->mouse_button_left_count[layer][button];
+                if (rc == 1 && lc == 1) {
+                    cap = 2;
+                }
+            }
+            if (c > cap) {
+                same_layer_duplicate += (float)(c - cap);
+            }
+        }
+    }
 
     // Cleanup mouse duplicates after natural mouse layer exists
     if (natural_mouse_layer >= 0) {
@@ -1642,6 +1746,18 @@ __device__ void evaluate_single(
             float usage_relief = log1p_lookup(ur, log1p_lut, lut_size) * 0.08f;
             if (usage_relief > 0.35f) usage_relief = 0.35f;
             mouse_scattered += 3.0f + (1.0f - usage_relief);
+        }
+        // Same-layer mouse-button duplicates outside the natural mouse layer
+        // are especially costly: once a real mouse layer exists there is no
+        // excuse for scattered repeated buttons elsewhere.
+        for (int layer = 0; layer < MAX_LAYERS; layer++) {
+            if (layer == natural_mouse_layer || layer == 7 || layer == 0) continue;
+            for (int button = 1; button < 6; button++) {
+                int total_other = s->mouse_button_right_count[layer][button] + s->mouse_button_left_count[layer][button];
+                if (total_other > 1) {
+                    mouse_scattered += (float)(total_other - 1) * 8.0f;
+                }
+            }
         }
     }
 
@@ -1764,7 +1880,7 @@ __device__ void evaluate_single(
         if (depth > 1) {
             int capped_depth = depth;
             if (capped_depth > 6) capped_depth = 6;
-            float depth_cost = powf(3.0f, (float)(capped_depth - 1)) - 1.0f;
+            float depth_cost = powf(4.0f, (float)(capped_depth - 1)) - 1.0f;
             layer_depth_penalty += depth_cost * demand;
         }
     }
@@ -1833,7 +1949,7 @@ __device__ void evaluate_single(
     // -------------------------------------------------------------------------
     // Assemble raw scores
     // -------------------------------------------------------------------------
-    float raw_scores[23];
+    float raw_scores[24];
     raw_scores[0] = duplicate;
     raw_scores[1] = l0_displacement;
     raw_scores[2] = missing;
@@ -1867,6 +1983,7 @@ __device__ void evaluate_single(
     } else {
         raw_scores[22] = 0.0f;
     }
+    raw_scores[23] = same_layer_duplicate;
 
     // -------------------------------------------------------------------------
     // Constraints
@@ -1879,7 +1996,7 @@ __device__ void evaluate_single(
     // Soft violations sum
     // -------------------------------------------------------------------------
     float violations_raw = 0.0f;
-    for (int j = 0; j < 23; j++) {
+    for (int j = 0; j < 24; j++) {
         violations_raw += raw_scores[j] * violation_weights[j];
     }
 
@@ -1977,7 +2094,7 @@ __device__ void evaluate_single(
     out[2] = objective_viol / scale_factors[2];
 
     if (raw_scores_out != nullptr) {
-        for (int j = 0; j < 23; j++) {
+        for (int j = 0; j < 24; j++) {
             raw_scores_out[j] = raw_scores[j];
         }
     }

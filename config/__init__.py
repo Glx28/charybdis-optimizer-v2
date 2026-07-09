@@ -77,7 +77,7 @@ DEFAULT_CONFIG = {
             "duplicate": 35.0,
             "l0_displacement": 50.0,
             "missing_important": 500.0,
-            "cross_layer_duplicate": 25.0,
+            "cross_layer_duplicate": 40000.0,
             "group_split": 200.0,
             "thumb_occupancy": 30000.0,
             "arrow_order": 10000.0,
@@ -86,7 +86,7 @@ DEFAULT_CONFIG = {
             "arrow_scattered": 50000.0,
             "mouse_scattered": 500.0,
             "layer7_access": 50000.0,
-            "duplicate_value_gap": 500.0,
+            "duplicate_value_gap": 45000.0,
             "access_layout": 5000.0,
             "raw_keyboard_completion_norwegian": 80000.0,
             "dynamic_mouse_layer": 500000.0,
@@ -97,6 +97,7 @@ DEFAULT_CONFIG = {
             "toggle_back_to_l0": 150000000000.0,
             "mouse_hold_position_conflict": 150000000000.0,
             "mouse_layer_depth_penalty": 150000000000.0,
+            "same_layer_duplicate": 200000.0,
         },
         "hard_constraints": [
             "missing_important",
@@ -104,6 +105,7 @@ DEFAULT_CONFIG = {
             "natural_mouse_layer_exists",
             "layer_reachability",
             "toggle_back_to_l0",
+            "same_layer_duplicate",
         ],
     },
     "output": {

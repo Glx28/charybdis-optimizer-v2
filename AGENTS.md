@@ -148,6 +148,21 @@ cleanup pressure so random scatter disappears naturally. Exceptions are still
 allowed when usage/access data shows a workflow uses mouse buttons so heavily
 that switching to the mouse layer every time would be too costly.
 
+No shortcut may appear more than once on the same layer. This is a global,
+absolute rule with exactly two exceptions. First, layer 7 is frozen and
+entirely excluded from this rule. Second, the dynamic mouse layer allows
+exactly one extra copy of a core mouse button (MB1-MB5), and only as one
+left-side plus one right-side placement — never two copies on the same side.
+This mouse exception is tied to the layer's live, fully-qualifying
+dynamic-mouse-layer status for the current generation, not merely to whether
+the layer holds mouse buttons: if the layer stops fully qualifying as the
+dynamic mouse layer for any reason (for example Scroll or toggle access
+moving away from it), its left-side mouse-button copy immediately becomes an
+ordinary same-layer duplicate violation. There is no post-hoc repair or
+deletion of the orphaned copy; feasibility-first selection removes it over
+generations, the same mechanism already used for every other hard constraint
+in this document.
+
 The logger and aggregation pipeline must preserve active-layer shortcut counts
 (`by_layer_shortcut` and `layer_shortcuts`) so future runs can learn what was
 actually used while a layer was active. These counts are evidence, not stable

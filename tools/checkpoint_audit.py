@@ -109,6 +109,35 @@ def _l0_mutable_assignments(layout, top_n=24):
     return rows[:top_n]
 
 
+def _l0_toggle_without_hold_warnings(layout):
+    holds = set()
+    toggles = []
+    for idx, sid in enumerate(layout.genome):
+        pos = layout.positions[idx]
+        if pos.layer != 0 or pos.is_frozen:
+            continue
+        sid = int(sid)
+        if sid < 0 or sid >= len(layout.shortcuts):
+            continue
+        shortcut = layout.shortcuts[sid]
+        if not shortcut.is_layer_access or shortcut.access_target_layer < 0:
+            continue
+        if shortcut.access_is_momentary:
+            holds.add(shortcut.access_target_layer)
+        else:
+            toggles.append((idx, pos, shortcut))
+    warnings = []
+    demand = _layer_demands(layout)
+    for idx, pos, shortcut in toggles:
+        target = shortcut.access_target_layer
+        if target not in holds:
+            warnings.append(
+                f"L0 pos{idx} x={pos.x:.0f},y={pos.y:.0f} toggles L{target} without a direct L0 hold "
+                f"(target demand {demand.get(target, 0.0):.1f}). Prefer hold unless sustained-mode usage earns toggle."
+            )
+    return warnings
+
+
 def _prime_empty_positions(genome, layout, arrays, top_n=5):
     """Return the lowest-effort mutable positions that are empty."""
     pos_effort = arrays[0]
@@ -228,6 +257,13 @@ def main():
                 f"usage={row['usage']:<5d} importance={row['importance']:.1f}{target} "
                 f"{row['keys']}"
             )
+        print()
+
+    l0_toggle_warnings = _l0_toggle_without_hold_warnings(layout)
+    if l0_toggle_warnings:
+        print("--- L0 Access Mode Warnings ---")
+        for warning in l0_toggle_warnings:
+            print(f"  ! {warning}")
         print()
 
     empty = _prime_empty_positions(layout.genome, layout, arrays)

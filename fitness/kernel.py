@@ -526,6 +526,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         vw.get("toggle_back_to_l0", DEFAULT_VIOLATION_WEIGHTS.get("toggle_back_to_l0", 50000.0)),
         vw.get("mouse_hold_position_conflict", DEFAULT_VIOLATION_WEIGHTS.get("mouse_hold_position_conflict", 150000000000.0)),
         vw.get("mouse_layer_depth_penalty", DEFAULT_VIOLATION_WEIGHTS.get("mouse_layer_depth_penalty", 150000000000.0)),
+        vw.get("same_layer_duplicate", DEFAULT_VIOLATION_WEIGHTS.get("same_layer_duplicate", 200000.0)),
     ], dtype=np.float32)
 
     VIOLATION_NAMES = (
@@ -539,6 +540,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         "toggle_back_to_l0",
         "mouse_hold_position_conflict",
         "mouse_layer_depth_penalty",
+        "same_layer_duplicate",
     )
     hard_constraints = hard_constraints or []
     hard_constraint_indices = np.asarray(
@@ -642,6 +644,8 @@ if NUMBA_AVAILABLE:
         access_layout = 0.0
         mouse_button_right = np.zeros((32, 6), dtype=np.int32)
         mouse_button_right_thumb = np.zeros((32, 6), dtype=np.int32)
+        mouse_button_right_count = np.zeros((32, 6), dtype=np.int32)
+        mouse_button_left_count = np.zeros((32, 6), dtype=np.int32)
         mouse_button_x = np.full((32, 6), -1.0, dtype=np.float32)
         mouse_button_y = np.full((32, 6), -1.0, dtype=np.float32)
         mouse_button_effort = np.zeros((32, 6), dtype=np.float32)
@@ -650,6 +654,12 @@ if NUMBA_AVAILABLE:
         mouse_non_right_count = np.zeros(32, dtype=np.int32)
         mouse_global_right_thumb_count = 0
         mouse_l7_count = 0
+        # Per-(layer, shortcut) placement counts, used to enforce the global
+        # "no shortcut appears more than once on the same layer" rule. Every
+        # position counts (frozen or mutable); only L7 is excluded, and only
+        # at consumption time, matching how the rest of this function treats
+        # L7 as fully outside scored/generated content.
+        layer_sid_counts = np.zeros((32, n_short), dtype=np.int32)
         scroll_right_momentary = np.zeros(32, dtype=np.bool_)
         scroll_right_momentary_thumb = np.zeros(32, dtype=np.bool_)
         scroll_right_momentary_effort = np.zeros(32, dtype=np.float32)
@@ -861,6 +871,8 @@ if NUMBA_AVAILABLE:
             sid_pos[sid] = i
             layer = pos_layer[i]
             finger = pos_finger[i]
+            if 0 <= layer < 32:
+                layer_sid_counts[layer, sid] += 1
             if 0 <= layer < 32 and not pos_is_frozen[i] and layer != 7:
                 sid_layer_seen[sid, layer] = True
 
@@ -983,6 +995,7 @@ if NUMBA_AVAILABLE:
                     elif layer != 0 and not pos_is_frozen[i]:
                         if pos_hand[i] == 1:
                             mouse_button_right[layer, button] = 1
+                            mouse_button_right_count[layer, button] += 1
                             if pos_is_thumb[i]:
                                 mouse_button_right_thumb[layer, button] = 1
                             mouse_button_x[layer, button] = pos_x[i]
@@ -992,6 +1005,7 @@ if NUMBA_AVAILABLE:
                             mouse_button_usage[layer, button] = shortcut_usage_count[sid]
                         else:
                             mouse_non_right_count[layer] += 1
+                            mouse_button_left_count[layer, button] += 1
                 if pos_hand[i] == 0:
                     hand_bias += imp * 5.0
                 if button > 0 and pos_hand[i] == 1 and pos_is_thumb[i] and not pos_is_frozen[i] and layer != 7:
@@ -1237,7 +1251,8 @@ if NUMBA_AVAILABLE:
                             exception_raw -= 7.0
                         _xk = exception_raw * 0.45; exception_score = 0.5 + 0.5 * _xk / (1.0 + (_xk if _xk >= 0.0 else -_xk))
                         novelty_cost = 0.15 + (1.0 - exception_score) * (1.0 - exception_score)
-                        saturation = 1.0 + 0.18 * max(0.0, float(count - 2)) * max(0.0, float(count - 2))
+                        count_extra = max(0.0, float(count - 2))
+                        saturation = 1.0 + 0.35 * count_extra * count_extra + 0.04 * count_extra * count_extra * count_extra
                         duplicate_value_gap += unsupported_extra * gap * uncertainty_factor * novelty_cost * saturation
 
         cross_dup = 0.0
@@ -1261,7 +1276,8 @@ if NUMBA_AVAILABLE:
                         exception_raw -= 7.0
                     _xk = exception_raw * 0.45; exception_score = 0.5 + 0.5 * _xk / (1.0 + (_xk if _xk >= 0.0 else -_xk))
                     novelty_cost = 0.15 + (1.0 - exception_score) * (1.0 - exception_score)
-                    saturation = 1.0 + 0.18 * max(0.0, float(layers - 2)) * max(0.0, float(layers - 2))
+                    layer_extra = max(0.0, float(layers - 2))
+                    saturation = 1.0 + 0.35 * layer_extra * layer_extra + 0.04 * layer_extra * layer_extra * layer_extra
                     cross_dup += extra * extra * uncertainty_factor * novelty_cost * saturation
 
         group_split = 0.0
@@ -1337,6 +1353,14 @@ if NUMBA_AVAILABLE:
             if layer_access_cost[layer] > 3.0:
                 access_layout += math.log1p(demand) * (layer_access_cost[layer] - 3.0)
             direct_l0_accesses = l0_direct_hold_count[layer] + l0_direct_toggle_count[layer]
+            if l0_direct_toggle_count[layer] > 0 and l0_direct_hold_count[layer] == 0:
+                # L0 should prefer quick momentary holds. A direct toggle is
+                # still allowed, but if it is the only direct L0 path to a
+                # demanded layer it must pay enough to lose to an equivalent
+                # hold unless toggle-mode usage genuinely compensates elsewhere.
+                access_layout += l0_direct_toggle_count[layer] * (
+                    35.0 + math.log1p(demand) * 18.0 + l0_direct_access_cost[layer] * 0.8
+                )
             if direct_l0_accesses > 1:
                 # Both direct hold and direct toggle to the same target on L0 can
                 # be useful, but it consumes scarce thumb real estate. Prefer one
@@ -1583,8 +1607,8 @@ if NUMBA_AVAILABLE:
         for order in range(1, 6):
             raw_unique_total += raw_order_seen_anywhere[order]
         if raw_total > 0:
-            if raw_base_layers_used > 2:
-                extra_layers = float(raw_base_layers_used - 2)
+            if raw_base_layers_used > 1:
+                extra_layers = float(raw_base_layers_used - 1)
                 raw_keyboard_completion_norwegian += extra_layers * extra_layers * 8000.0
             if raw_layers_used > 2:
                 extra_layers_all = float(raw_layers_used - 2)
@@ -1709,7 +1733,9 @@ if NUMBA_AVAILABLE:
                                 if not shape_found:
                                     n_wrong_shape += 1
                             if n_wrong_shape > 0:
-                                raw_keyboard_completion_norwegian += float(n_wrong_shape) * 5000.0
+                                raw_keyboard_completion_norwegian += float(n_wrong_shape) * 50000.0
+                        else:
+                            raw_keyboard_completion_norwegian += 250000.0
             for order in range(1, 6):
                 if raw_order_seen_anywhere[order] > 0 and raw_base_seen_anywhere[order] == 0:
                     raw_keyboard_completion_norwegian += 2500.0
@@ -1743,19 +1769,80 @@ if NUMBA_AVAILABLE:
         # toward the final shape instead of using post-hoc semantic patching.
         dynamic_mouse_layer = 100000.0
         natural_mouse_layer = -1
+        # Pass 1: determine the final natural_mouse_layer up front, from the
+        # same conditions used below, so pair_bonus_eligible (Pass 2) and the
+        # global same-layer-duplicate rule can both test `layer ==
+        # natural_mouse_layer` directly instead of re-deriving a subset of the
+        # qualifying conditions. Re-deriving a subset previously let a layer
+        # keep its left+right mouse-pair exception even after it stopped being
+        # the recognized dynamic mouse layer (e.g. once Scroll moved off it) —
+        # this two-pass structure closes that loophole by construction.
         for layer in range(32):
             if layer == 0 or layer == 7:
                 continue
             button_count = 0
             right_thumb_count = 0
+            duplicate_violation = False
             for button in range(1, 6):
                 if mouse_button_right[layer, button] > 0:
                     button_count += 1
                     if mouse_button_right_thumb[layer, button] > 0:
                         right_thumb_count += 1
+                if mouse_button_right_count[layer, button] > 1 or mouse_button_left_count[layer, button] > 1:
+                    duplicate_violation = True
+            missing_buttons = 5 - button_count
+            if (
+                natural_mouse_layer < 0
+                and missing_buttons == 0
+                and not duplicate_violation
+                and right_thumb_count == 0
+                and scroll_right_momentary[layer]
+                and scroll_right_momentary_x[layer] != 7.0
+                and scroll_right_momentary_x[layer] != 8.0
+                and not right_thumb_momentary_access[layer]
+                and reachable_toggle_access[layer]
+            ):
+                natural_mouse_layer = layer
+
+        # Pass 2: per-candidate-layer soft scoring (dynamic_mouse_layer).
+        for layer in range(32):
+            if layer == 0 or layer == 7:
+                continue
+            button_count = 0
+            right_thumb_count = 0
+            duplicate_violation = False
+            for button in range(1, 6):
+                if mouse_button_right[layer, button] > 0:
+                    button_count += 1
+                    if mouse_button_right_thumb[layer, button] > 0:
+                        right_thumb_count += 1
+                if mouse_button_right_count[layer, button] > 1 or mouse_button_left_count[layer, button] > 1:
+                    duplicate_violation = True
             missing_buttons = 5 - button_count
             candidate_penalty = float(missing_buttons) * 50000.0
-            candidate_penalty += float(mouse_non_right_count[layer]) * 40000.0
+            # Duplicate mouse-button policy: a second copy of the same button
+            # on this layer is only acceptable as one left-side + one
+            # right-side pair, and only when this layer is the actual,
+            # currently-recognized dynamic mouse layer (natural_mouse_layer,
+            # settled in Pass 1 above) — not merely "looks complete" by a
+            # narrower subset of conditions. Two right-side copies, or any
+            # duplicate on a layer that isn't natural_mouse_layer, pay a heavy
+            # penalty so evolution keeps a single right-side copy instead of
+            # scattering same-layer spam.
+            pair_bonus_eligible = layer == natural_mouse_layer
+            for button in range(1, 6):
+                rc = mouse_button_right_count[layer, button]
+                lc = mouse_button_left_count[layer, button]
+                if rc > 1:
+                    candidate_penalty += float(rc - 1) * 180000.0
+                if lc > 1:
+                    candidate_penalty += float(lc - 1) * 120000.0
+                if lc > 0:
+                    valid_pair = pair_bonus_eligible and rc == 1 and lc == 1
+                    if not valid_pair:
+                        candidate_penalty += float(lc) * 40000.0
+                if button_count < 5 and (rc + lc) > 1:
+                    candidate_penalty += float(rc + lc - 1) * 120000.0
             for button in range(1, 6):
                 if mouse_button_right[layer, button] <= 0:
                     continue
@@ -1809,20 +1896,20 @@ if NUMBA_AVAILABLE:
                 _us = int(scroll_right_momentary_usage[layer]); usage_scale = 1.0 + log1p_lut[_us if _us < lut_size else lut_size - 1] * 0.35
                 # Scroll is part of the mouse core group. It should beat MB3-5
                 # for a prime non-thumb right-side position when usage supports it.
-                candidate_penalty += scroll_right_momentary_effort[layer] * usage_scale * 120000.0
+                candidate_penalty += scroll_right_momentary_effort[layer] * usage_scale * 250000.0
                 if scroll_right_momentary_x[layer] >= 0.0:
-                    candidate_penalty += abs(scroll_right_momentary_x[layer] - 9.0) * 42000.0
+                    candidate_penalty += abs(scroll_right_momentary_x[layer] - 9.0) * 80000.0
                     y_gap = abs(scroll_right_momentary_y[layer] - 2.0)
-                    candidate_penalty += y_gap * 95000.0
+                    candidate_penalty += y_gap * 180000.0
                     if y_gap > 0.0:
-                        candidate_penalty += y_gap * y_gap * usage_scale * 180000.0
+                        candidate_penalty += y_gap * y_gap * usage_scale * 320000.0
                     if scroll_right_momentary_x[layer] == 7.0 or scroll_right_momentary_x[layer] == 8.0:
-                        candidate_penalty += 250000.0
+                        candidate_penalty += 400000.0
                 for lower_button in (3, 4):
                     if mouse_button_right[layer, lower_button] > 0:
                         effort_gap = scroll_right_momentary_effort[layer] - mouse_button_effort[layer, lower_button]
                         if effort_gap > 0.0:
-                            candidate_penalty += effort_gap * usage_scale * 240000.0
+                            candidate_penalty += effort_gap * usage_scale * 600000.0
             else:
                 candidate_penalty += 25000.0
             if scroll_right_momentary_thumb[layer]:
@@ -1837,20 +1924,36 @@ if NUMBA_AVAILABLE:
                 candidate_penalty += 30000.0
             if candidate_penalty < dynamic_mouse_layer:
                 dynamic_mouse_layer = candidate_penalty
-            if (
-                natural_mouse_layer < 0
-                and missing_buttons == 0
-                and mouse_non_right_count[layer] == 0
-                and right_thumb_count == 0
-                and scroll_right_momentary[layer]
-                and scroll_right_momentary_x[layer] != 7.0
-                and scroll_right_momentary_x[layer] != 8.0
-                and not right_thumb_momentary_access[layer]
-                and reachable_toggle_access[layer]
-            ):
-                natural_mouse_layer = layer
         dynamic_mouse_layer += float(mouse_l7_count) * 500.0
         dynamic_mouse_layer += float(mouse_global_right_thumb_count) * 50000.0
+
+        # Global same-layer-duplicate rule: no shortcut may appear more than
+        # once on the same layer. L7 is fully excluded (frozen). The dynamic
+        # mouse layer allows exactly one extra copy of a core mouse button, as
+        # one left-side + one right-side placement — never two on the same
+        # side, and only on the currently-recognized natural_mouse_layer, not
+        # merely a layer that happens to hold mouse buttons.
+        same_layer_duplicate = 0.0
+        for layer in range(32):
+            if layer == 7:
+                continue
+            for sid in range(n_short):
+                c = layer_sid_counts[layer, sid]
+                if c <= 1:
+                    continue
+                cap = 1
+                if (
+                    layer == natural_mouse_layer
+                    and shortcut_is_mouse[sid]
+                    and shortcut_mouse_button[sid] > 0
+                ):
+                    button = shortcut_mouse_button[sid]
+                    rc = mouse_button_right_count[layer, button]
+                    lc = mouse_button_left_count[layer, button]
+                    if rc == 1 and lc == 1:
+                        cap = 2
+                if c > cap:
+                    same_layer_duplicate += float(c - cap)
 
         if natural_mouse_layer >= 0:
             # Once a natural generated mouse layer exists, it should dominate
@@ -1872,6 +1975,16 @@ if NUMBA_AVAILABLE:
                 if usage_relief > 0.35:
                     usage_relief = 0.35
                 mouse_scattered += 3.0 + (1.0 - usage_relief)
+            # Same-layer mouse-button duplicates outside the natural mouse
+            # layer are especially costly: once a real mouse layer exists
+            # there is no excuse for scattered repeated buttons elsewhere.
+            for layer in range(32):
+                if layer == natural_mouse_layer or layer == 7 or layer == 0:
+                    continue
+                for button in range(1, 6):
+                    total_other = mouse_button_right_count[layer, button] + mouse_button_left_count[layer, button]
+                    if total_other > 1:
+                        mouse_scattered += float(total_other - 1) * 8.0
 
         best_everything_layer = -1
         best_everything_value = 0.0
@@ -2015,7 +2128,7 @@ if NUMBA_AVAILABLE:
             capped_depth = depth
             if capped_depth > 6:
                 capped_depth = 6
-            depth_cost = 3.0 ** float(capped_depth - 1) - 1.0
+            depth_cost = 4.0 ** float(capped_depth - 1) - 1.0
             layer_depth_penalty += depth_cost * demand
 
         # Raw violation scores (0 = feasible).
@@ -2066,7 +2179,7 @@ if NUMBA_AVAILABLE:
             if genome[i] < 0 and not pos_is_frozen[i] and lyr != 7 and lyr != 0:
                 empty_pos_waste += pos_effort_waste[i]
 
-        raw_scores = np.empty(23, dtype=np.float32)
+        raw_scores = np.empty(24, dtype=np.float32)
         raw_scores[0] = duplicate
         raw_scores[1] = l0_displacement
         raw_scores[2] = missing
@@ -2101,6 +2214,7 @@ if NUMBA_AVAILABLE:
                 raw_scores[22] = float(ml_extra) if ml_extra > 0 else 0.0
         else:
             raw_scores[22] = 0.0
+        raw_scores[23] = same_layer_duplicate
 
         # Hard constraints (g(x) <= 0 convention; raw_scores are >= 0).
         n_constr = hard_constraint_indices.shape[0]
@@ -2110,7 +2224,7 @@ if NUMBA_AVAILABLE:
 
         # Soft penalties weighted and summed into the violations objective.
         violations_raw = 0.0
-        for j in range(23):
+        for j in range(24):
             violations_raw += raw_scores[j] * violation_weights[j]
 
         workflow = 0.0

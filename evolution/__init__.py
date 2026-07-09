@@ -347,6 +347,53 @@ if NUMBA_AVAILABLE:
         return best_layer
 
     @njit(cache=True)
+    def _numba_layer_sid_count(genome, pos_layer_arr, layer, sid, exclude_a, exclude_b):
+        # Count how many positions on `layer` already hold `sid`, excluding
+        # the two positions involved in the swap under consideration (their
+        # current contents are about to move elsewhere).
+        count = 0
+        for i in range(len(genome)):
+            if i == exclude_a or i == exclude_b:
+                continue
+            if pos_layer_arr[i] == layer and genome[i] == sid:
+                count += 1
+        return count
+
+    @njit(cache=True)
+    def _numba_swap_creates_illegal_duplicate(genome, pos_layer_arr, src_pos, target_pos, mouse_layer, mouse_button_sids):
+        # No shortcut may appear more than once on the same layer, except one
+        # left+one right copy of a core mouse button on the dynamic mouse
+        # layer (layer 7 is frozen and fully excluded). This is a mutation-
+        # time heuristic guard using the swap operator's own simplified mouse-
+        # layer detector as a proxy — the fitness kernel's same_layer_duplicate
+        # hard constraint is the final, precise arbiter regardless.
+        moving_sid = genome[src_pos]
+        target_layer = pos_layer_arr[target_pos]
+        if target_layer != 7:
+            cap = 1
+            if mouse_layer >= 0 and target_layer == mouse_layer:
+                for b in range(1, 6):
+                    if mouse_button_sids[b] == moving_sid:
+                        cap = 2
+                        break
+            existing = _numba_layer_sid_count(genome, pos_layer_arr, target_layer, moving_sid, src_pos, target_pos)
+            if existing + 1 > cap:
+                return True
+        displaced_sid = genome[target_pos]
+        src_layer = pos_layer_arr[src_pos]
+        if src_layer != 7:
+            cap = 1
+            if mouse_layer >= 0 and src_layer == mouse_layer:
+                for b in range(1, 6):
+                    if mouse_button_sids[b] == displaced_sid:
+                        cap = 2
+                        break
+            existing = _numba_layer_sid_count(genome, pos_layer_arr, src_layer, displaced_sid, src_pos, target_pos)
+            if existing + 1 > cap:
+                return True
+        return False
+
+    @njit(cache=True)
     def _numba_effort_swap(genome, state, mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr,
                            pos_effort_arr, sid_importance_arr, is_group_sid_lut, mouse_button_sids,
                            n_shortcuts):
@@ -410,10 +457,20 @@ if NUMBA_AVAILABLE:
                 same_layer_positions[n_same] = lower_positions[k]
                 n_same += 1
 
-        if n_same > 0 and _rand_float(state) < 0.75:
-            target_pos = same_layer_positions[_rand_int(state, n_same)]
-        else:
-            target_pos = lower_positions[_rand_int(state, n_lower)]
+        # Try a bounded number of candidate targets (respecting the same-layer
+        # preference each attempt) and skip any that would create an illegal
+        # same-layer duplicate (see _numba_swap_creates_illegal_duplicate).
+        target_pos = -1
+        for _attempt in range(8):
+            if n_same > 0 and _rand_float(state) < 0.75:
+                candidate = same_layer_positions[_rand_int(state, n_same)]
+            else:
+                candidate = lower_positions[_rand_int(state, n_lower)]
+            if not _numba_swap_creates_illegal_duplicate(genome, pos_layer_arr, src_pos, candidate, mouse_layer, mouse_button_sids):
+                target_pos = candidate
+                break
+        if target_pos < 0:
+            return False
 
         tmp = genome[src_pos]
         genome[src_pos] = genome[target_pos]
@@ -421,7 +478,7 @@ if NUMBA_AVAILABLE:
         return True
 
     @njit(cache=True)
-    def _numba_smart_duplicate(genome, state, mutable_arr, pos_effort_arr, dup_candidate_arr,
+    def _numba_smart_duplicate(genome, state, mutable_arr, pos_effort_arr, pos_layer_arr, dup_candidate_arr,
                                dup_exp_w, frozen_sid_counts, n_shortcuts):
         n_cand = len(dup_candidate_arr)
         if n_cand == 0:
@@ -445,22 +502,34 @@ if NUMBA_AVAILABLE:
         order = np.argsort(efforts)
         target_idx = order[_rand_int(state, top_n)]
         target_pos = empty_positions[target_idx]
+        target_layer = pos_layer_arr[target_pos]
 
         counts = np.zeros(n_shortcuts, dtype=np.int32)
+        # No shortcut may appear more than once on the same layer (L7 is
+        # frozen/excluded; mouse buttons never reach this function since
+        # dup_candidate_arr excludes them entirely — mouse placement is
+        # handled by the dedicated mouse-workflow proposal operator).
+        layer_sid_count = np.zeros(n_shortcuts, dtype=np.int32)
         for k in range(n_mut):
             sid = genome[mutable_arr[k]]
             if sid >= 0 and sid < n_shortcuts:
                 counts[sid] += 1
+                if target_layer != 7 and pos_layer_arr[mutable_arr[k]] == target_layer:
+                    layer_sid_count[sid] += 1
 
         n_frozen = len(frozen_sid_counts)
         weights = np.empty(n_cand, dtype=np.float32)
         total_w = 0.0
         for k in range(n_cand):
             sid = dup_candidate_arr[k]
+            if target_layer != 7 and layer_sid_count[sid] >= 1:
+                weights[k] = 0.0
+                continue
             cnt = counts[sid]
             if n_frozen > 0 and sid < n_frozen:
                 cnt += frozen_sid_counts[sid]
-            w = dup_exp_w[k] / (1.0 + float(cnt))
+            count_discount = 1.0 + float(cnt)
+            w = dup_exp_w[k] / (count_discount * count_discount)
             weights[k] = w
             total_w += w
 
@@ -705,7 +774,7 @@ if NUMBA_AVAILABLE:
                     continue
 
             if _rand_float(state) < probs[2]:
-                if _numba_smart_duplicate(X[i], state, mutable_arr, pos_effort_arr, dup_candidate_arr,
+                if _numba_smart_duplicate(X[i], state, mutable_arr, pos_effort_arr, pos_layer_arr, dup_candidate_arr,
                                           dup_exp_w, frozen_sid_counts, n_shortcuts):
                     handled[i] = True
                     continue
@@ -1639,8 +1708,8 @@ class SwapMutation(Mutation):
             # Mouse-button copies are handled by mouse-layer scoring/mutation,
             # not generic duplicate spawning; otherwise MB1-MB5 scatter across
             # unrelated layers and crowd out workflow shortcuts.
-            # Selection uses softmax(imp/T) / (1 + total_count) so high-importance
-            # shortcuts dominate but each duplicate reduces the next copy's probability.
+            # Selection uses softmax(imp/T) / (1 + total_count)^2 so high-importance
+            # shortcuts can duplicate, but saturation quickly suppresses spam.
             _sid_to_imp = {s.sid: float(s.importance) for s in layout.shortcuts}
             _dup_sids = [
                 s.sid for s in layout.shortcuts
@@ -2316,7 +2385,8 @@ class SwapMutation(Mutation):
         Non-group, non-mouse shortcuts are eligible. Mouse-button copies are
         handled by mouse-workflow mutation/scoring so generic duplication does
         not scatter MB1-MB5 across unrelated layers. Selection weight is
-        softmax(imp / T) discounted by total placement count (mutable + frozen).
+        softmax(imp / T) discounted quadratically by total placement count
+        (mutable + frozen).
         High-importance shortcuts dominate but never monopolise. _base_* keys
         start with count=1 from their frozen L0 placement, giving them naturally
         lower probability than unplaced shortcuts of equal importance.
@@ -2336,6 +2406,7 @@ class SwapMutation(Mutation):
         top_n = max(1, len(empty_positions) // 3)
         order = np.argpartition(efforts, min(top_n - 1, len(efforts) - 1))[:top_n]
         target_pos = int(empty_positions[order[np.random.randint(len(order))]])
+        target_layer = int(self._pos_layer_arr[target_pos])
 
         # Total count = mutable placements + frozen placements (so _base_* start at 1)
         valid_sids = mutable_sids[mutable_sids >= 0]
@@ -2349,9 +2420,19 @@ class SwapMutation(Mutation):
         else:
             total_counts = mutable_counts
 
-        # Softmax(imp / T) / (1 + count) — exp part is precomputed in __init__
+        # Softmax(imp / T) / (1 + count)^2 — exp part is precomputed in __init__
         cnts = total_counts[self._dup_candidate_arr].astype(np.float32)
-        weights = self._dup_exp_w / (1.0 + cnts)
+        count_discount = 1.0 + cnts
+        weights = self._dup_exp_w / (count_discount * count_discount)
+
+        # No shortcut may appear more than once on the same layer (L7 is
+        # frozen/excluded; mouse buttons never reach this pool — see docstring
+        # above). Zero out any candidate that already occupies target_layer.
+        if target_layer != 7:
+            on_target_layer = mutable_sids[self._pos_layer_arr[self._mutable_arr] == target_layer]
+            already_present = np.isin(self._dup_candidate_arr, on_target_layer)
+            weights = np.where(already_present, 0.0, weights)
+
         total_w = float(weights.sum())
         if total_w <= 0.0:
             return False
@@ -2530,6 +2611,38 @@ class SwapMutation(Mutation):
             return -1
         return int(np.argmax(counts))
 
+    def _swap_creates_illegal_duplicate(self, genome, src_pos, target_pos, mouse_layer):
+        """True if swapping genome[src_pos] <-> genome[target_pos] would put the
+        same shortcut twice on one layer. No shortcut may appear more than once
+        on the same layer, except one left+one right copy of a core mouse
+        button on the dynamic mouse layer; layer 7 is frozen and excluded.
+        """
+        moving_sid = int(genome[src_pos])
+        displaced_sid = int(genome[target_pos])
+
+        def layer_count(layer, sid):
+            count = int(np.sum((self._pos_layer_arr == layer) & (genome == sid)))
+            if int(genome[src_pos]) == sid:
+                count -= 1
+            if int(genome[target_pos]) == sid:
+                count -= 1
+            return count
+
+        target_layer = int(self._pos_layer_arr[target_pos])
+        if target_layer != 7:
+            cap = 2 if (mouse_layer >= 0 and target_layer == mouse_layer
+                        and moving_sid in self.mouse_button_sids.values()) else 1
+            if layer_count(target_layer, moving_sid) + 1 > cap:
+                return True
+
+        src_layer = int(self._pos_layer_arr[src_pos])
+        if src_layer != 7:
+            cap = 2 if (mouse_layer >= 0 and src_layer == mouse_layer
+                        and displaced_sid in self.mouse_button_sids.values()) else 1
+            if layer_count(src_layer, displaced_sid) + 1 > cap:
+                return True
+        return False
+
     def _effort_swap(self, genome):
         """Propose swapping a high importance×effort shortcut with a lower-effort position.
 
@@ -2587,10 +2700,22 @@ class SwapMutation(Mutation):
         src_layer = int(self._pos_layer_arr[src_pos])
         same_layer_mask = self._pos_layer_arr[candidates] == src_layer
         same_layer_candidates = candidates[same_layer_mask]
-        if len(same_layer_candidates) > 0 and random.random() < 0.75:
-            target_pos = int(same_layer_candidates[random.randrange(len(same_layer_candidates))])
-        else:
-            target_pos = int(candidates[random.randrange(len(candidates))])
+        mouse_layer = self._detect_mouse_layer(genome) if self.mouse_button_sids else -1
+
+        # Try a bounded number of candidate targets (respecting the same-layer
+        # preference each attempt) and skip any that would create an illegal
+        # same-layer duplicate.
+        target_pos = -1
+        for _attempt in range(8):
+            if len(same_layer_candidates) > 0 and random.random() < 0.75:
+                candidate = int(same_layer_candidates[random.randrange(len(same_layer_candidates))])
+            else:
+                candidate = int(candidates[random.randrange(len(candidates))])
+            if not self._swap_creates_illegal_duplicate(genome, src_pos, candidate, mouse_layer):
+                target_pos = candidate
+                break
+        if target_pos < 0:
+            return False
 
         displaced = int(genome[target_pos])
         genome[target_pos] = int(genome[src_pos])
