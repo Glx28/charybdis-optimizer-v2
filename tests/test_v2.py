@@ -1804,11 +1804,14 @@ class TestEvaluator(unittest.TestCase):
             # layer's real (inflated) penalty.
             Position(3, 3, 8.0, 2.0, "right", 1, 0.0),
             Position(4, 3, 9.0, 2.0, "right", 1, 0.0),
-            Position(5, 3, 10.0, 2.0, "right", 2, 0.0),
-            Position(6, 3, 11.0, 2.0, "right", 3, 0.0),
-            Position(7, 3, 12.0, 2.0, "right", 4, 0.0),
+            # MB3/MB4/MB5 and Scroll ideal x-targets: MB3=11, MB4=12, MB5=13,
+            # Scroll=10 -- Scroll's ideal sits one slot right of MB2 (not on
+            # top of it), so MB1(x8)/MB2(x9) can land adjacent.
+            Position(5, 3, 11.0, 2.0, "right", 2, 0.0),
+            Position(6, 3, 12.0, 2.0, "right", 3, 0.0),
+            Position(7, 3, 13.0, 2.0, "right", 4, 0.0),
             Position(8, 3, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
-            Position(9, 3, 9.0, 2.0, "right", 1, 0.0),
+            Position(9, 3, 10.0, 2.0, "right", 1, 0.0),
         )
         shortcuts = (
             Shortcut(
@@ -1994,6 +1997,70 @@ class TestEvaluator(unittest.TestCase):
         self.assertGreater(
             evaluator.evaluate(even_worse_scroll_row).objectives[2],
             bad_scroll_row_score,
+        )
+
+    def test_dynamic_mouse_layer_mb2_and_scroll_ideal_x_do_not_collide(self):
+        # Regression test: MB2's ideal x (9) and Scroll's ideal x used to be
+        # identical (both 9), so Scroll's much larger weight always evicted
+        # MB2 from that slot, forcing a gap between MB1(x8) and MB2 filled by
+        # whatever else won the fight (e.g. MB3). Scroll's ideal is now one
+        # slot further right (10) so MB1/MB2 can land adjacent without
+        # Scroll's placement pressure fighting over the same coordinate.
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
+            Position(1, 0, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
+            Position(2, 3, 2.0, 1.0, "left", 1, 1.0),
+            Position(3, 3, 8.0, 2.0, "right", 1, 0.0),
+            Position(4, 3, 9.0, 2.0, "right", 1, 0.0),
+            Position(5, 3, 11.0, 2.0, "right", 2, 0.0),
+            Position(6, 3, 12.0, 2.0, "right", 3, 0.0),
+            Position(7, 3, 13.0, 2.0, "right", 4, 0.0),
+            Position(8, 3, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
+            Position(9, 3, 10.0, 2.0, "right", 1, 0.0),
+        )
+        shortcuts = (
+            Shortcut(
+                0, "@access:L0->L3:hold:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=True,
+            ),
+            Shortcut(
+                1, "@access:L0->L3:toggle:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=False,
+            ),
+            Shortcut(2, "MB1", "Click", "Mouse", 20.0, "mouse"),
+            Shortcut(3, "MB2", "Click", "Mouse", 15.0, "mouse"),
+            Shortcut(4, "MB3", "Click", "Mouse", 10.0, "mouse"),
+            Shortcut(5, "MB4", "Click", "Mouse", 8.0, "mouse"),
+            Shortcut(6, "MB5", "Click", "Mouse", 8.0, "mouse"),
+            Shortcut(
+                7, "@access:L3->L6:hold:Scroll", "Scroll", "Layer Access", 12.0,
+                "layer_access", is_layer_access=True, access_target_layer=6,
+                access_is_momentary=True,
+            ),
+        )
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        # MB1@8, MB2@9 adjacent, Scroll@13 (uncontested, off to the side).
+        mb2_adjacent = Layout(
+            np.array([0, 1, -1, 2, 3, 4, 5, 6, -1, 7], dtype=np.int32), positions, shortcuts, frozen,
+        )
+        # MB1@8, Scroll@9 (taking MB2's old slot), MB2 displaced to x=13.
+        mb2_displaced_by_scroll = Layout(
+            np.array([0, 1, -1, 2, 7, 4, 5, 6, -1, 3], dtype=np.int32), positions, shortcuts, frozen,
+        )
+        weights = {
+            "effort": 0.0, "adjacency": 0.0, "finger_balance": 0.0, "same_finger": 0.0,
+            "violations": 1.0, "workflow_coherence": 0.0, "app_coherence": 0.0,
+            "trackball_proximity": 0.0, "familiarity": 0.0, "layer_specialization": 0.0,
+        }
+        vweights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
+        vweights["dynamic_mouse_layer"] = 1.0
+        evaluator = FitnessEvaluator(weights=weights, reference_layout=mb2_adjacent, violation_weights=vweights,
+                                     hard_constraints=[], missing_important_threshold=99.0)
+        self.assertLess(
+            evaluator.evaluate(mb2_adjacent).objectives[2],
+            evaluator.evaluate(mb2_displaced_by_scroll).objectives[2],
         )
 
     def test_dynamic_mouse_layer_penalty_uses_mouse_usage_for_placement(self):
@@ -2220,7 +2287,7 @@ class TestEvaluator(unittest.TestCase):
                                      hard_constraints=[], missing_important_threshold=99.0)
         self.assertGreater(
             evaluator.evaluate(non_thumb_return).objectives[2],
-            evaluator.evaluate(thumb_return).objectives[2] + 5000.0,
+            evaluator.evaluate(thumb_return).objectives[2] + 400000.0,
         )
 
     def test_access_layout_penalizes_redundant_l0_access_and_nested_depth(self):

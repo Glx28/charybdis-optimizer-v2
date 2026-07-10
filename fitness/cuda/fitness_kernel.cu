@@ -1686,15 +1686,18 @@ __device__ void evaluate_single(
             candidate_penalty += s->mouse_button_effort[layer][2] * 65000.0f;
         }
         if (s->mouse_button_right[layer][3] > 0 && s->mouse_button_right_thumb[layer][3] == 0) {
-            candidate_penalty += fabsf(s->mouse_button_x[layer][3] - 10.0f) * 6000.0f;
+            candidate_penalty += fabsf(s->mouse_button_x[layer][3] - 11.0f) * 6000.0f;
             candidate_penalty += fabsf(s->mouse_button_y[layer][3] - 2.0f) * 5000.0f;
         }
         if (s->scroll_right_momentary[layer]) {
             int us = (int)s->scroll_right_momentary_usage[layer];
             float usage_scale = 1.0f + log1p_lookup(us, log1p_lut, lut_size) * 0.35f;
+            // Scroll's ideal x sits one slot right of MB2's ideal (not on top
+            // of it) so MB1/MB2 can land adjacent instead of Scroll's much
+            // larger weight always bumping MB2 out of the way.
             candidate_penalty += s->scroll_right_momentary_effort[layer] * usage_scale * 250000.0f;
             if (s->scroll_right_momentary_x[layer] >= 0.0f) {
-                candidate_penalty += fabsf(s->scroll_right_momentary_x[layer] - 9.0f) * 80000.0f;
+                candidate_penalty += fabsf(s->scroll_right_momentary_x[layer] - 10.0f) * 80000.0f;
                 float y_gap = fabsf(s->scroll_right_momentary_y[layer] - 2.0f);
                 candidate_penalty += y_gap * 180000.0f;
                 if (y_gap > 0.0f) {
@@ -1939,9 +1942,11 @@ __device__ void evaluate_single(
         }
         // Soft pressure on top of the hard existence check above: a
         // return-to-L0 toggle that exists but isn't on a thumb key still
-        // forces guesswork to find the way back.
+        // forces guesswork to find the way back. Needs to be strong to
+        // outcompete ordinary high-value shortcuts and other layer-access
+        // keys contesting the same thumb slots.
         if (s->layer_has_return_toggle[lx] && !s->layer_return_toggle_thumb[lx]) {
-            access_layout += 6000.0f;
+            access_layout += 500000.0f;
         }
     }
 

@@ -1924,15 +1924,18 @@ if NUMBA_AVAILABLE:
                 candidate_penalty += abs(mouse_button_y[layer, 2] - 2.0) * 30000.0
                 candidate_penalty += mouse_button_effort[layer, 2] * 65000.0
             if mouse_button_right[layer, 3] > 0 and mouse_button_right_thumb[layer, 3] == 0:
-                candidate_penalty += abs(mouse_button_x[layer, 3] - 10.0) * 6000.0
+                candidate_penalty += abs(mouse_button_x[layer, 3] - 11.0) * 6000.0
                 candidate_penalty += abs(mouse_button_y[layer, 3] - 2.0) * 5000.0
             if scroll_right_momentary[layer]:
                 _us = int(scroll_right_momentary_usage[layer]); usage_scale = 1.0 + log1p_lut[_us if _us < lut_size else lut_size - 1] * 0.35
                 # Scroll is part of the mouse core group. It should beat MB3-5
                 # for a prime non-thumb right-side position when usage supports it.
+                # Its ideal x sits one slot right of MB2's ideal (not on top of
+                # it) so MB1/MB2 can actually land adjacent instead of Scroll's
+                # much larger weight always bumping MB2 out of the way.
                 candidate_penalty += scroll_right_momentary_effort[layer] * usage_scale * 250000.0
                 if scroll_right_momentary_x[layer] >= 0.0:
-                    candidate_penalty += abs(scroll_right_momentary_x[layer] - 9.0) * 80000.0
+                    candidate_penalty += abs(scroll_right_momentary_x[layer] - 10.0) * 80000.0
                     y_gap = abs(scroll_right_momentary_y[layer] - 2.0)
                     candidate_penalty += y_gap * 180000.0
                     if y_gap > 0.0:
@@ -2184,10 +2187,13 @@ if NUMBA_AVAILABLE:
             # Soft pressure (on top of the hard existence check above): a
             # return-to-L0 toggle that exists but isn't on a thumb key still
             # forces guesswork to find the way back. access_layout already
-            # nudges access keys toward thumbs in general; this adds a strong,
-            # L0-return-specific push since that key is needed most often.
+            # nudges access keys toward thumbs in general, but that generic
+            # pull is far too weak to outcompete ordinary high-value shortcuts
+            # (and other layer-access keys) contesting the same thumb slots --
+            # this is a strong, L0-return-specific push since that key is
+            # needed the most, and most urgently, of any access key.
             if layer_has_return_toggle[lx] and not layer_return_toggle_thumb[lx]:
-                access_layout += 6000.0
+                access_layout += 500000.0
 
         # mouse_hold_position_conflict: @L_mouse:hold key on another layer at same physical (x,y) as a mouse button on natural_mouse_layer.
         # Mouse buttons own their positions; access keys must not overlap them.
