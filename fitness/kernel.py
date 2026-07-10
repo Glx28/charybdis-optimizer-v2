@@ -1900,16 +1900,21 @@ if NUMBA_AVAILABLE:
                 dist12 = math.sqrt(dx * dx + dy * dy)
                 if dx <= 0.0:
                     candidate_penalty += 150000.0 + (1.0 - dx) * 1200.0
-                candidate_penalty += dist12 * 250.0
-                candidate_penalty += dy * 800.0
+                # These weights must stay comparable to the other per-button
+                # ideal-position terms below (28000-65000) that live in the
+                # same candidate_penalty sum -- a gap that only costs a few
+                # hundred points is statistically invisible next to terms in
+                # the tens of thousands, no matter how many generations run.
+                candidate_penalty += dist12 * 25000.0
+                candidate_penalty += dy * 30000.0
             if mouse_button_right[layer, 4] > 0 and mouse_button_right[layer, 5] > 0:
                 dx = mouse_button_x[layer, 5] - mouse_button_x[layer, 4]
                 dy = abs(mouse_button_y[layer, 5] - mouse_button_y[layer, 4])
                 dist45 = math.sqrt(dx * dx + dy * dy)
                 if dx <= 0.0:
                     candidate_penalty += 100000.0 + (1.0 - dx) * 800.0
-                candidate_penalty += dist45 * 180.0
-                candidate_penalty += dy * 500.0
+                candidate_penalty += dist45 * 18000.0
+                candidate_penalty += dy * 20000.0
             # Prefer primary mouse buttons on the home row, with MB2 weighted
             # above MB3/MB4/MB5 because right-click is a high-value action.
             # Both index-home and pinky-home can have eff=0; x/y penalties
@@ -2186,14 +2191,13 @@ if NUMBA_AVAILABLE:
                 toggle_back_to_l0 += 1.0
             # Soft pressure (on top of the hard existence check above): a
             # return-to-L0 toggle that exists but isn't on a thumb key still
-            # forces guesswork to find the way back. access_layout already
-            # nudges access keys toward thumbs in general, but that generic
-            # pull is far too weak to outcompete ordinary high-value shortcuts
-            # (and other layer-access keys) contesting the same thumb slots --
-            # this is a strong, L0-return-specific push since that key is
-            # needed the most, and most urgently, of any access key.
+            # forces guesswork to find the way back. access_layout's own
+            # sub_weight (5000) is 100x smaller than dynamic_mouse_layer's
+            # (500000), so this raw addition must be scaled up to match --
+            # 1e7 raw * 5000 sub_weight = 5e10, landing in the same typical
+            # swing range as dynamic_mouse_layer instead of well below it.
             if layer_has_return_toggle[lx] and not layer_return_toggle_thumb[lx]:
-                access_layout += 500000.0
+                access_layout += 10000000.0
 
         # mouse_hold_position_conflict: @L_mouse:hold key on another layer at same physical (x,y) as a mouse button on natural_mouse_layer.
         # Mouse buttons own their positions; access keys must not overlap them.

@@ -1664,16 +1664,21 @@ __device__ void evaluate_single(
             float dy = fabsf(s->mouse_button_y[layer][2] - s->mouse_button_y[layer][1]);
             float dist12 = sqrtf(dx * dx + dy * dy);
             if (dx <= 0.0f) candidate_penalty += 150000.0f + (1.0f - dx) * 1200.0f;
-            candidate_penalty += dist12 * 250.0f;
-            candidate_penalty += dy * 800.0f;
+            // These weights must stay comparable to the other per-button
+            // ideal-position terms below (28000-65000) in the same
+            // candidate_penalty sum -- a gap costing only a few hundred
+            // points is statistically invisible next to tens-of-thousands
+            // terms, no matter how many generations run.
+            candidate_penalty += dist12 * 25000.0f;
+            candidate_penalty += dy * 30000.0f;
         }
         if (s->mouse_button_right[layer][4] > 0 && s->mouse_button_right[layer][5] > 0) {
             float dx = s->mouse_button_x[layer][5] - s->mouse_button_x[layer][4];
             float dy = fabsf(s->mouse_button_y[layer][5] - s->mouse_button_y[layer][4]);
             float dist45 = sqrtf(dx * dx + dy * dy);
             if (dx <= 0.0f) candidate_penalty += 100000.0f + (1.0f - dx) * 800.0f;
-            candidate_penalty += dist45 * 180.0f;
-            candidate_penalty += dy * 500.0f;
+            candidate_penalty += dist45 * 18000.0f;
+            candidate_penalty += dy * 20000.0f;
         }
         if (s->mouse_button_right[layer][1] > 0 && s->mouse_button_right_thumb[layer][1] == 0) {
             candidate_penalty += fabsf(s->mouse_button_x[layer][1] - 8.0f) * 28000.0f;
@@ -1942,11 +1947,13 @@ __device__ void evaluate_single(
         }
         // Soft pressure on top of the hard existence check above: a
         // return-to-L0 toggle that exists but isn't on a thumb key still
-        // forces guesswork to find the way back. Needs to be strong to
-        // outcompete ordinary high-value shortcuts and other layer-access
-        // keys contesting the same thumb slots.
+        // forces guesswork to find the way back. access_layout's own
+        // sub_weight (5000) is 100x smaller than dynamic_mouse_layer's
+        // (500000), so this raw addition must be scaled up to match --
+        // 1e7 raw * 5000 sub_weight = 5e10, landing in the same typical
+        // swing range as dynamic_mouse_layer instead of well below it.
         if (s->layer_has_return_toggle[lx] && !s->layer_return_toggle_thumb[lx]) {
-            access_layout += 500000.0f;
+            access_layout += 10000000.0f;
         }
     }
 

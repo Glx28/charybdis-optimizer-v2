@@ -2443,12 +2443,15 @@ class TestEvaluator(unittest.TestCase):
             # baseline and break the "valid beats broken" comparisons below.
             Position(3, 3, 8.0, 2.0, "right", 1, 0.0),
             Position(4, 3, 9.0, 2.0, "right", 1, 0.0),
-            Position(5, 3, 10.0, 2.0, "right", 2, 0.0),
-            Position(6, 3, 11.0, 2.0, "right", 3, 0.0),
-            Position(7, 3, 12.0, 2.0, "right", 4, 0.0),
+            # MB3/MB4/MB5 and Scroll ideal x-targets: MB3=11, MB4=12, MB5=13,
+            # Scroll=10 -- Scroll's ideal sits one slot right of MB2 (not on
+            # top of it), so MB1(x8)/MB2(x9) can land adjacent.
+            Position(5, 3, 11.0, 2.0, "right", 2, 0.0),
+            Position(6, 3, 12.0, 2.0, "right", 3, 0.0),
+            Position(7, 3, 13.0, 2.0, "right", 4, 0.0),
             Position(8, 3, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
-            Position(9, 3, 9.0, 2.0, "right", 1, 0.0),
-            Position(10, 3, 13.0, 1.0, "right", 4, 0.0),
+            Position(9, 3, 10.0, 2.0, "right", 1, 0.0),
+            Position(10, 3, 14.0, 1.0, "right", 4, 0.0),
         )
         shortcuts = (
             Shortcut(
