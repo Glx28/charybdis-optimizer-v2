@@ -3656,6 +3656,54 @@ class TestSwapMutationNumba(unittest.TestCase):
         layout = Layout(genome, positions, shortcuts, frozen)
         return layout
 
+    def test_effort_swap_can_fix_same_effort_mouse_button_misplacement(self):
+        # Regression test: MB1 and MB3 can both sit at effort=0.0 while MB3
+        # squats on MB1's ideal slot (a real pattern observed in an actual
+        # checkpoint). Before this fix, _effort_swap's cost was pure
+        # effort*importance, so two effort-tied mouse buttons produced zero
+        # gradient and this misplacement could never be corrected -- no
+        # matter how many generations ran. Now cost also includes each
+        # button's ideal-position penalty, and lower_mask has an equal-effort
+        # fallback for mouse buttons, so this swap should become reachable.
+        positions = tuple(
+            Position(i, 3, float(8 + i), 2.0, "right", 1, 0.0) for i in range(4)
+        ) + (Position(4, 3, 20.0, 5.0, "right", 4, 1.0),)
+        shortcuts = tuple([
+            Shortcut(0, "MB1", "Click", "Mouse", 20.0, "mouse"),
+            Shortcut(1, "MB2", "Click", "Mouse", 15.0, "mouse"),
+            Shortcut(2, "MB3", "Click", "Mouse", 8.0, "mouse"),
+            Shortcut(3, "Ctrl+A", "Select All", "Editor", 5.0, "editing"),
+        ])
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        # idx0=x8 (MB1's ideal) holds MB3; idx1=x9 (MB2's ideal) holds MB1;
+        # idx2=x10 holds MB2; idx3=x11 (MB3's ideal) stays empty; idx4 is an
+        # unrelated filler position so the duplicate-candidate pool isn't empty.
+        base_genome = np.array([2, 0, 1, -1, 3], dtype=np.int32)
+        layout = Layout(base_genome.copy(), positions, shortcuts, frozen)
+
+        mutation = SwapMutation(
+            prob=0.0,
+            frozen_mask=layout.frozen_mask,
+            layout=layout,
+            mouse_workflow_prob=0.0,
+            l7_access_prob=0.0,
+            group_overwrite_prob=0.0,
+            optional_arrow_drop_prob=0.0,
+            bulk_assign_prob=0.0,
+            cluster_app_prob=0.0,
+            random_assign_prob=0.0,
+            effort_swap_prob=1.0,
+            smart_duplicate_prob=0.0,
+        )
+
+        fixed = False
+        for _ in range(300):
+            genome = base_genome.copy()
+            if mutation._effort_swap(genome) and genome[0] == 0:
+                fixed = True
+                break
+        self.assertTrue(fixed, "effort_swap never moved MB1 onto its ideal slot despite an effort tie with MB3")
+
     def test_smart_duplicate_pool_excludes_mouse_buttons(self):
         """Generic duplicate spawning must not scatter mouse buttons across layers."""
         positions = tuple(
@@ -3806,6 +3854,8 @@ class TestSwapMutationNumba(unittest.TestCase):
             mutation._pos_hand_arr,
             mutation._pos_is_thumb_arr,
             mutation._pos_effort_arr,
+            mutation._pos_x,
+            mutation._pos_y,
             mutation._sid_importance_arr,
             mutation._access_target_lut,
             mutation._access_is_mo_lut,
@@ -3831,6 +3881,8 @@ class TestSwapMutationNumba(unittest.TestCase):
             mutation._pos_hand_arr,
             mutation._pos_is_thumb_arr,
             mutation._pos_effort_arr,
+            mutation._pos_x,
+            mutation._pos_y,
             mutation._sid_importance_arr,
             mutation._access_target_lut,
             mutation._access_is_mo_lut,

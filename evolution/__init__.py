@@ -347,6 +347,21 @@ if NUMBA_AVAILABLE:
         return best_layer
 
     @njit(cache=True)
+    def _numba_mouse_ideal_penalty(button, x, y):
+        # Mirrors fitness/kernel.py's MB1/MB2/MB3 ideal-position weights
+        # (dynamic_mouse_layer). Used only to break effort-ties in
+        # _numba_effort_swap -- MB1 and MB3 (and MB2) can share effort=0.0,
+        # which leaves the effort-only swap criterion with zero gradient to
+        # ever notice one is squatting on another's ideal slot.
+        if button == 1:
+            return abs(x - 8.0) * 28000.0 + abs(y - 2.0) * 30000.0
+        if button == 2:
+            return abs(x - 9.0) * 32000.0 + abs(y - 2.0) * 30000.0
+        if button == 3:
+            return abs(x - 11.0) * 6000.0 + abs(y - 2.0) * 5000.0
+        return -1.0
+
+    @njit(cache=True)
     def _numba_layer_sid_count(genome, layer_mutable_flat, layer_mutable_start, layer, sid, exclude_a, exclude_b):
         # Count how many mutable positions on `layer` already hold `sid`,
         # excluding the two positions involved in the swap under consideration
@@ -406,7 +421,7 @@ if NUMBA_AVAILABLE:
 
     @njit(cache=True)
     def _numba_effort_swap(genome, state, mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr,
-                           pos_effort_arr, sid_importance_arr, is_group_sid_lut, mouse_button_sids,
+                           pos_effort_arr, pos_x_arr, pos_y_arr, sid_importance_arr, is_group_sid_lut, mouse_button_sids,
                            n_shortcuts, layer_mutable_flat, layer_mutable_start):
         n_mut = len(mutable_arr)
         if n_mut < 2 or len(sid_importance_arr) == 0:
@@ -416,6 +431,7 @@ if NUMBA_AVAILABLE:
 
         valid_positions = np.empty(n_mut, dtype=np.int32)
         valid_costs = np.empty(n_mut, dtype=np.float32)
+        valid_mouse_button = np.full(n_mut, -1, dtype=np.int32)
         n_valid = 0
         for k in range(n_mut):
             pos = mutable_arr[k]
@@ -425,16 +441,26 @@ if NUMBA_AVAILABLE:
             if is_group_sid_lut[sid]:
                 continue
             imp = sid_importance_arr[sid]
+            button = -1
             if mouse_layer >= 0:
-                is_mouse = False
                 for b in range(1, 6):
                     if mouse_button_sids[b] == sid:
-                        is_mouse = True
+                        button = b
                         break
-                if is_mouse and pos_layer_arr[pos] == mouse_layer:
+                if button > 0 and pos_layer_arr[pos] == mouse_layer:
                     imp *= 3.0
             valid_positions[n_valid] = pos
-            valid_costs[n_valid] = pos_effort_arr[pos] * imp
+            cost = pos_effort_arr[pos] * imp
+            # MB1/MB2/MB3 can sit at effort=0.0 while badly misplaced relative
+            # to their ideal coordinate (e.g. squatting on another mouse
+            # button's ideal slot) -- effort*importance alone is then always
+            # 0, so this position could never even be considered as a swap
+            # source. Add its ideal-position penalty so misplacement is
+            # visible to the same top-k selection used for everything else.
+            if button >= 1 and button <= 3 and pos_layer_arr[pos] == mouse_layer:
+                cost += _numba_mouse_ideal_penalty(button, pos_x_arr[pos], pos_y_arr[pos])
+                valid_mouse_button[n_valid] = button
+            valid_costs[n_valid] = cost
             n_valid += 1
 
         if n_valid == 0:
@@ -446,7 +472,8 @@ if NUMBA_AVAILABLE:
         chosen_i = top_idx[_rand_int(state, top_k)]
         src_pos = valid_positions[chosen_i]
         src_effort = pos_effort_arr[src_pos]
-        if src_effort <= 0.0:
+        src_button = valid_mouse_button[chosen_i]
+        if src_button < 1 and src_effort <= 0.0:
             return False
 
         n_lower = 0
@@ -457,6 +484,28 @@ if NUMBA_AVAILABLE:
             if pos_effort_arr[valid_positions[k]] < src_effort:
                 lower_positions[n_lower] = valid_positions[k]
                 n_lower += 1
+
+        if n_lower == 0 and src_button >= 1:
+            # Effort-tie fallback, mouse buttons only: no strictly-lower-effort
+            # target exists (src is often already at effort=0.0, the
+            # minimum), so look for an equal-effort position whose swap would
+            # reduce this button's ideal-position penalty instead. Without
+            # this, a misplaced mouse button stuck at effort=0.0 can never be
+            # fixed by this operator no matter how many generations run.
+            src_penalty = _numba_mouse_ideal_penalty(src_button, pos_x_arr[src_pos], pos_y_arr[src_pos])
+            for k in range(n_valid):
+                if k == chosen_i:
+                    continue
+                cand_pos = valid_positions[k]
+                if pos_effort_arr[cand_pos] != src_effort:
+                    continue
+                cand_penalty = _numba_mouse_ideal_penalty(src_button, pos_x_arr[cand_pos], pos_y_arr[cand_pos])
+                if cand_penalty < src_penalty:
+                    lower_positions[n_lower] = cand_pos
+                    n_lower += 1
+        elif n_lower == 0:
+            return False
+
         if n_lower == 0:
             return False
 
@@ -754,6 +803,7 @@ if NUMBA_AVAILABLE:
     @njit(parallel=True, cache=True)
     def _mutate_batch_numba(X, handled, probs, seeds,
                             mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr, pos_effort_arr,
+                            pos_x_arr, pos_y_arr,
                             sid_importance_arr, access_target_lut, access_is_mo_lut, mo_access_target_lut,
                             is_group_sid_lut, is_important_sid_lut,
                             return_toggle_sid,
@@ -780,7 +830,7 @@ if NUMBA_AVAILABLE:
 
             if _rand_float(state) < probs[1]:
                 if _numba_effort_swap(X[i], state, mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr,
-                                      pos_effort_arr, sid_importance_arr, is_group_sid_lut, mouse_button_sids,
+                                      pos_effort_arr, pos_x_arr, pos_y_arr, sid_importance_arr, is_group_sid_lut, mouse_button_sids,
                                       n_shortcuts, layer_mutable_flat, layer_mutable_start):
                     handled[i] = True
                     continue
@@ -2644,6 +2694,22 @@ class SwapMutation(Mutation):
             return True
         return False
 
+    @staticmethod
+    def _mouse_ideal_penalty(button, x, y):
+        """Mirrors fitness/kernel.py's MB1/MB2/MB3 ideal-position weights.
+
+        Used only to break effort-ties in _effort_swap -- MB1 and MB3 (and MB2)
+        can share effort=0.0, which leaves the effort-only swap criterion with
+        zero gradient to ever notice one is squatting on another's ideal slot.
+        """
+        if button == 1:
+            return abs(x - 8.0) * 28000.0 + abs(y - 2.0) * 30000.0
+        if button == 2:
+            return abs(x - 9.0) * 32000.0 + abs(y - 2.0) * 30000.0
+        if button == 3:
+            return abs(x - 11.0) * 6000.0 + abs(y - 2.0) * 5000.0
+        return -1.0
+
     def _detect_mouse_layer(self, genome):
         """Return the candidate mouse layer index (or -1) by replicating the kernel pre-scan.
 
@@ -2736,17 +2802,36 @@ class SwapMutation(Mutation):
         pos_efforts = self._pos_effort_arr[valid_positions]
 
         # Apply dynamic mouse-layer 3× boost so MB1 on the mouse layer is
-        # correctly identified as the highest-cost target.
+        # correctly identified as the highest-cost target. Also track which
+        # button (1/2/3) each valid position holds, and add its ideal-position
+        # penalty to cost: MB1/MB2/MB3 can sit at effort=0.0 while badly
+        # misplaced (e.g. squatting on another button's ideal slot), and
+        # effort*importance alone is then always 0 -- this position could
+        # never even be considered as a swap source without it.
         sid_imps = self._sid_importance_arr[valid_sids].copy()
+        button_of = np.full(len(valid_positions), -1, dtype=np.int32)
+        mouse_layer = -1
         if self.mouse_button_sids:
             mouse_layer = self._detect_mouse_layer(genome)
             if mouse_layer >= 0:
+                sid_to_button = {sid: b for b, sid in self.mouse_button_sids.items()}
                 mouse_sids = np.fromiter(self.mouse_button_sids.values(), dtype=np.int32)
                 valid_layers = self._pos_layer_arr[valid_positions]
                 boost_mask = np.isin(valid_sids, mouse_sids) & (valid_layers == mouse_layer)
                 sid_imps[boost_mask] *= 3.0
+                for k in np.nonzero(boost_mask)[0]:
+                    b = sid_to_button.get(int(valid_sids[k]), -1)
+                    if 1 <= b <= 3:
+                        button_of[k] = b
 
         costs = pos_efforts * sid_imps
+        ideal_mask = button_of >= 1
+        if ideal_mask.any():
+            idx = np.nonzero(ideal_mask)[0]
+            xs = self._pos_x[valid_positions[idx]]
+            ys = self._pos_y[valid_positions[idx]]
+            for j, k in enumerate(idx):
+                costs[k] += self._mouse_ideal_penalty(int(button_of[k]), float(xs[j]), float(ys[j]))
 
         # Pick one of the top-5 highest-cost shortcuts at random (not deterministic max,
         # which would always target the same shortcut and prevent exploration).
@@ -2755,8 +2840,9 @@ class SwapMutation(Mutation):
         chosen_i = int(top_idx[random.randrange(top_k)])
         src_pos = int(valid_positions[chosen_i])
         src_effort = float(pos_efforts[chosen_i])
+        src_button = int(button_of[chosen_i])
 
-        if src_effort <= 0.0:
+        if src_button < 1 and src_effort <= 0.0:
             return False
 
         # Target: prefer same-layer lower-effort positions to preserve adjacency clusters.
@@ -2764,6 +2850,23 @@ class SwapMutation(Mutation):
         lower_mask = pos_efforts < src_effort
         lower_mask[chosen_i] = False
         candidates = valid_positions[lower_mask]
+
+        if len(candidates) == 0 and src_button >= 1:
+            # Effort-tie fallback, mouse buttons only: no strictly-lower-effort
+            # target exists (src is often already at effort=0.0, the minimum),
+            # so look for an equal-effort position whose swap would reduce
+            # this button's ideal-position penalty instead.
+            src_penalty = self._mouse_ideal_penalty(src_button, float(self._pos_x[src_pos]), float(self._pos_y[src_pos]))
+            tie_mask = (pos_efforts == src_effort)
+            tie_mask[chosen_i] = False
+            tie_positions = valid_positions[tie_mask]
+            if len(tie_positions) > 0:
+                cand_penalties = np.array(
+                    [self._mouse_ideal_penalty(src_button, float(self._pos_x[p]), float(self._pos_y[p])) for p in tie_positions],
+                    dtype=np.float64,
+                )
+                candidates = tie_positions[cand_penalties < src_penalty]
+
         if len(candidates) == 0:
             return False
 
@@ -3030,6 +3133,8 @@ class SwapMutation(Mutation):
                 self._pos_hand_arr,
                 self._pos_is_thumb_arr,
                 self._pos_effort_arr,
+                self._pos_x,
+                self._pos_y,
                 self._sid_importance_arr,
                 self._access_target_lut,
                 self._access_is_mo_lut,
