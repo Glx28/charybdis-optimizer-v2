@@ -64,6 +64,7 @@ struct PerThreadScratch {
     int l0_direct_toggle_count[MAX_LAYERS];
     float l0_direct_access_cost[MAX_LAYERS];
     bool layer_has_return_toggle[MAX_LAYERS];
+    bool layer_return_toggle_thumb[MAX_LAYERS];
     bool layer_has_mutable[MAX_LAYERS];
     bool direct_l0_thumb_access[MAX_LAYERS];
     bool safe_momentary_access[MAX_LAYERS];
@@ -223,6 +224,7 @@ __device__ void evaluate_single(
         s->l0_direct_toggle_count[l] = 0;
         s->l0_direct_access_cost[l] = 0.0f;
         s->layer_has_return_toggle[l] = false;
+        s->layer_return_toggle_thumb[l] = false;
         s->layer_has_mutable[l] = false;
         s->direct_l0_thumb_access[l] = false;
         s->safe_momentary_access[l] = false;
@@ -342,6 +344,9 @@ __device__ void evaluate_single(
             s->direct_toggle_access[target] = true;
             if (target == 0) {
                 s->layer_has_return_toggle[source] = true;
+                if (pos_is_thumb[i]) {
+                    s->layer_return_toggle_thumb[source] = true;
+                }
             }
         }
 
@@ -1649,11 +1654,16 @@ __device__ void evaluate_single(
                 candidate_penalty += 20000.0f;
             }
         }
+        // Mouse inner groups: within the settled dynamic mouse layer, MB1/MB2
+        // and MB4/MB5 each form an inner group with a firm left-to-right
+        // order (MB1 left of MB2, MB4 left of MB5). Still soft scoring
+        // pressure, not a hard constraint or fixed coordinate -- only the
+        // relative order and same-row proximity are enforced.
         if (s->mouse_button_right[layer][1] > 0 && s->mouse_button_right[layer][2] > 0) {
             float dx = s->mouse_button_x[layer][2] - s->mouse_button_x[layer][1];
             float dy = fabsf(s->mouse_button_y[layer][2] - s->mouse_button_y[layer][1]);
             float dist12 = sqrtf(dx * dx + dy * dy);
-            if (dx <= 0.0f) candidate_penalty += (1.0f - dx) * 1200.0f;
+            if (dx <= 0.0f) candidate_penalty += 150000.0f + (1.0f - dx) * 1200.0f;
             candidate_penalty += dist12 * 250.0f;
             candidate_penalty += dy * 800.0f;
         }
@@ -1661,7 +1671,7 @@ __device__ void evaluate_single(
             float dx = s->mouse_button_x[layer][5] - s->mouse_button_x[layer][4];
             float dy = fabsf(s->mouse_button_y[layer][5] - s->mouse_button_y[layer][4]);
             float dist45 = sqrtf(dx * dx + dy * dy);
-            if (dx <= 0.0f) candidate_penalty += (1.0f - dx) * 800.0f;
+            if (dx <= 0.0f) candidate_penalty += 100000.0f + (1.0f - dx) * 800.0f;
             candidate_penalty += dist45 * 180.0f;
             candidate_penalty += dy * 500.0f;
         }
@@ -1926,6 +1936,12 @@ __device__ void evaluate_single(
     for (int lx = 1; lx < MAX_LAYERS; lx++) {
         if (s->direct_toggle_access[lx] && !s->layer_has_return_toggle[lx] && s->layer_has_mutable[lx]) {
             toggle_back_to_l0 += 1.0f;
+        }
+        // Soft pressure on top of the hard existence check above: a
+        // return-to-L0 toggle that exists but isn't on a thumb key still
+        // forces guesswork to find the way back.
+        if (s->layer_has_return_toggle[lx] && !s->layer_return_toggle_thumb[lx]) {
+            access_layout += 6000.0f;
         }
     }
 

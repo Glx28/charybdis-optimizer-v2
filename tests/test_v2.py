@@ -2124,6 +2124,105 @@ class TestEvaluator(unittest.TestCase):
             evaluator.evaluate(scroll_worse_than_mb3).objectives[2],
         )
 
+    def test_dynamic_mouse_layer_inner_group_order_enforced(self):
+        # Reuses the same "complete AND optimally-placed" natural-mouse-layer
+        # fixture as test_dynamic_mouse_layer_penalty_rewards_natural_complete_layer
+        # so natural_mouse_layer actually settles on layer 3 -- otherwise the
+        # min()-across-candidate-layers baseline masks the pair-order penalty.
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
+            Position(1, 0, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
+            Position(2, 3, 2.0, 1.0, "left", 1, 1.0),
+            Position(3, 3, 8.0, 2.0, "right", 1, 0.0),
+            Position(4, 3, 9.0, 2.0, "right", 1, 0.0),
+            Position(5, 3, 10.0, 2.0, "right", 2, 0.0),
+            Position(6, 3, 11.0, 2.0, "right", 3, 0.0),
+            Position(7, 3, 12.0, 2.0, "right", 4, 0.0),
+            Position(8, 3, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
+            Position(9, 3, 9.0, 2.0, "right", 1, 0.0),
+        )
+        shortcuts = (
+            Shortcut(
+                0, "@access:L0->L3:hold:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=True,
+            ),
+            Shortcut(
+                1, "@access:L0->L3:toggle:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=3,
+                access_is_momentary=False,
+            ),
+            Shortcut(2, "MB1", "Click", "Mouse", 20.0, "mouse"),
+            Shortcut(3, "MB2", "Click", "Mouse", 15.0, "mouse"),
+            Shortcut(4, "MB3", "Click", "Mouse", 10.0, "mouse"),
+            Shortcut(5, "MB4", "Click", "Mouse", 8.0, "mouse"),
+            Shortcut(6, "MB5", "Click", "Mouse", 8.0, "mouse"),
+            Shortcut(
+                7, "@access:L3->L6:hold:Scroll", "Scroll", "Layer Access", 12.0,
+                "layer_access", is_layer_access=True, access_target_layer=6,
+                access_is_momentary=True,
+            ),
+        )
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        # MB1 left of MB2 (correct inner-group order) vs MB2 left of MB1
+        # (reversed) with every other placement identical.
+        correct_pair12 = Layout(
+            np.array([0, 1, -1, 2, 3, 4, 5, 6, -1, 7], dtype=np.int32), positions, shortcuts, frozen,
+        )
+        reversed_pair12 = Layout(
+            np.array([0, 1, -1, 3, 2, 4, 5, 6, -1, 7], dtype=np.int32), positions, shortcuts, frozen,
+        )
+        weights = {
+            "effort": 0.0, "adjacency": 0.0, "finger_balance": 0.0, "same_finger": 0.0,
+            "violations": 1.0, "workflow_coherence": 0.0, "app_coherence": 0.0,
+            "trackball_proximity": 0.0, "familiarity": 0.0, "layer_specialization": 0.0,
+        }
+        vweights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
+        vweights["dynamic_mouse_layer"] = 1.0
+        evaluator = FitnessEvaluator(weights=weights, reference_layout=correct_pair12, violation_weights=vweights,
+                                     hard_constraints=[], missing_important_threshold=99.0)
+        correct_score = evaluator.evaluate(correct_pair12).objectives[2]
+        reversed_score = evaluator.evaluate(reversed_pair12).objectives[2]
+        self.assertGreater(reversed_score, correct_score + 100000.0)
+
+        # MB4 left of MB5 (correct) vs MB5 left of MB4 (reversed), holding
+        # MB1/MB2 order fixed and identical across both variants.
+        correct_pair45 = Layout(
+            np.array([0, 1, -1, 2, 3, 4, 5, 6, -1, 7], dtype=np.int32), positions, shortcuts, frozen,
+        )
+        reversed_pair45 = Layout(
+            np.array([0, 1, -1, 2, 3, 4, 6, 5, -1, 7], dtype=np.int32), positions, shortcuts, frozen,
+        )
+        correct45_score = evaluator.evaluate(correct_pair45).objectives[2]
+        reversed45_score = evaluator.evaluate(reversed_pair45).objectives[2]
+        self.assertGreater(reversed45_score, correct45_score + 50000.0)
+
+    def test_access_layout_penalizes_non_thumb_return_to_l0_toggle(self):
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.3, is_thumb=True),
+            Position(1, 1, 8.0, 2.0, "right", 1, 0.0),
+            Position(2, 1, 5.0, 4.0, "left", 0, 0.4, is_thumb=True),
+        )
+        shortcuts = (
+            Shortcut(0, "@access:L0->L1:hold:One", "One", "Layer Access", 12.0,
+                     "layer_access", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
+            Shortcut(1, "@access:L1->L0:toggle:Back", "Back", "Layer Access", 12.0,
+                     "layer_access", is_layer_access=True, access_target_layer=0, access_is_momentary=False),
+        )
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        non_thumb_return = Layout(np.array([0, 1, -1], dtype=np.int32), positions, shortcuts, frozen)
+        thumb_return = Layout(np.array([0, -1, 1], dtype=np.int32), positions, shortcuts, frozen)
+        weights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["weights"]}
+        weights["violations"] = 1.0
+        vweights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
+        vweights["access_layout"] = 1.0
+        evaluator = FitnessEvaluator(weights=weights, reference_layout=thumb_return, violation_weights=vweights,
+                                     hard_constraints=[], missing_important_threshold=99.0)
+        self.assertGreater(
+            evaluator.evaluate(non_thumb_return).objectives[2],
+            evaluator.evaluate(thumb_return).objectives[2] + 5000.0,
+        )
+
     def test_access_layout_penalizes_redundant_l0_access_and_nested_depth(self):
         positions = (
             Position(0, 0, 3.0, 4.0, "left", 0, 0.3, is_thumb=True),

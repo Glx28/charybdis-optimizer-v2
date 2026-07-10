@@ -138,9 +138,13 @@ shortcut duplicates. Mouse buttons are forbidden on right-thumb positions on
 every generated layer, not only on the dynamic mouse layer. The dynamic mouse
 layer receives the primary mouse-workflow bonus. Within that layer, MB2 is
 more valuable than MB3/MB4/MB5 and should win better placement when usage does
-not prove otherwise. MB1 is slightly preferred left of and close to MB2; MB4 is
-slightly preferred left of and close to MB5; each pair gets a small same-row
-bonus. These are soft relative biases, not fixed coordinates.
+not prove otherwise. MB1/MB2 and MB4/MB5 each form an inner group of the mouse
+group, scoped to the settled dynamic mouse layer only: MB1 must sit left of
+MB2, and MB4 must sit left of MB5, with a same-row proximity bonus for each
+pair. Left-right order is firmly enforced (a large penalty applies when the
+order is reversed), but this remains soft scoring pressure, not a hard
+constraint or fixed coordinates — a strong enough workflow reason can still
+displace it.
 
 Once a natural generated mouse layer exists, it should dominate mouse
 interactions. Mouse buttons on other layers receive lower value and extra
@@ -202,6 +206,15 @@ the same slot empty would cost. This is still soft pressure, not a hard
 constraint, matching how mouse-layer effort quality is handled — but it
 should be strong enough that a mutable L0 position sitting empty for
 thousands of generations should not happen.
+
+A layer's return-to-L0 toggle existing at all is a hard constraint
+(`toggle_back_to_l0`), but existing is not enough: if that toggle is placed
+away from the thumb area, the user has to hunt across the whole layer to find
+the way back. Every layer with a toggle back to L0 gets extra soft scoring
+pressure toward putting at least one such toggle on a thumb key, on top of the
+general access-layout thumb preference. This is soft pressure, not a hard
+constraint — a layer can still legally keep its return toggle elsewhere, it
+just competes against this pressure like any other placement choice.
 
 Thumb clearance is strict and dynamic. If a layer is accessed by a momentary
 thumb key from one side, that same side's thumb area on the target layer is

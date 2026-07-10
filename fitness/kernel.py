@@ -631,6 +631,7 @@ if NUMBA_AVAILABLE:
         l0_direct_toggle_count = np.zeros(32, dtype=np.int32)
         l0_direct_access_cost = np.zeros(32, dtype=np.float32)
         layer_has_return_toggle = np.zeros(32, dtype=np.bool_)
+        layer_return_toggle_thumb = np.zeros(32, dtype=np.bool_)
         layer_has_mutable = np.zeros(32, dtype=np.bool_)
         direct_l0_thumb_access = np.zeros(32, dtype=np.bool_)
         safe_momentary_access = np.zeros(32, dtype=np.bool_)
@@ -702,9 +703,14 @@ if NUMBA_AVAILABLE:
                         direct_left_thumb_momentary[target] = True
             else:
                 direct_toggle_access[target] = True
-                # Track return-to-L0 toggles: records which source layers have one
+                # Track return-to-L0 toggles: records which source layers have one,
+                # and separately whether at least one such toggle sits in the
+                # thumb area -- a return toggle buried among non-thumb keys forces
+                # the user to hunt/guess for the way back to L0.
                 if target == 0:
                     layer_has_return_toggle[source] = True
+                    if pos_is_thumb[i]:
+                        layer_return_toggle_thumb[source] = True
             cost = pos_effort[i]
             if pos_is_thumb[i]:
                 cost *= 0.45
@@ -1883,12 +1889,17 @@ if NUMBA_AVAILABLE:
                 candidate_penalty += mouse_button_effort[layer, button] * imp_scale * usage_scale * 30.0 * button_weight
                 if mouse_button_right_thumb[layer, button] > 0:
                     candidate_penalty += 20000.0
+            # Mouse inner groups: within the settled dynamic mouse layer, MB1/MB2
+            # and MB4/MB5 each form an inner group with a firm left-to-right
+            # order (MB1 left of MB2, MB4 left of MB5). This is still soft
+            # scoring pressure, not a hard constraint or fixed coordinate --
+            # only the relative order and same-row proximity are enforced.
             if mouse_button_right[layer, 1] > 0 and mouse_button_right[layer, 2] > 0:
                 dx = mouse_button_x[layer, 2] - mouse_button_x[layer, 1]
                 dy = abs(mouse_button_y[layer, 2] - mouse_button_y[layer, 1])
                 dist12 = math.sqrt(dx * dx + dy * dy)
                 if dx <= 0.0:
-                    candidate_penalty += (1.0 - dx) * 1200.0
+                    candidate_penalty += 150000.0 + (1.0 - dx) * 1200.0
                 candidate_penalty += dist12 * 250.0
                 candidate_penalty += dy * 800.0
             if mouse_button_right[layer, 4] > 0 and mouse_button_right[layer, 5] > 0:
@@ -1896,7 +1907,7 @@ if NUMBA_AVAILABLE:
                 dy = abs(mouse_button_y[layer, 5] - mouse_button_y[layer, 4])
                 dist45 = math.sqrt(dx * dx + dy * dy)
                 if dx <= 0.0:
-                    candidate_penalty += (1.0 - dx) * 800.0
+                    candidate_penalty += 100000.0 + (1.0 - dx) * 800.0
                 candidate_penalty += dist45 * 180.0
                 candidate_penalty += dy * 500.0
             # Prefer primary mouse buttons on the home row, with MB2 weighted
@@ -2170,6 +2181,13 @@ if NUMBA_AVAILABLE:
         for lx in range(1, 32):
             if direct_toggle_access[lx] and not layer_has_return_toggle[lx] and layer_has_mutable[lx]:
                 toggle_back_to_l0 += 1.0
+            # Soft pressure (on top of the hard existence check above): a
+            # return-to-L0 toggle that exists but isn't on a thumb key still
+            # forces guesswork to find the way back. access_layout already
+            # nudges access keys toward thumbs in general; this adds a strong,
+            # L0-return-specific push since that key is needed most often.
+            if layer_has_return_toggle[lx] and not layer_return_toggle_thumb[lx]:
+                access_layout += 6000.0
 
         # mouse_hold_position_conflict: @L_mouse:hold key on another layer at same physical (x,y) as a mouse button on natural_mouse_layer.
         # Mouse buttons own their positions; access keys must not overlap them.
