@@ -800,6 +800,147 @@ if NUMBA_AVAILABLE:
         genome[pool[_rand_int(state, n_pool)]] = return_toggle_sid
         return True
 
+    @njit(cache=True)
+    def _numba_repair_momentary_key_reuse(genome, state, pos_layer_arr, pos_physical_id_arr,
+                                          access_target_lut, access_is_mo_lut,
+                                          layer_mutable_flat, layer_mutable_start,
+                                          pos_is_thumb_arr, n_shortcuts):
+        """Mutation proposal (not post-hoc repair): relocate one momentary-hold
+        source off a physical key that currently jumps to different target
+        layers depending on which layer is active, matching fitness/kernel.py's
+        momentary_key_reuse scoring. Pure fitness pressure was empirically
+        confirmed (2026-07-11/12) to plateau on this configuration across
+        thousands of generations even at a strongly recalibrated weight,
+        because escaping it needs a coordinated single-generation move that
+        independent random mutation rarely produces. This proposes exactly
+        that move; scoring still decides whether it survives selection.
+        """
+        n_pos = len(genome)
+        max_phys = 0
+        for i in range(n_pos):
+            pid = pos_physical_id_arr[i]
+            if pid > max_phys:
+                max_phys = pid
+        n_phys = max_phys + 1
+
+        seen = np.zeros((n_phys, 32), dtype=np.bool_)
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_shortcuts or not access_is_mo_lut[sid]:
+                continue
+            tgt = access_target_lut[sid]
+            if tgt < 0 or tgt >= 32:
+                continue
+            src = pos_layer_arr[i]
+            if src < 0 or src >= 32 or src == tgt:
+                continue
+            seen[pos_physical_id_arr[i], tgt] = True
+
+        offenders = np.empty(n_phys, dtype=np.int32)
+        n_offenders = 0
+        for p in range(n_phys):
+            cnt = 0
+            for L in range(32):
+                if seen[p, L]:
+                    cnt += 1
+            if cnt > 1:
+                offenders[n_offenders] = p
+                n_offenders += 1
+        if n_offenders == 0:
+            return False
+
+        target_phys = offenders[_rand_int(state, n_offenders)]
+
+        cand_positions = np.empty(n_pos, dtype=np.int32)
+        cand_targets = np.empty(n_pos, dtype=np.int32)
+        n_cand = 0
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_shortcuts or not access_is_mo_lut[sid]:
+                continue
+            tgt = access_target_lut[sid]
+            if tgt < 0 or tgt >= 32:
+                continue
+            src = pos_layer_arr[i]
+            if src < 0 or src >= 32 or src == tgt:
+                continue
+            if pos_physical_id_arr[i] != target_phys:
+                continue
+            cand_positions[n_cand] = i
+            cand_targets[n_cand] = tgt
+            n_cand += 1
+        if n_cand < 2:
+            return False
+
+        # Keep whichever target already has the most placements on this key;
+        # relocate one of the minority-target sources instead.
+        best_target = cand_targets[0]
+        best_count = 0
+        for a in range(n_cand):
+            cnt = 0
+            for b in range(n_cand):
+                if cand_targets[b] == cand_targets[a]:
+                    cnt += 1
+            if cnt > best_count:
+                best_count = cnt
+                best_target = cand_targets[a]
+
+        movable = np.empty(n_cand, dtype=np.int32)
+        n_movable = 0
+        for a in range(n_cand):
+            if cand_targets[a] != best_target:
+                movable[n_movable] = a
+                n_movable += 1
+        if n_movable == 0:
+            return False
+
+        pick = movable[_rand_int(state, n_movable)]
+        move_pos = cand_positions[pick]
+        src_layer = pos_layer_arr[move_pos]
+
+        start = layer_mutable_start[src_layer]
+        end = layer_mutable_start[src_layer + 1] if src_layer + 1 < len(layer_mutable_start) else len(layer_mutable_flat)
+        if start >= end:
+            return False
+
+        n_te = 0
+        n_ae = 0
+        n_ap = 0
+        thumb_empty = np.empty(end - start, dtype=np.int32)
+        any_empty = np.empty(end - start, dtype=np.int32)
+        any_positions = np.empty(end - start, dtype=np.int32)
+        for p in range(start, end):
+            pos = layer_mutable_flat[p]
+            if pos == move_pos:
+                continue
+            any_positions[n_ap] = pos
+            n_ap += 1
+            if genome[pos] < 0:
+                any_empty[n_ae] = pos
+                n_ae += 1
+                if pos_is_thumb_arr[pos]:
+                    thumb_empty[n_te] = pos
+                    n_te += 1
+
+        if n_te > 0:
+            pool = thumb_empty
+            n_pool = n_te
+        elif n_ae > 0:
+            pool = any_empty
+            n_pool = n_ae
+        elif n_ap > 0:
+            pool = any_positions
+            n_pool = n_ap
+        else:
+            return False
+
+        dest = pool[_rand_int(state, n_pool)]
+        move_sid = genome[move_pos]
+        displaced = genome[dest]
+        genome[dest] = move_sid
+        genome[move_pos] = displaced
+        return True
+
     @njit(parallel=True, cache=True)
     def _mutate_batch_numba(X, handled, probs, seeds,
                             mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr, pos_effort_arr,
@@ -812,6 +953,7 @@ if NUMBA_AVAILABLE:
                             layer_mutable_flat, layer_mutable_start,
                             mouse_button_sids,
                             toggle_access_sids_arr,
+                            pos_physical_id_arr,
                             n_shortcuts):
         n = X.shape[0]
         for i in prange(n):
@@ -857,6 +999,14 @@ if NUMBA_AVAILABLE:
                 if _numba_repair_return_toggles(X[i], state, pos_layer_arr, access_target_lut, access_is_mo_lut,
                                                 layer_mutable_flat, layer_mutable_start, pos_is_thumb_arr,
                                                 return_toggle_sid, n_shortcuts):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[6]:
+                if _numba_repair_momentary_key_reuse(X[i], state, pos_layer_arr, pos_physical_id_arr,
+                                                     access_target_lut, access_is_mo_lut,
+                                                     layer_mutable_flat, layer_mutable_start,
+                                                     pos_is_thumb_arr, n_shortcuts):
                     handled[i] = True
                     continue
 
@@ -1724,6 +1874,13 @@ class SwapMutation(Mutation):
         self.access_thumb_bias_prob = 0.15
         self.return_toggle_repair_prob = 0.10
         self.toggle_own_layer_bias_prob = 0.12
+        # Repair-mutation for momentary_key_reuse (fitness/kernel.py): pure
+        # fitness pressure alone plateaued on this issue across thousands of
+        # real generations even at a strongly recalibrated weight (see
+        # AGENTS.md "Normal Run Length" section), so this proposes the
+        # coordinated relocation move directly; scoring still decides if it
+        # survives.
+        self.momentary_reuse_repair_prob = 0.10
         self.mutable_indices = np.where(~frozen_mask)[0] if frozen_mask is not None else None
         self.mutable_list = self.mutable_indices.tolist() if self.mutable_indices is not None else None
         self.group_sid_sets = []
@@ -1895,6 +2052,18 @@ class SwapMutation(Mutation):
         # App-cluster mutation: precompute app → sids and position x,y arrays
         self._pos_x = np.array([p.x for p in layout.positions], dtype=np.float32) if layout is not None else np.array([], dtype=np.float32)
         self._pos_y = np.array([p.y for p in layout.positions], dtype=np.float32) if layout is not None else np.array([], dtype=np.float32)
+        # Physical-key identity shared across layers, mirroring
+        # fitness/kernel.py precompute()'s pos_physical_id: two positions at
+        # the same rounded (x, y) on different layers are the same physical
+        # key. Used by the momentary-key-reuse repair mutation below.
+        self._pos_physical_id = np.zeros(len(layout.positions) if layout is not None else 0, dtype=np.int32)
+        if layout is not None:
+            _phys_coord_to_id: dict = {}
+            for _i, _p in enumerate(layout.positions):
+                _key = (round(_p.x, 3), round(_p.y, 3))
+                if _key not in _phys_coord_to_id:
+                    _phys_coord_to_id[_key] = len(_phys_coord_to_id)
+                self._pos_physical_id[_i] = _phys_coord_to_id[_key]
         self._app_sids: dict = {}
         if layout is not None and self.mutable_list:
             frozen_sids_set = {
@@ -3020,6 +3189,69 @@ class SwapMutation(Mutation):
         genome[int(random.choice(pool))] = ret_sid
         return True
 
+    def _repair_momentary_key_reuse(self, genome):
+        """Pure-Python fallback for _numba_repair_momentary_key_reuse (used only
+        when Numba is unavailable, e.g. CPU-only tests -- see AGENTS.md's GPU
+        Training Policy). Relocates one momentary-hold source off a physical
+        key that currently jumps to different target layers depending on
+        which layer is active, matching fitness/kernel.py's momentary_key_reuse
+        scoring.
+        """
+        genome_arr = np.asarray(genome, dtype=np.int32)
+        valid = (genome_arr >= 0) & (genome_arr < self.n_shortcuts)
+        if not valid.any():
+            return False
+        sids = genome_arr
+        is_mo = valid & self._access_is_mo_lut[sids]
+        tgts = self._access_target_lut[sids]
+        is_mo = is_mo & (tgts >= 0) & (tgts < 32) & (tgts != self._pos_layer_arr)
+        if not is_mo.any():
+            return False
+
+        phys_ids = self._pos_physical_id[is_mo]
+        targets = tgts[is_mo]
+        positions = np.where(is_mo)[0]
+
+        phys_to_targets: dict = {}
+        phys_to_positions: dict = {}
+        for pos_idx, pid, tgt in zip(positions, phys_ids, targets):
+            phys_to_targets.setdefault(int(pid), set()).add(int(tgt))
+            phys_to_positions.setdefault(int(pid), []).append((int(pos_idx), int(tgt)))
+
+        offenders = [pid for pid, tgt_set in phys_to_targets.items() if len(tgt_set) > 1]
+        if not offenders:
+            return False
+
+        pid = random.choice(offenders)
+        entries = phys_to_positions[pid]
+        target_counts: dict = {}
+        for _, tgt in entries:
+            target_counts[tgt] = target_counts.get(tgt, 0) + 1
+        best_target = max(target_counts, key=target_counts.get)
+        movable = [pos_idx for pos_idx, tgt in entries if tgt != best_target]
+        if not movable:
+            return False
+
+        move_pos = random.choice(movable)
+        src_layer = int(self._pos_layer_arr[move_pos])
+        layer_positions = self._layer_mutable_positions.get(src_layer)
+        if not layer_positions:
+            return False
+        candidates = np.asarray([p for p in layer_positions if p != move_pos], dtype=np.int32)
+        if len(candidates) == 0:
+            return False
+        values = genome_arr[candidates]
+        thumb_empty = candidates[(values < 0) & self._pos_is_thumb_arr[candidates]]
+        any_empty = candidates[values < 0]
+        pool = thumb_empty if len(thumb_empty) > 0 else (any_empty if len(any_empty) > 0 else candidates)
+
+        dest = int(random.choice(pool))
+        move_sid = genome[move_pos]
+        displaced = genome[dest]
+        genome[dest] = move_sid
+        genome[move_pos] = displaced
+        return True
+
     def _do(self, problem, X, **kwargs):
         n = X.shape[0]
         prob = float(self.prob.value if hasattr(self.prob, "value") else self.prob)
@@ -3121,6 +3353,7 @@ class SwapMutation(Mutation):
                 self.toggle_own_layer_bias_prob,
                 self.access_thumb_bias_prob,
                 self.return_toggle_repair_prob,
+                self.momentary_reuse_repair_prob,
             ], dtype=np.float64)
             seeds = np.random.randint(0, 2**63, size=n, dtype=np.uint64)
             _mutate_batch_numba(
@@ -3150,6 +3383,7 @@ class SwapMutation(Mutation):
                 self._layer_mutable_start,
                 self._mouse_button_sids,
                 self._toggle_access_sids_arr,
+                self._pos_physical_id,
                 np.int32(self.n_shortcuts),
             )
         else:
@@ -3173,6 +3407,9 @@ class SwapMutation(Mutation):
                     handled[i] = True
                     continue
                 if random.random() < self.return_toggle_repair_prob and self._repair_missing_return_toggles(X[i]):
+                    handled[i] = True
+                    continue
+                if random.random() < self.momentary_reuse_repair_prob and self._repair_momentary_key_reuse(X[i]):
                     handled[i] = True
                     continue
 

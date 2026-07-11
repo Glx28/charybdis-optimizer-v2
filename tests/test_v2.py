@@ -3887,7 +3887,7 @@ class TestSwapMutationNumba(unittest.TestCase):
         pop[pop == 11] = -1
         handled = np.zeros(n, dtype=np.bool_)
         seeds = np.random.randint(0, 2**63, size=n, dtype=np.uint64)
-        probs = np.array([0.5, 0.5, 0.5, 0.0, 0.0, 0.0], dtype=np.float64)
+        probs = np.array([0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0], dtype=np.float64)
         out1 = pop.copy()
         _mutate_batch_numba(
             out1, handled.copy(), probs, seeds,
@@ -3913,6 +3913,7 @@ class TestSwapMutationNumba(unittest.TestCase):
             mutation._layer_mutable_start,
             mutation._mouse_button_sids,
             mutation._toggle_access_sids_arr,
+            mutation._pos_physical_id,
             np.int32(mutation.n_shortcuts),
         )
         out2 = pop.copy()
@@ -3940,9 +3941,69 @@ class TestSwapMutationNumba(unittest.TestCase):
             mutation._layer_mutable_start,
             mutation._mouse_button_sids,
             mutation._toggle_access_sids_arr,
+            mutation._pos_physical_id,
             np.int32(mutation.n_shortcuts),
         )
         np.testing.assert_array_equal(out1, out2)
+
+    def test_repair_momentary_key_reuse_relocates_minority_target(self):
+        """The same physical key acting as a momentary-hold source for two
+        different target layers (depending on which layer is active) must be
+        detected and repaired by relocating the minority-target occurrence to
+        an empty slot on its own source layer, matching
+        fitness/kernel.py's momentary_key_reuse scoring. Pure fitness pressure
+        alone was empirically confirmed to plateau on this exact pattern
+        across thousands of real generations (see AGENTS.md), which is why
+        this mutation proposes the relocation directly instead of relying on
+        random mutation to stumble onto it.
+        """
+        # pos0/pos1 share physical coordinate (2.0, 1.0) across layers 0 and 3
+        # but hold momentary access to different targets (1 vs 2) -- reuse.
+        # pos2/pos3 are empty mutable slots on the same two source layers so
+        # the repair has somewhere to relocate the minority occurrence to.
+        positions = (
+            Position(0, 0, 2.0, 1.0, "left", 1, 1.0),
+            Position(1, 3, 2.0, 1.0, "left", 1, 1.0),
+            Position(2, 0, 5.0, 1.0, "left", 1, 1.0),
+            Position(3, 3, 5.0, 1.0, "left", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "@access:L1:hold", "L1 hold", "Layer Access", 5.0,
+                     is_layer_access=True, access_target_layer=1, access_is_momentary=True),
+            Shortcut(1, "@access:L2:hold", "L2 hold", "Layer Access", 5.0,
+                     is_layer_access=True, access_target_layer=2, access_is_momentary=True),
+        )
+        frozen = np.zeros(4, dtype=np.bool_)
+        genome = np.array([0, 1, -1, -1], dtype=np.int32)
+        layout = Layout(genome.copy(), positions, shortcuts, frozen)
+
+        mutation = SwapMutation(
+            prob=0.0,
+            frozen_mask=layout.frozen_mask,
+            layout=layout,
+            mouse_workflow_prob=0.0,
+            l7_access_prob=0.0,
+            group_overwrite_prob=0.0,
+            optional_arrow_drop_prob=0.0,
+            bulk_assign_prob=0.0,
+            cluster_app_prob=0.0,
+            random_assign_prob=0.0,
+            effort_swap_prob=0.0,
+            smart_duplicate_prob=0.0,
+        )
+
+        fixed = False
+        for _ in range(50):
+            g = genome.copy()
+            if mutation._repair_momentary_key_reuse(g):
+                fixed = True
+                # One of sid0/sid1 relocated to an empty slot; the other stays put.
+                remaining_sids = {int(v) for v in g if v >= 0}
+                self.assertEqual(remaining_sids, {0, 1})
+                # No same-physical-key reuse: at most one of pos0/pos1 still holds a sid.
+                self.assertTrue(g[0] < 0 or g[1] < 0)
+                break
+        self.assertTrue(fixed, "momentary_key_reuse repair never relocated the minority-target occurrence")
 
     def test_numba_random_reassign_pairs_return_toggle(self):
         """Numba random_reassign must place a return toggle when creating a toggle access."""
