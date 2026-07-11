@@ -171,7 +171,26 @@ def _app_workflow_rows(layout, app_map: Dict[object, int]) -> np.ndarray:
     return np.asarray(rows, dtype=np.float32).reshape((-1, 3)) if rows else np.empty((0, 3), dtype=np.float32)
 
 
+# Single-entry memo for _shortcut_duplicate_support(). The result depends only
+# on layout.shortcuts and layout.usage_data -- never layout.genome -- and both
+# are reused by reference across every Layout.clone_with() call for the life
+# of a training run (see core.Layout.clone_with). Diagnostic reporting
+# (run_evolution.analyze_duplicates via custom_ga._layout_reports) was calling
+# this full O(n_shortcuts * n_app_workflows) recomputation on every single
+# generation for an answer that never changes within a run -- confirmed via
+# profiling to be ~74% of total wall-clock time in a real training run. The
+# cache holds strong references to the exact shortcuts/usage_data objects it
+# was computed from, so identity comparison via `is` is safe even if those
+# objects are later freed elsewhere (this cache would then simply miss, not
+# return stale data for a coincidentally-reused id()).
+_DUP_SUPPORT_CACHE = {"shortcuts": None, "usage_data": None, "result": None}
+
+
 def _shortcut_duplicate_support(layout) -> np.ndarray:
+    cache = _DUP_SUPPORT_CACHE
+    if cache["shortcuts"] is layout.shortcuts and cache["usage_data"] is layout.usage_data:
+        return cache["result"]
+
     support = np.zeros(layout.n_shortcuts, dtype=np.float32)
     lookup = _sid_lookup(layout)
 
@@ -222,7 +241,11 @@ def _shortcut_duplicate_support(layout) -> np.ndarray:
             if any(_app_matches(shortcut.app, app) for app in cluster_apps):
                 support[shortcut.sid] += min(0.35, 0.05 * float(data.get("count", 0)))
 
-    return np.minimum(support, 1.5).astype(np.float32)
+    result = np.minimum(support, 1.5).astype(np.float32)
+    cache["shortcuts"] = layout.shortcuts
+    cache["usage_data"] = layout.usage_data
+    cache["result"] = result
+    return result
 
 
 def _blind_rows(layout) -> np.ndarray:
