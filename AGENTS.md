@@ -26,6 +26,34 @@ handoffs, configs, and runner code in this repo. Do not weaken it by moving
 training back to CPU, disabling the fail-fast check, or treating unused GPU code
 as sufficient.
 
+## Normal Run Length Is 30,000 Generations, Not 500,000
+
+`config_v2.yaml`'s `n_generations: 500000` is a hard ceiling for explicit
+overnight/extreme runs, governed by early stopping. It is NOT the target and
+must never be treated as "this run still has plenty of runway left." A normal,
+everyday training run's real target is **~30,000 generations**. Judge run
+health and "how far has it come" against that number, not against 500,000.
+
+Consequences for any agent analyzing or reporting on a run's progress:
+
+- A run that has not reached the desired feasible/target-quality layout by
+  30,000 generations is a failure. This is true even if the process is
+  technically still running toward a larger configured ceiling.
+- A real, confirmed problem (a hard-constraint violation, a soft-pressure term
+  that measurably fails to move a persisting bad configuration, stagnation)
+  that is still present at 1/3 (~10,000 gens) or 1/2 (~15,000 gens) of that
+  30,000-gen budget is a **critical failure requiring root-cause diagnosis and
+  a real fix**, right then — never something to describe as "early," "not
+  alarming yet," "needs more time," or a "temporary acceptable state." Elapsed
+  generations relative to the 500,000 ceiling are irrelevant to this judgment;
+  measure against the 30,000 target.
+- When verifying that a fix actually worked, track the specific metric across
+  several real checkpoints from a real run at this budget scale (not
+  synthetic/theoretical magnitude estimates alone, and not a handful of
+  generations right after warmstart). A flat, unmoving trend across a
+  meaningful slice of the 30,000-gen budget is itself evidence of a problem,
+  not something to wait out.
+
 ## Dynamic Layer Assignment
 
 Only L0 and L7 have stable semantic roles. L0 is base typing/thumb access. L7 is frozen RPG/arrows/navigation plus keyboard-system controls such as Bluetooth/output selection.

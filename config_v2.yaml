@@ -1,6 +1,10 @@
 evolution:
   pop_size: 1500            # was 900; more diversity, more GPU work per predict batch
-  n_generations: 500000     # early stop governs; ~24h run
+  # 500000 is a ceiling for explicit overnight/extreme runs only, NOT the
+  # target. Normal runs target ~30000 gens -- see AGENTS.md "Normal Run
+  # Length Is 30,000 Generations, Not 500,000". Judge run health/progress
+  # against 30000, never against this ceiling.
+  n_generations: 500000
   crossover_prob: 0.7
   mutation_prob: 0.2
   group_overwrite_prob: 0.15
@@ -103,10 +107,15 @@ fitness:
     # violation units out of a ~5.9 total viol objective (~0.003% of budget) --
     # 1000-2500x too weak to ever compete, the same magnitude-guessing mistake
     # the return-to-L0-thumb penalty needed two rounds to fix earlier in this
-    # repo's history. Recalibrated to 50000000.0 (5e7) so the same real raw
-    # magnitude (~83000 in that checkpoint) lands around 0.2-0.3 normalized
-    # units -- a meaningful, non-dominant fraction of the viol budget.
-    momentary_key_reuse: 50000000.0
+    # repo's history. First recalibration to 50000000.0 (5e7) targeted
+    # 0.2-0.3 normalized units, but empirical checkpoint tracking on a fresh
+    # warmstarted run (gen 10500-12500, same 4 reused keys, zero movement for
+    # 2000 gens straight -- ~2.2% of viol budget at that weight) showed this
+    # was still not enough to actually move the population off the reuse
+    # configuration. Raised another 10x to 500000000.0 (5e8) for a second
+    # empirical A/B test; this must be re-verified against fresh checkpoints
+    # (not assumed from magnitude alone) before being treated as resolved.
+    momentary_key_reuse: 500000000.0
   hard_constraints:
     - missing_important
     - layer7_access
