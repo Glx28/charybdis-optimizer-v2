@@ -1548,6 +1548,19 @@
           "weighted_access": 21
         },
         {
+          "keys": "Ctrl+Alt+2",
+          "action": "Type @ symbol",
+          "category": "Input & Language",
+          "frequency": "high",
+          "freq_weight": 8,
+          "importance": 10,
+          "mapped": false,
+          "match_count": 0,
+          "best_match": null,
+          "access_score": 0,
+          "weighted_access": 0
+        },
+        {
           "keys": "Ctrl+Y",
           "action": "Redo",
           "category": "Universal Clipboard & Edit",
