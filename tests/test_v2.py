@@ -2336,6 +2336,48 @@ class TestEvaluator(unittest.TestCase):
             evaluator.evaluate(deep_direct).objectives[2] + 10.0,
         )
 
+    def test_momentary_key_reuse_penalizes_same_key_different_layer_jobs(self):
+        # Position 0 (L0) and position 1 (L3) sit at the IDENTICAL physical
+        # coordinate (5.0, 4.0) -- same physical key, different layer. If its
+        # momentary-hold job targets a different layer depending on which
+        # layer is currently active (reuse), that should score worse than
+        # targeting the same layer from both places (no reuse), holding real
+        # per-layer demand (positions 2/3 host real shortcuts on L1/L2)
+        # equal between the two scenarios.
+        positions = (
+            Position(0, 0, 5.0, 4.0, "left", 0, 0.2, is_thumb=True),
+            Position(1, 3, 5.0, 4.0, "left", 0, 0.2, is_thumb=True),
+            Position(2, 1, 6.0, 2.0, "right", 1, 0.5),
+            Position(3, 2, 7.0, 2.0, "right", 1, 0.5),
+        )
+        shortcuts = (
+            Shortcut(0, "@access:L0->L1:hold:One", "One", "Layer Access", 12.0,
+                     "layer_access", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
+            Shortcut(1, "@access:L3->L1:hold:One", "One", "Layer Access", 12.0,
+                     "layer_access", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
+            Shortcut(2, "@access:L3->L2:hold:Two", "Two", "Layer Access", 12.0,
+                     "layer_access", is_layer_access=True, access_target_layer=2, access_is_momentary=True),
+            Shortcut(3, "Ctrl+A", "Action A", "App", 10.0),
+            Shortcut(4, "Ctrl+B", "Action B", "App", 10.0),
+        )
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        # Reuse: position 0/1's shared physical key holds to L1 from L0 but
+        # to L2 from L3 -- two distinct jobs for the same physical key.
+        reuse = Layout(np.array([0, 2, 3, 4], dtype=np.int32), positions, shortcuts, frozen)
+        # Control: the same physical key holds to L1 from both L0 and L3 --
+        # one consistent job, no reuse.
+        no_reuse = Layout(np.array([0, 1, 3, 4], dtype=np.int32), positions, shortcuts, frozen)
+        weights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["weights"]}
+        weights["violations"] = 1.0
+        vweights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
+        vweights["momentary_key_reuse"] = 1.0
+        evaluator = FitnessEvaluator(weights=weights, reference_layout=no_reuse, violation_weights=vweights,
+                                     hard_constraints=[], missing_important_threshold=99.0)
+        self.assertGreater(
+            evaluator.evaluate(reuse).objectives[2],
+            evaluator.evaluate(no_reuse).objectives[2],
+        )
+
     def test_mouse_duplicates_clean_up_after_natural_mouse_layer_exists(self):
         positions = (
             Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),

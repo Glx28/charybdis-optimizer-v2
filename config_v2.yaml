@@ -92,6 +92,12 @@ fitness:
     mouse_hold_position_conflict: 150000000000.0
     mouse_layer_depth_penalty: 150000000000.0
     same_layer_duplicate: 200000.0
+    # Soft pressure only (not a hard constraint, matching every other
+    # UX-quality rule in this file): discourages one physical key acting as a
+    # momentary-hold source for different target layers depending on which
+    # layer is currently active, distinct from layer_depth_penalty's purely
+    # economic hop-depth cost. Order of magnitude matches duplicate_value_gap.
+    momentary_key_reuse: 40000.0
   hard_constraints:
     - missing_important
     - layer7_access

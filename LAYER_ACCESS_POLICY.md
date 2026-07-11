@@ -84,6 +84,15 @@ Required scoring behavior:
 - direct L0 thumb access is preferred for high-traffic layers
 - nested access is expensive
 - momentary-into-momentary access is very expensive
+- reusing the same physical key as a momentary-hold source for different
+  target layers depending on which layer is currently active is penalized
+  separately from the economic depth penalty above (`momentary_key_reuse`,
+  soft pressure). This is a learnability cost, not an effort cost: a user can
+  learn "this key = layer X" only if the key's job stays consistent; a key
+  whose momentary target changes depending on current layer cannot be learned
+  that way regardless of how cheap the hop is. Low-demand layers can still
+  reuse a key relatively cheaply, matching the existing tolerance for nested
+  access on low-traffic spillover layers
 - mouse shortcuts and mouse-layer access can compete for L0/thumb slots when
   usage data supports them
 - scroll is a trackball pointer-to-wheel mode switch with a layer side effect;

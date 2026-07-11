@@ -818,8 +818,16 @@ const EXE_TO_APP = {
   "teams.exe": "Microsoft Teams",
   "ms-teams.exe": "Microsoft Teams",
   "discord.exe": "Discord",
+  "claude.exe": "Claude Code CLI",
+  "codex.exe": "Codex CLI",
+  "kimi.exe": "Kimi CLI",
   "taskmgr.exe": null, // no shortcut corpus
   "searchhost.exe": null,
+  // M-Files Desktop Client / M-Files Admin have a shortcut corpus but have
+  // never appeared in real usage logs under any exe name (checked via
+  // `grep -i mfiles data/usage_stats.json`), so the real process name is
+  // unconfirmed -- do not guess it here, it would silently misattribute
+  // usage to the wrong app if wrong.
 };
 
 function analyzeBlindSpots(usedShortcuts, appTime, periodDays) {

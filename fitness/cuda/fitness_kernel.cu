@@ -73,6 +73,10 @@ struct PerThreadScratch {
     bool reachable_momentary_access[MAX_LAYERS];
     bool momentary_edge[MAX_LAYERS][MAX_LAYERS];
     bool has_hold_edge[MAX_LAYERS][MAX_LAYERS];
+    // Per-physical-key registry of distinct momentary-hold targets seen
+    // across all layers where that physical key acts as a momentary access
+    // source. Mirrors kernel.py's momentary_target_seen exactly.
+    bool momentary_target_seen[MAX_POS][MAX_LAYERS];
     float edge_cost[MAX_LAYERS][MAX_LAYERS];
     int edge_hand[MAX_LAYERS][MAX_LAYERS];
 
@@ -184,7 +188,8 @@ __device__ void evaluate_single(
     float toggle_effort_multiplier,
     const float* log1p_lut,
     int lut_size,
-    const float* pos_effort_waste
+    const float* pos_effort_waste,
+    const int* pos_physical_id
 ) {
     // -------------------------------------------------------------------------
     // Initialize scratch
@@ -304,6 +309,12 @@ __device__ void evaluate_single(
     }
     s->mouse_l7_count = 0;
 
+    for (int i = 0; i < n_pos && i < MAX_POS; i++) {
+        for (int l = 0; l < MAX_LAYERS; l++) {
+            s->momentary_target_seen[i][l] = false;
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Pre-scan mutable layers and build access graph
     // -------------------------------------------------------------------------
@@ -339,6 +350,10 @@ __device__ void evaluate_single(
                 if (pos_is_thumb[i] && pos_hand[i] == 0) {
                     s->direct_left_thumb_momentary[target] = true;
                 }
+            }
+            int phys = pos_physical_id[i];
+            if (phys >= 0 && phys < MAX_POS) {
+                s->momentary_target_seen[phys][target] = true;
             }
         } else {
             s->direct_toggle_access[target] = true;
@@ -1938,6 +1953,28 @@ __device__ void evaluate_single(
     }
 
     // -------------------------------------------------------------------------
+    // momentary_key_reuse: soft learnability pressure, distinct from the
+    // purely economic layer_depth_penalty above. A physical key whose
+    // momentary-hold job changes depending on which layer is currently active
+    // cannot be learned as "this key = layer X". Mirrors kernel.py exactly.
+    // -------------------------------------------------------------------------
+    float momentary_key_reuse = 0.0f;
+    for (int p = 0; p < n_pos && p < MAX_POS; p++) {
+        int n_targets = 0;
+        float demand_sum = 0.0f;
+        for (int L = 0; L < MAX_LAYERS; L++) {
+            if (s->momentary_target_seen[p][L]) {
+                n_targets++;
+                demand_sum += s->layer_demand[L];
+            }
+        }
+        if (n_targets > 1) {
+            float reuse_cost = powf(2.0f, (float)(n_targets - 1)) - 1.0f;
+            momentary_key_reuse += reuse_cost * demand_sum;
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Toggle back to L0
     // -------------------------------------------------------------------------
     float toggle_back_to_l0 = 0.0f;
@@ -2015,7 +2052,7 @@ __device__ void evaluate_single(
     // -------------------------------------------------------------------------
     // Assemble raw scores
     // -------------------------------------------------------------------------
-    float raw_scores[24];
+    float raw_scores[25];
     raw_scores[0] = duplicate;
     raw_scores[1] = l0_displacement;
     raw_scores[2] = missing;
@@ -2050,6 +2087,7 @@ __device__ void evaluate_single(
         raw_scores[22] = 0.0f;
     }
     raw_scores[23] = same_layer_duplicate;
+    raw_scores[24] = momentary_key_reuse;
 
     // -------------------------------------------------------------------------
     // Constraints
@@ -2062,7 +2100,7 @@ __device__ void evaluate_single(
     // Soft violations sum
     // -------------------------------------------------------------------------
     float violations_raw = 0.0f;
-    for (int j = 0; j < 24; j++) {
+    for (int j = 0; j < 25; j++) {
         violations_raw += raw_scores[j] * violation_weights[j];
     }
 
@@ -2160,7 +2198,7 @@ __device__ void evaluate_single(
     out[2] = objective_viol / scale_factors[2];
 
     if (raw_scores_out != nullptr) {
-        for (int j = 0; j < 24; j++) {
+        for (int j = 0; j < 25; j++) {
             raw_scores_out[j] = raw_scores[j];
         }
     }
@@ -2230,6 +2268,7 @@ __global__ void evaluate_batch_kernel(
     const float* log1p_lut,
     int lut_size,
     const float* pos_effort_waste,
+    const int* pos_physical_id,
     int8_t* scratch_buffer
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -2260,7 +2299,8 @@ __global__ void evaluate_batch_kernel(
         blind_rows, n_blind_rows,
         reference_genome, objective_weights, violation_weights, scale_factors,
         threshold, hard_constraint_indices, shortcut_key_group,
-        toggle_effort_multiplier, log1p_lut, lut_size, pos_effort_waste
+        toggle_effort_multiplier, log1p_lut, lut_size, pos_effort_waste,
+        pos_physical_id
     );
 }
 
@@ -2315,7 +2355,8 @@ torch::Tensor evaluate_batch(
     torch::Tensor n_groups_tensor,
     torch::Tensor toggle_effort_multiplier_tensor,
     torch::Tensor log1p_lut,
-    torch::Tensor pos_effort_waste
+    torch::Tensor pos_effort_waste,
+    torch::Tensor pos_physical_id
 ) {
     int batch = genomes.size(0);
     int n_pos = genomes.size(1);
@@ -2387,6 +2428,7 @@ torch::Tensor evaluate_batch(
         log1p_lut.data_ptr<float>(),
         lut_size,
         pos_effort_waste.data_ptr<float>(),
+        pos_physical_id.data_ptr<int>(),
         scratch.data_ptr<int8_t>()
     );
 

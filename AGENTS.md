@@ -216,6 +216,21 @@ general access-layout thumb preference. This is soft pressure, not a hard
 constraint — a layer can still legally keep its return toggle elsewhere, it
 just competes against this pressure like any other placement choice.
 
+A physical key's momentary-hold job should stay consistent regardless of
+which layer is currently active. Momentary and toggle access shortcuts can be
+placed on any layer as a source, and nested/stacked momentary chains are
+allowed and already penalized economically as layer depth grows
+(`layer_depth_penalty`). But a physical key that jumps to a *different*
+target layer depending on which layer the user is already on cannot be
+learned as "this key = layer X" — the user instead has to learn "this key
+means something different depending on where I already am." This is a
+separate, softly-scored learnability pressure (`momentary_key_reuse`), scaled
+by how many distinct jobs a key has and by the real demand of the layers
+involved, so the worst cases (many jobs on one key across high-traffic
+layers) are pushed away first while rare low-demand spillover reuse stays
+cheap, consistent with the existing tolerance for deep nesting on low-traffic
+layers. Soft pressure only, not a hard constraint.
+
 Thumb clearance is strict and dynamic. If a layer is accessed by a momentary
 thumb key from one side, that same side's thumb area on the target layer is
 restricted and must be empty. Both thumb areas become available only when the

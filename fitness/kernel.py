@@ -375,6 +375,18 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
     pos_x = np.asarray([p.x for p in layout.positions], dtype=np.float32)
     pos_y = np.asarray([p.y for p in layout.positions], dtype=np.float32)
 
+    # Physical-key identity shared across layers: two positions at the same
+    # rounded (x, y) coordinate on different layers are the same physical key.
+    # Used by momentary_key_reuse to detect one key being assigned different
+    # momentary-hold jobs depending on which layer happens to be active.
+    _phys_coord_to_id: Dict[Tuple[float, float], int] = {}
+    pos_physical_id = np.empty(len(layout.positions), dtype=np.int32)
+    for _i, _p in enumerate(layout.positions):
+        _key = (round(_p.x, 3), round(_p.y, 3))
+        if _key not in _phys_coord_to_id:
+            _phys_coord_to_id[_key] = len(_phys_coord_to_id)
+        pos_physical_id[_i] = _phys_coord_to_id[_key]
+
     trackball_factor = None
     try:
         from fitness.factors.trackball_proximity import TrackballProximityFactor
@@ -527,6 +539,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         vw.get("mouse_hold_position_conflict", DEFAULT_VIOLATION_WEIGHTS.get("mouse_hold_position_conflict", 150000000000.0)),
         vw.get("mouse_layer_depth_penalty", DEFAULT_VIOLATION_WEIGHTS.get("mouse_layer_depth_penalty", 150000000000.0)),
         vw.get("same_layer_duplicate", DEFAULT_VIOLATION_WEIGHTS.get("same_layer_duplicate", 200000.0)),
+        vw.get("momentary_key_reuse", DEFAULT_VIOLATION_WEIGHTS.get("momentary_key_reuse", 40000.0)),
     ], dtype=np.float32)
 
     VIOLATION_NAMES = (
@@ -541,6 +554,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         "mouse_hold_position_conflict",
         "mouse_layer_depth_penalty",
         "same_layer_duplicate",
+        "momentary_key_reuse",
     )
     hard_constraints = hard_constraints or []
     hard_constraint_indices = np.asarray(
@@ -574,6 +588,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         hard_constraint_indices, shortcut_key_group, np.int32(n_key_groups),
         np.float32(toggle_effort_multiplier),
         log1p_lut, pos_effort_waste,
+        pos_physical_id,
     )
 
 
@@ -591,6 +606,7 @@ if NUMBA_AVAILABLE:
         shortcut_key_group, n_key_groups,
         toggle_effort_multiplier,
         log1p_lut, pos_effort_waste,
+        pos_physical_id,
     ):
         n_pos = genome.shape[0]
         lut_size = log1p_lut.shape[0]
@@ -640,6 +656,14 @@ if NUMBA_AVAILABLE:
         reachable_momentary_access = np.zeros(32, dtype=np.bool_)
         momentary_edge = np.zeros((32, 32), dtype=np.bool_)
         has_hold_edge = np.zeros((32, 32), dtype=np.bool_)
+        # Per-physical-key registry of distinct momentary-hold targets seen
+        # across all layers where that physical key acts as a momentary
+        # access source. Used by momentary_key_reuse: a physical key whose
+        # momentary-hold job changes depending on which layer is currently
+        # active is hard for a human to learn ("this key = layer X"), distinct
+        # from the purely economic layer_depth_penalty above. Sized by n_pos
+        # (a safe upper bound on distinct physical keys).
+        momentary_target_seen = np.zeros((n_pos, 32), dtype=np.bool_)
         edge_cost = np.full((32, 32), 1000000.0, dtype=np.float32)
         edge_hand = np.full((32, 32), -1, dtype=np.int32)
         access_layout = 0.0
@@ -701,6 +725,7 @@ if NUMBA_AVAILABLE:
                     safe_momentary_access[target] = True
                     if pos_is_thumb[i] and pos_hand[i] == 0:
                         direct_left_thumb_momentary[target] = True
+                momentary_target_seen[pos_physical_id[i], target] = True
             else:
                 direct_toggle_access[target] = True
                 # Track return-to-L0 toggles: records which source layers have one,
@@ -2182,6 +2207,30 @@ if NUMBA_AVAILABLE:
             depth_cost = 4.0 ** float(capped_depth - 1) - 1.0
             layer_depth_penalty += depth_cost * demand
 
+        # momentary_key_reuse: soft learnability pressure, distinct from the
+        # purely economic layer_depth_penalty above. A physical key whose
+        # momentary-hold job changes depending on which layer is currently
+        # active cannot be learned as "this key = layer X" -- the user must
+        # instead learn "this key means something different depending on
+        # where I already am". Penalize each physical key with more than one
+        # distinct momentary-hold target, scaled smoothly with how many
+        # distinct jobs it has (same exponential shape as layer_depth_penalty)
+        # and weighted by the combined demand of the layers involved, so the
+        # worst real case (many jobs on one key across high-traffic layers)
+        # is hit hardest while rare low-demand spillover nesting -- already
+        # tolerated by layer_depth_penalty -- stays cheap here too.
+        momentary_key_reuse = 0.0
+        for p in range(n_pos):
+            n_targets = 0
+            demand_sum = 0.0
+            for L in range(32):
+                if momentary_target_seen[p, L]:
+                    n_targets += 1
+                    demand_sum += layer_demand[L]
+            if n_targets > 1:
+                reuse_cost = 2.0 ** float(n_targets - 1) - 1.0
+                momentary_key_reuse += reuse_cost * demand_sum
+
         # Raw violation scores (0 = feasible).
         # toggle_back_to_l0: count mutable layers reachable via toggle that lack a return toggle.
         # Frozen-only layers (e.g. L7) are excluded: the optimizer can't place a return there.
@@ -2244,7 +2293,7 @@ if NUMBA_AVAILABLE:
                 else:
                     empty_pos_waste += pos_effort_waste[i]
 
-        raw_scores = np.empty(24, dtype=np.float32)
+        raw_scores = np.empty(25, dtype=np.float32)
         raw_scores[0] = duplicate
         raw_scores[1] = l0_displacement
         raw_scores[2] = missing
@@ -2280,6 +2329,7 @@ if NUMBA_AVAILABLE:
         else:
             raw_scores[22] = 0.0
         raw_scores[23] = same_layer_duplicate
+        raw_scores[24] = momentary_key_reuse
 
         # Hard constraints (g(x) <= 0 convention; raw_scores are >= 0).
         n_constr = hard_constraint_indices.shape[0]
@@ -2289,7 +2339,7 @@ if NUMBA_AVAILABLE:
 
         # Soft penalties weighted and summed into the violations objective.
         violations_raw = 0.0
-        for j in range(24):
+        for j in range(25):
             violations_raw += raw_scores[j] * violation_weights[j]
 
         workflow = 0.0
@@ -2382,6 +2432,7 @@ if NUMBA_AVAILABLE:
         shortcut_key_group, n_key_groups,
         toggle_effort_multiplier,
         log1p_lut, pos_effort_waste,
+        pos_physical_id,
     ):
         batch = genomes.shape[0]
         n_constr = hard_constraint_indices.shape[0]
@@ -2401,6 +2452,7 @@ if NUMBA_AVAILABLE:
                 shortcut_key_group, n_key_groups,
                 toggle_effort_multiplier,
                 log1p_lut, pos_effort_waste,
+                pos_physical_id,
             )
             out[b] = obj
             constraints[b] = constr

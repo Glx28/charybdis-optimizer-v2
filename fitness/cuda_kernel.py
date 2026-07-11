@@ -115,6 +115,7 @@ def _build_args(arrays: Tuple[Any, ...]) -> Tuple[torch.Tensor, ...]:
         toggle_effort_multiplier,
         log1p_lut,
         pos_effort_waste,
+        pos_physical_id,
     ) = arrays
     return (
         _to_tensor(pos_effort),
@@ -162,6 +163,7 @@ def _build_args(arrays: Tuple[Any, ...]) -> Tuple[torch.Tensor, ...]:
         _to_tensor(toggle_effort_multiplier),
         _to_tensor(log1p_lut),
         _to_tensor(pos_effort_waste),
+        _to_tensor(pos_physical_id),
     )
 
 
