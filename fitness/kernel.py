@@ -562,7 +562,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         vw.get("mouse_hold_position_conflict", DEFAULT_VIOLATION_WEIGHTS.get("mouse_hold_position_conflict", 150000000000.0)),
         vw.get("mouse_layer_depth_penalty", DEFAULT_VIOLATION_WEIGHTS.get("mouse_layer_depth_penalty", 150000000000.0)),
         vw.get("same_layer_duplicate", DEFAULT_VIOLATION_WEIGHTS.get("same_layer_duplicate", 200000.0)),
-        vw.get("momentary_key_reuse", DEFAULT_VIOLATION_WEIGHTS.get("momentary_key_reuse", 40000.0)),
+        vw.get("momentary_key_reuse", DEFAULT_VIOLATION_WEIGHTS.get("momentary_key_reuse", 50000000.0)),
     ], dtype=np.float32)
 
     VIOLATION_NAMES = (
