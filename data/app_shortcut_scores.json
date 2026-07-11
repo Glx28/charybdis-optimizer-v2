@@ -2,9 +2,9 @@
   "timestamp": "2026-06-27T02:44:58.179Z",
   "summary": {
     "total_apps": 16,
-    "total_shortcuts": 557,
+    "total_shortcuts": 558,
     "total_mapped": 473,
-    "total_unmapped": 84,
+    "total_unmapped": 85,
     "overall_coverage_pct": 89
   },
   "apps": [
@@ -9916,7 +9916,7 @@
       "id": "terminal",
       "name": "Windows Terminal / PowerShell",
       "user_weight": 0.4,
-      "total_shortcuts": 26,
+      "total_shortcuts": 27,
       "mapped": 22,
       "unmapped": 4,
       "coverage_pct": 85,
@@ -10372,6 +10372,24 @@
           },
           "access_score": 7,
           "weighted_access": 2.8000000000000003
+        },
+        {
+          "keys": "Ctrl+Backspace",
+          "action": "Delete word backward",
+          "category": "Terminal Actions",
+          "frequency": "high",
+          "freq_weight": 6,
+          "importance": 6,
+          "mapped": false,
+          "match_count": 0,
+          "best_match": null,
+          "access_score": 0,
+          "weighted_access": 0,
+          "also_in_apps": [
+            "Claude Code CLI",
+            "Codex CLI",
+            "Kimi CLI"
+          ]
         }
       ]
     },
