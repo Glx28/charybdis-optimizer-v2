@@ -156,6 +156,10 @@ class CustomGARunner:
         hard_constraints,
         mini_eval_count: int = 150,
         n_constraints: int = 0,
+        diversity_stagnation_gens: int = 300,
+        diversity_archive_stagnant_cycles: int = 2,
+        diversity_pop_collapse_threshold: float = 0.08,
+        diversity_cooldown_gens: int = 150,
     ):
         self.layout = layout
         self.evaluator = evaluator
@@ -172,6 +176,15 @@ class CustomGARunner:
         self.hard_constraints = hard_constraints
         self.mini_eval_count = max(1, int(mini_eval_count))
         self.n_factors = 3
+        # Diversity-injection thresholds. Defaults are scaled for a normal
+        # ~30,000-gen run (AGENTS.md "Normal Run Length Is 30,000
+        # Generations, Not 500,000"), not the much longer 500,000-gen ceiling
+        # these were originally sized for (1200/2/500 there consumed 3-7% of
+        # an entire 30k budget just to fire once).
+        self.diversity_stagnation_gens = int(diversity_stagnation_gens)
+        self.diversity_archive_stagnant_cycles = int(diversity_archive_stagnant_cycles)
+        self.diversity_pop_collapse_threshold = float(diversity_pop_collapse_threshold)
+        self.diversity_cooldown_gens = int(diversity_cooldown_gens)
         self.n_constraints = int(n_constraints)
 
         # Background thread pool for concurrent mini exact eval during GPU predict
@@ -369,18 +382,20 @@ class CustomGARunner:
 
     def _inject_diversity(self, pop_X, pop_F, pop_cv, gen):
         # Trigger conditions (any one suffices):
-        #   1. Surrogate stagnation (stagnation_count >= 1200)
-        #   2. Archive stagnation (2+ checkpoint cycles with no improvement)
+        #   1. Surrogate stagnation (stagnation_count >= diversity_stagnation_gens)
+        #   2. Archive stagnation (diversity_archive_stagnant_cycles+ checkpoint
+        #      cycles with no improvement)
         #   3. Population genetic diversity collapsed below threshold
-        archive_stagnant = self.archive_stagnation >= 2  # 1000 gens at checkpoint_every=500
+        archive_stagnant = self.archive_stagnation >= self.diversity_archive_stagnant_cycles
         diversity = self._population_diversity(pop_X)
-        diversity_collapsed = diversity < 0.08  # genomes are >92% identical on average
-        if self.stagnation_count < 1200 and not archive_stagnant and not diversity_collapsed:
+        diversity_collapsed = diversity < self.diversity_pop_collapse_threshold
+        if (self.stagnation_count < self.diversity_stagnation_gens
+                and not archive_stagnant and not diversity_collapsed):
             return pop_X, pop_F, pop_cv
-        if gen - self.last_diversity_reset < 500:
+        if gen - self.last_diversity_reset < self.diversity_cooldown_gens:
             return pop_X, pop_F, pop_cv
         trigger = (
-            "surrogate_stagnation" if self.stagnation_count >= 1200
+            "surrogate_stagnation" if self.stagnation_count >= self.diversity_stagnation_gens
             else "archive_stagnation" if archive_stagnant
             else "diversity_collapsed"
         )

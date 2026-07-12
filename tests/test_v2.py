@@ -787,6 +787,13 @@ class TestSurrogate(unittest.TestCase):
             bulk_assign_prob=0.5,
             optional_arrow_drop_prob=0.0,
         )
+        # Not constructor kwargs (matches other hardcoded-default operators);
+        # disable directly so this individual-mutation invariants check isn't
+        # affected by the raw-completion-cluster proposal, which is a
+        # sanctioned coordinated group move in its own right (like
+        # group_overwrite_prob), not one of the individual mutations under test here.
+        mutation.raw_completion_cluster_prob = 0.0
+        mutation.arrow_cluster_prob = 0.0
         group_sids = set(range(5))
         for _ in range(100):
             X = mutation._do(None, genome.reshape(1, -1).copy())
@@ -3802,6 +3809,11 @@ class TestSwapMutationNumba(unittest.TestCase):
             effort_swap_prob=0.5,
             smart_duplicate_prob=0.5,
         )
+        # Not a constructor kwarg (matches existing hardcoded-default operators
+        # like momentary_reuse_repair_prob); disable directly so this
+        # invariants check isn't affected by arrow clustering, which isn't
+        # under test here.
+        mutation.arrow_cluster_prob = 0.0
         np.random.seed(42)
         random.seed(42)
         pop = np.tile(layout.genome.astype(np.int32), (200, 1))
@@ -3887,7 +3899,7 @@ class TestSwapMutationNumba(unittest.TestCase):
         pop[pop == 11] = -1
         handled = np.zeros(n, dtype=np.bool_)
         seeds = np.random.randint(0, 2**63, size=n, dtype=np.uint64)
-        probs = np.array([0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0], dtype=np.float64)
+        probs = np.array([0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float64)
         out1 = pop.copy()
         _mutate_batch_numba(
             out1, handled.copy(), probs, seeds,
@@ -3914,6 +3926,11 @@ class TestSwapMutationNumba(unittest.TestCase):
             mutation._mouse_button_sids,
             mutation._toggle_access_sids_arr,
             mutation._pos_physical_id,
+            mutation._arrow_sid_by_type,
+            mutation._arrow_quads,
+            mutation._raw_completion_sid_by_order,
+            mutation._raw_completion_quints,
+            mutation._is_mouse_button_lut,
             np.int32(mutation.n_shortcuts),
         )
         out2 = pop.copy()
@@ -3942,6 +3959,11 @@ class TestSwapMutationNumba(unittest.TestCase):
             mutation._mouse_button_sids,
             mutation._toggle_access_sids_arr,
             mutation._pos_physical_id,
+            mutation._arrow_sid_by_type,
+            mutation._arrow_quads,
+            mutation._raw_completion_sid_by_order,
+            mutation._raw_completion_quints,
+            mutation._is_mouse_button_lut,
             np.int32(mutation.n_shortcuts),
         )
         np.testing.assert_array_equal(out1, out2)
@@ -4004,6 +4026,268 @@ class TestSwapMutationNumba(unittest.TestCase):
                 self.assertTrue(g[0] < 0 or g[1] < 0)
                 break
         self.assertTrue(fixed, "momentary_key_reuse repair never relocated the minority-target occurrence")
+
+    def test_propose_arrow_cluster_builds_valid_same_line_shape(self):
+        """Four scattered raw-arrow shortcuts must be moved into one of
+        AGENTS.md's valid same-line shapes (Left Up Down Right, one row) when
+        a geometrically-valid empty quad exists, instead of relying on
+        undirected mutation to stumble into the exact arrangement -- the same
+        plateau pattern already found and fixed for momentary_key_reuse.
+        """
+        positions = (
+            # Scattered across four different rows so they never accidentally
+            # form a second valid same-line quad -- the only valid quad is
+            # (4, 5, 6, 7) below.
+            Position(0, 0, 0.0, 0.0, "left", 1, 1.0),
+            Position(1, 0, 1.0, 1.0, "left", 1, 1.0),
+            Position(2, 0, 2.0, 2.0, "left", 1, 1.0),
+            Position(3, 0, 3.0, 3.0, "left", 1, 1.0),
+            Position(4, 0, 10.0, 5.0, "right", 1, 1.0),
+            Position(5, 0, 11.0, 5.0, "right", 1, 1.0),
+            Position(6, 0, 12.0, 5.0, "right", 1, 1.0),
+            Position(7, 0, 13.0, 5.0, "right", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "LeftArrow", "Left", "Nav", 4.0, base_key="LeftArrow"),
+            Shortcut(1, "RightArrow", "Right", "Nav", 4.0, base_key="RightArrow"),
+            Shortcut(2, "UpArrow", "Up", "Nav", 4.0, base_key="UpArrow"),
+            Shortcut(3, "DownArrow", "Down", "Nav", 4.0, base_key="DownArrow"),
+            Shortcut(4, "Ctrl+A", "Select All", "Editor", 3.0),
+        )
+        frozen = np.zeros(8, dtype=np.bool_)
+        genome = np.array([0, 1, 2, 3, -1, -1, -1, -1], dtype=np.int32)
+        layout = Layout(genome.copy(), positions, shortcuts, frozen)
+
+        mutation = SwapMutation(
+            prob=0.0,
+            frozen_mask=layout.frozen_mask,
+            layout=layout,
+            mouse_workflow_prob=0.0,
+            l7_access_prob=0.0,
+            group_overwrite_prob=0.0,
+            optional_arrow_drop_prob=0.0,
+            bulk_assign_prob=0.0,
+            cluster_app_prob=0.0,
+            random_assign_prob=0.0,
+            effort_swap_prob=0.0,
+            smart_duplicate_prob=0.0,
+        )
+        self.assertEqual(mutation._arrow_quads.shape[0], 1)
+        np.testing.assert_array_equal(mutation._arrow_quads[0], [4, 5, 6, 7])
+
+        fixed = False
+        for _ in range(20):
+            g = genome.copy()
+            if mutation._propose_arrow_cluster(g):
+                fixed = True
+                self.assertEqual(g[4], 0)  # Left
+                self.assertEqual(g[5], 2)  # Up
+                self.assertEqual(g[6], 3)  # Down
+                self.assertEqual(g[7], 1)  # Right
+                self.assertTrue(all(g[i] < 0 for i in range(4)))
+                break
+        self.assertTrue(fixed, "arrow cluster proposal never constructed the valid same-line shape")
+
+    def test_propose_raw_completion_cluster_gathers_family_onto_one_quint(self):
+        """The Norwegian/raw-completion family's base keys, scattered across
+        different rows, must be moved onto one precomputed increasing-x quint,
+        matching fitness/kernel.py's raw_keyboard_completion_norwegian scoring
+        -- the same coordinated-shape plateau risk as arrows, but for 5 keys.
+        """
+        positions = (
+            # Scattered across five different rows so they never accidentally
+            # form a second valid quint. Only (5, 6, 7, 8, 9) is valid.
+            Position(0, 0, 0.0, 0.0, "left", 1, 1.0),
+            Position(1, 0, 1.0, 1.0, "left", 1, 1.0),
+            Position(2, 0, 2.0, 2.0, "left", 1, 1.0),
+            Position(3, 0, 3.0, 3.0, "left", 1, 1.0),
+            Position(4, 0, 4.0, 4.0, "left", 1, 1.0),
+            Position(5, 0, 10.0, 5.0, "right", 1, 1.0),
+            Position(6, 0, 11.0, 5.0, "right", 1, 1.0),
+            Position(7, 0, 12.0, 5.0, "right", 1, 1.0),
+            Position(8, 0, 13.0, 5.0, "right", 1, 1.0),
+            Position(9, 0, 14.0, 5.0, "right", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "-", "Dash", "Nav", 3.0, base_key="Dash and Underscore"),
+            Shortcut(1, "=", "Equals", "Nav", 3.0, base_key="Equals and Plus"),
+            Shortcut(2, "`", "Grave", "Nav", 3.0, base_key="Grave Accent and Tilde"),
+            Shortcut(3, "]", "RBrace", "Nav", 3.0, base_key="Right Brace"),
+            Shortcut(4, "\\", "Backslash", "Nav", 3.0, base_key="Backslash and Pipe"),
+            Shortcut(5, "Ctrl+A", "Select All", "Editor", 3.0),
+        )
+        frozen = np.zeros(10, dtype=np.bool_)
+        genome = np.array([0, 1, 2, 3, 4, -1, -1, -1, -1, -1], dtype=np.int32)
+        layout = Layout(genome.copy(), positions, shortcuts, frozen)
+
+        mutation = SwapMutation(
+            prob=0.0,
+            frozen_mask=layout.frozen_mask,
+            layout=layout,
+            mouse_workflow_prob=0.0,
+            l7_access_prob=0.0,
+            group_overwrite_prob=0.0,
+            optional_arrow_drop_prob=0.0,
+            bulk_assign_prob=0.0,
+            cluster_app_prob=0.0,
+            random_assign_prob=0.0,
+            effort_swap_prob=0.0,
+            smart_duplicate_prob=0.0,
+        )
+        self.assertEqual(mutation._raw_completion_quints.shape[0], 1)
+        np.testing.assert_array_equal(mutation._raw_completion_quints[0], [5, 6, 7, 8, 9])
+
+        fixed = False
+        for _ in range(20):
+            g = genome.copy()
+            if mutation._propose_raw_completion_cluster(g):
+                fixed = True
+                self.assertEqual(g[5], 0)
+                self.assertEqual(g[6], 1)
+                self.assertEqual(g[7], 2)
+                self.assertEqual(g[8], 3)
+                self.assertEqual(g[9], 4)
+                self.assertTrue(all(g[i] < 0 for i in range(5)))
+                break
+        self.assertTrue(fixed, "raw completion cluster proposal never gathered the family onto the valid quint")
+
+    def test_bias_access_to_thumb_relocates_existing_return_toggle(self):
+        """An existing off-thumb return-to-L0 toggle must be relocatable onto
+        a free thumb slot. Before this change, access_target_lut[sid] > 0
+        excluded target == 0 (return toggles) entirely, so
+        _numba_bias_access_to_thumb/_bias_access_to_thumb could never fix one
+        that was already placed off-thumb -- only _numba_repair_return_toggles
+        (create-if-missing) touched return toggles at all.
+        """
+        positions = (
+            Position(0, 1, 0.0, 0.0, "left", 1, 1.0),                      # non-thumb, holds the return toggle
+            Position(1, 1, 5.0, 3.0, "left", 0, 0.1, is_thumb=True),       # free thumb slot on the same layer
+        )
+        shortcuts = (
+            Shortcut(0, "@access:L0:toggle", "L0 return", "Layer Access", 5.0,
+                     is_layer_access=True, access_target_layer=0, access_is_momentary=False),
+        )
+        frozen = np.zeros(2, dtype=np.bool_)
+        genome = np.array([0, -1], dtype=np.int32)
+        layout = Layout(genome.copy(), positions, shortcuts, frozen)
+
+        mutation = SwapMutation(
+            prob=0.0,
+            frozen_mask=layout.frozen_mask,
+            layout=layout,
+            mouse_workflow_prob=0.0,
+            l7_access_prob=0.0,
+            group_overwrite_prob=0.0,
+            optional_arrow_drop_prob=0.0,
+            bulk_assign_prob=0.0,
+            cluster_app_prob=0.0,
+            random_assign_prob=0.0,
+            effort_swap_prob=0.0,
+            smart_duplicate_prob=0.0,
+        )
+
+        fixed = False
+        for _ in range(20):
+            g = genome.copy()
+            if mutation._bias_access_to_thumb(g):
+                fixed = True
+                self.assertEqual(g[1], 0)
+                self.assertEqual(g[0], -1)
+                break
+        self.assertTrue(fixed, "bias_access_to_thumb never relocated the existing off-thumb return toggle")
+
+    def test_repair_mouse_hold_conflict_relocates_colliding_access_key(self):
+        """A momentary access key targeting the settled mouse layer must not
+        sit at the exact physical (x, y) of one of that layer's mouse
+        buttons, matching fitness/kernel.py's mouse_hold_position_conflict.
+        """
+        positions = (
+            Position(0, 1, 5.0, 2.0, "right", 1, 1.0),   # MB1 on mouse layer 1
+            Position(1, 1, 6.0, 2.0, "right", 1, 1.0),   # MB2
+            Position(2, 1, 7.0, 2.0, "right", 1, 1.0),   # MB3
+            Position(3, 0, 5.0, 2.0, "left", 1, 1.0),    # same (x,y) as MB1, but layer 0 -- conflict
+            Position(4, 0, 9.0, 9.0, "left", 1, 1.0),    # empty mutable slot on layer 0
+        )
+        shortcuts = (
+            Shortcut(0, "MB1", "Click", "Mouse", 10.0, base_key="MB1"),
+            Shortcut(1, "MB2", "Click", "Mouse", 9.0, base_key="MB2"),
+            Shortcut(2, "MB3", "Click", "Mouse", 7.0, base_key="MB3"),
+            Shortcut(3, "@access:L1:hold", "L1 hold", "Layer Access", 5.0,
+                     is_layer_access=True, access_target_layer=1, access_is_momentary=True),
+        )
+        frozen = np.zeros(5, dtype=np.bool_)
+        genome = np.array([0, 1, 2, 3, -1], dtype=np.int32)
+        layout = Layout(genome.copy(), positions, shortcuts, frozen)
+
+        mutation = SwapMutation(
+            prob=0.0,
+            frozen_mask=layout.frozen_mask,
+            layout=layout,
+            mouse_workflow_prob=0.0,
+            l7_access_prob=0.0,
+            group_overwrite_prob=0.0,
+            optional_arrow_drop_prob=0.0,
+            bulk_assign_prob=0.0,
+            cluster_app_prob=0.0,
+            random_assign_prob=0.0,
+            effort_swap_prob=0.0,
+            smart_duplicate_prob=0.0,
+        )
+
+        fixed = False
+        for _ in range(20):
+            g = genome.copy()
+            if mutation._repair_mouse_hold_conflict(g):
+                fixed = True
+                self.assertEqual(g[4], 3)
+                self.assertEqual(g[3], -1)
+                break
+        self.assertTrue(fixed, "mouse_hold_conflict repair never relocated the colliding access key")
+
+    def test_repair_thumb_occupancy_relocates_off_restricted_side(self):
+        """A thumb position occupied on a side that AGENTS.md's dynamic
+        thumb-clearance rule restricts (a momentary thumb key reaches the
+        layer from that side only) must be relocated to a non-thumb slot on
+        the same layer, matching fitness/kernel.py's thumb_occupancy scoring.
+        """
+        positions = (
+            Position(0, 0, 0.0, 0.0, "right", 0, 0.1, is_thumb=True),   # momentary hold -> L1, right thumb
+            Position(1, 1, 5.0, 2.0, "right", 0, 0.1, is_thumb=True),   # occupied right-thumb slot on L1 -- conflict
+            Position(2, 1, 9.0, 9.0, "left", 1, 1.0),                  # empty non-thumb slot on L1
+        )
+        shortcuts = (
+            Shortcut(0, "@access:L1:hold", "L1 hold", "Layer Access", 5.0,
+                     is_layer_access=True, access_target_layer=1, access_is_momentary=True),
+            Shortcut(1, "Ctrl+A", "Select All", "Editor", 3.0),
+        )
+        frozen = np.zeros(3, dtype=np.bool_)
+        genome = np.array([0, 1, -1], dtype=np.int32)
+        layout = Layout(genome.copy(), positions, shortcuts, frozen)
+
+        mutation = SwapMutation(
+            prob=0.0,
+            frozen_mask=layout.frozen_mask,
+            layout=layout,
+            mouse_workflow_prob=0.0,
+            l7_access_prob=0.0,
+            group_overwrite_prob=0.0,
+            optional_arrow_drop_prob=0.0,
+            bulk_assign_prob=0.0,
+            cluster_app_prob=0.0,
+            random_assign_prob=0.0,
+            effort_swap_prob=0.0,
+            smart_duplicate_prob=0.0,
+        )
+
+        fixed = False
+        for _ in range(20):
+            g = genome.copy()
+            if mutation._repair_thumb_occupancy(g):
+                fixed = True
+                self.assertEqual(g[2], 1)
+                self.assertEqual(g[1], -1)
+                break
+        self.assertTrue(fixed, "thumb_occupancy repair never relocated the occupant off the restricted side")
 
     def test_numba_random_reassign_pairs_return_toggle(self):
         """Numba random_reassign must place a return toggle when creating a toggle access."""

@@ -354,7 +354,6 @@ class ExactEvalCallback(Callback):
         self.stagnation_count = 0
         self.last_best_quality = float('inf')
         self.base_mutation_prob = None
-        self.last_diversity_reset = 0
         self.archive_stagnation = 0
 
     def _get_mutation(self, algorithm):
@@ -520,71 +519,6 @@ class ExactEvalCallback(Callback):
 
         self.last_best_quality = best_quality
 
-    def _inject_diversity_on_stagnation(self, algorithm, gen):
-        if self.stagnation_count < 1200:
-            return
-        if gen - self.last_diversity_reset < 600:
-            return
-
-        pop_X = algorithm.pop.get("X")
-        pop_F = algorithm.pop.get("F")
-        pop_G = algorithm.pop.get("G")
-        if pop_X is None or pop_F is None or pop_X.shape[0] < 8:
-            return
-
-        n_pop = pop_X.shape[0]
-        n_replace = max(4, n_pop // 4)
-        mutable = self.layout.mutable_indices
-        if len(mutable) < 2:
-            return
-
-        scalar = self._quality_scalar(pop_F, pop_G)
-        elite_count = max(2, n_pop // 20)
-        elite_idx = set(np.argsort(scalar)[:elite_count].tolist())
-        replace_order = [idx for idx in np.argsort(scalar)[::-1] if int(idx) not in elite_idx]
-        replace_idx = replace_order[:n_replace]
-        if not replace_idx:
-            return
-
-        seed = self.layout.genome.astype(np.int32)
-        assigned_frozen = {int(seed[i]) for i in self.layout.frozen_indices if int(seed[i]) >= 0}
-        available = np.asarray([sid for sid in range(self.layout.n_shortcuts) if sid not in assigned_frozen], dtype=np.int32)
-        if len(available) == 0:
-            return
-
-        exact_genomes = []
-        exact_indices = []
-        for dst in replace_idx:
-            genome = seed.copy()
-            genome[mutable] = -1
-            n_assign = min(len(mutable), len(available))
-            shuffled_pos = np.random.permutation(mutable)
-            shuffled_sids = np.random.permutation(available)[:n_assign]
-            genome[shuffled_pos[:n_assign]] = shuffled_sids
-            pop_X[dst] = genome
-            exact_genomes.append(genome)
-            exact_indices.append(dst)
-
-        try:
-            exact_F, exact_G = self.evaluator.evaluate_batch(np.asarray(exact_genomes, dtype=np.int32))
-            for row, dst in enumerate(exact_indices):
-                pop_F[dst] = exact_F[row]
-                if pop_G is not None and exact_G.shape[1] > 0:
-                    pop_G[dst] = exact_G[row]
-        except Exception:
-            pass
-
-        algorithm.pop.set("X", pop_X)
-        algorithm.pop.set("F", pop_F)
-        if pop_G is not None:
-            algorithm.pop.set("G", pop_G)
-
-        self.last_diversity_reset = gen
-        print(
-            f"    Gen {gen}: stagnation for {self.stagnation_count} gens. Injected {len(replace_idx)} diverse individuals, kept {elite_count} elites.",
-            flush=True,
-        )
-
     def _save_checkpoint(self, algorithm, gen):
         pop_X = algorithm.pop.get("X")
         pop_F = algorithm.pop.get("F")
@@ -681,7 +615,6 @@ class ExactEvalCallback(Callback):
         gen = algorithm.n_iter
 
         self._adjust_mutation_rate(algorithm, gen)
-        self._inject_diversity_on_stagnation(algorithm, gen)
         if self.surrogate_manager is not None:
             self.surrogate_manager.generation = gen
             if (

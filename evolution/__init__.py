@@ -683,7 +683,14 @@ if NUMBA_AVAILABLE:
             sid = genome[pos]
             if sid < 0 or sid >= n_shortcuts:
                 continue
-            if access_target_lut[sid] <= 0:
+            # target < 0 means "not an access shortcut" -- excluded. target
+            # == 0 (an existing return-to-L0 toggle) is INCLUDED: this used
+            # to skip return toggles entirely, leaving no operator able to
+            # relocate an *existing* off-thumb one (only _numba_repair_return_toggles
+            # CREATES a missing one, on thumb). access_layout's
+            # return-toggle-not-on-thumb sub-term is weighted heavily and had
+            # no dedicated operator before this change.
+            if access_target_lut[sid] < 0:
                 continue
             if pos_is_thumb_arr[pos]:
                 continue
@@ -941,6 +948,355 @@ if NUMBA_AVAILABLE:
         genome[move_pos] = displaced
         return True
 
+    @njit(cache=True)
+    def _numba_propose_arrow_cluster(genome, state, arrow_sid_by_type, arrow_quads, n_shortcuts):
+        """Mutation proposal (not post-hoc repair): move the four raw-arrow
+        shortcuts directly into one of AGENTS.md's valid same-line shapes
+        (Left Up Down Right, one row) using a precomputed set of
+        geometrically-valid mutable position quads. Coordinating four exact
+        positions is the same kind of move that plateaued momentary_key_reuse
+        under pure fitness pressure alone; this proposes the move directly.
+        """
+        n_quads = arrow_quads.shape[0]
+        if n_quads == 0:
+            return False
+        left_sid = arrow_sid_by_type[1]
+        right_sid = arrow_sid_by_type[2]
+        up_sid = arrow_sid_by_type[3]
+        down_sid = arrow_sid_by_type[4]
+        if left_sid < 0 or right_sid < 0 or up_sid < 0 or down_sid < 0:
+            return False
+
+        n_pos = len(genome)
+        left_pos = -1
+        right_pos = -1
+        up_pos = -1
+        down_pos = -1
+        for i in range(n_pos):
+            v = genome[i]
+            if v == left_sid:
+                left_pos = i
+            elif v == right_sid:
+                right_pos = i
+            elif v == up_sid:
+                up_pos = i
+            elif v == down_sid:
+                down_pos = i
+
+        q = arrow_quads[_rand_int(state, n_quads)]
+        tgt_left, tgt_up, tgt_down, tgt_right = q[0], q[1], q[2], q[3]
+        if left_pos == tgt_left and up_pos == tgt_up and down_pos == tgt_down and right_pos == tgt_right:
+            return False
+
+        if left_pos >= 0:
+            genome[left_pos] = -1
+        if up_pos >= 0:
+            genome[up_pos] = -1
+        if down_pos >= 0:
+            genome[down_pos] = -1
+        if right_pos >= 0:
+            genome[right_pos] = -1
+
+        displaced = np.empty(4, dtype=np.int32)
+        displaced[0] = genome[tgt_left]
+        displaced[1] = genome[tgt_up]
+        displaced[2] = genome[tgt_down]
+        displaced[3] = genome[tgt_right]
+
+        genome[tgt_left] = left_sid
+        genome[tgt_up] = up_sid
+        genome[tgt_down] = down_sid
+        genome[tgt_right] = right_sid
+
+        vacated = np.empty(4, dtype=np.int32)
+        n_vac = 0
+        src_positions = np.empty(4, dtype=np.int32)
+        src_positions[0] = left_pos
+        src_positions[1] = up_pos
+        src_positions[2] = down_pos
+        src_positions[3] = right_pos
+        for k in range(4):
+            p = src_positions[k]
+            if p < 0 or p == tgt_left or p == tgt_up or p == tgt_down or p == tgt_right:
+                continue
+            vacated[n_vac] = p
+            n_vac += 1
+
+        k2 = 0
+        for d in range(4):
+            if displaced[d] < 0:
+                continue
+            if k2 < n_vac:
+                genome[vacated[k2]] = displaced[d]
+                k2 += 1
+            # else: no vacated home for this displaced sid -- dropped; a later
+            # generation's generic operators can re-home it.
+        return True
+
+    @njit(cache=True)
+    def _numba_propose_raw_completion_cluster(genome, state, sid_by_order, quints, n_shortcuts):
+        """Mutation proposal for raw_keyboard_completion_norwegian: move the
+        Norwegian/raw-completion family's base keys directly onto one
+        precomputed far-right-preferring, increasing-x quint of mutable
+        positions, mirroring _numba_propose_arrow_cluster's approach for the
+        same reason -- an exact 5-key coordinated shape is unlikely to emerge
+        from undirected mutation alone.
+        """
+        n_quints = quints.shape[0]
+        if n_quints == 0:
+            return False
+        sids = np.full(5, -1, dtype=np.int32)
+        n_present = 0
+        for o in range(1, 6):
+            sids[o - 1] = sid_by_order[o]
+            if sid_by_order[o] >= 0:
+                n_present += 1
+        if n_present < 2:
+            return False
+
+        n_pos = len(genome)
+        src = np.full(5, -1, dtype=np.int32)
+        for i in range(n_pos):
+            v = genome[i]
+            for k in range(5):
+                if sids[k] >= 0 and v == sids[k]:
+                    src[k] = i
+
+        q = quints[_rand_int(state, n_quints)]
+        already_correct = True
+        for k in range(5):
+            if sids[k] < 0:
+                continue
+            if src[k] != q[k]:
+                already_correct = False
+                break
+        if already_correct:
+            return False
+
+        for k in range(5):
+            if src[k] >= 0:
+                genome[src[k]] = -1
+
+        displaced = np.empty(5, dtype=np.int32)
+        for k in range(5):
+            displaced[k] = genome[q[k]]
+        for k in range(5):
+            if sids[k] >= 0:
+                genome[q[k]] = sids[k]
+
+        vacated = np.empty(5, dtype=np.int32)
+        n_vac = 0
+        for k in range(5):
+            p = src[k]
+            if p < 0:
+                continue
+            is_target = False
+            for j in range(5):
+                if p == q[j]:
+                    is_target = True
+                    break
+            if not is_target:
+                vacated[n_vac] = p
+                n_vac += 1
+
+        vi = 0
+        for k in range(5):
+            d = displaced[k]
+            if d < 0:
+                continue
+            if vi < n_vac:
+                genome[vacated[vi]] = d
+                vi += 1
+        return True
+
+    @njit(cache=True)
+    def _numba_repair_mouse_hold_conflict(genome, state, pos_layer_arr, pos_x_arr, pos_y_arr,
+                                          is_mouse_button_lut, access_target_lut, access_is_mo_lut,
+                                          layer_mutable_flat, layer_mutable_start, n_shortcuts):
+        """Repair for mouse_hold_position_conflict: a momentary access key
+        targeting the settled mouse layer must not sit at the exact physical
+        (x, y) of one of that layer's mouse buttons. Detecting "the settled
+        mouse layer" here uses a simple proxy (the layer with the most placed
+        mouse buttons) rather than the fitness kernel's full
+        natural_mouse_layer algorithm -- sufficient for a mutation proposal,
+        since scoring makes the final call either way.
+        """
+        n_pos = len(genome)
+        mb_count = np.zeros(32, dtype=np.int32)
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            if is_mouse_button_lut[sid]:
+                lyr = pos_layer_arr[i]
+                if 0 <= lyr < 32:
+                    mb_count[lyr] += 1
+
+        mouse_layer = -1
+        best = 0
+        for L in range(32):
+            if mb_count[L] > best:
+                best = mb_count[L]
+                mouse_layer = L
+        if mouse_layer < 0 or best < 3:
+            return False
+
+        mb_xs = np.full(16, -9999.0, dtype=np.float32)
+        mb_ys = np.full(16, -9999.0, dtype=np.float32)
+        n_mb = 0
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            if pos_layer_arr[i] == mouse_layer and is_mouse_button_lut[sid] and n_mb < 16:
+                mb_xs[n_mb] = pos_x_arr[i]
+                mb_ys[n_mb] = pos_y_arr[i]
+                n_mb += 1
+
+        conflict_pos = -1
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            if not access_is_mo_lut[sid]:
+                continue
+            if access_target_lut[sid] != mouse_layer:
+                continue
+            if pos_layer_arr[i] == mouse_layer:
+                continue
+            for k in range(n_mb):
+                dx = pos_x_arr[i] - mb_xs[k]
+                dy = pos_y_arr[i] - mb_ys[k]
+                if dx * dx + dy * dy < 0.01:
+                    conflict_pos = i
+                    break
+            if conflict_pos >= 0:
+                break
+        if conflict_pos < 0:
+            return False
+
+        src_layer = pos_layer_arr[conflict_pos]
+        start = layer_mutable_start[src_layer]
+        end = layer_mutable_start[src_layer + 1] if src_layer + 1 < len(layer_mutable_start) else len(layer_mutable_flat)
+        if start >= end:
+            return False
+
+        n_ae = 0
+        n_ap = 0
+        any_empty = np.empty(end - start, dtype=np.int32)
+        any_positions = np.empty(end - start, dtype=np.int32)
+        for p in range(start, end):
+            pos = layer_mutable_flat[p]
+            if pos == conflict_pos:
+                continue
+            any_positions[n_ap] = pos
+            n_ap += 1
+            if genome[pos] < 0:
+                any_empty[n_ae] = pos
+                n_ae += 1
+
+        if n_ae > 0:
+            pool = any_empty
+            n_pool = n_ae
+        elif n_ap > 0:
+            pool = any_positions
+            n_pool = n_ap
+        else:
+            return False
+
+        dest = pool[_rand_int(state, n_pool)]
+        move_sid = genome[conflict_pos]
+        displaced = genome[dest]
+        genome[dest] = move_sid
+        genome[conflict_pos] = displaced
+        return True
+
+    @njit(cache=True)
+    def _numba_repair_thumb_occupancy(genome, state, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr,
+                                      access_target_lut, access_is_mo_lut,
+                                      layer_mutable_flat, layer_mutable_start, n_shortcuts):
+        """Repair for thumb_occupancy: AGENTS.md's dynamic thumb-clearance rule
+        restricts one side's thumb area on a target layer when that layer is
+        reached by a momentary thumb key from that side only. Detects an
+        occupied position on a genuinely restricted side and relocates it to
+        a non-thumb slot on the same layer.
+        """
+        n_pos = len(genome)
+        direct_left_thumb_mo = np.zeros(32, dtype=np.bool_)
+        direct_right_thumb_mo = np.zeros(32, dtype=np.bool_)
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            if not access_is_mo_lut[sid]:
+                continue
+            tgt = access_target_lut[sid]
+            if tgt < 0 or tgt >= 32:
+                continue
+            if pos_is_thumb_arr[i]:
+                if pos_hand_arr[i] == 0:
+                    direct_left_thumb_mo[tgt] = True
+                elif pos_hand_arr[i] == 1:
+                    direct_right_thumb_mo[tgt] = True
+
+        conflict_pos = -1
+        for L in range(32):
+            rl = direct_left_thumb_mo[L]
+            rr = direct_right_thumb_mo[L]
+            if rl and rr:
+                continue
+            if not rl and not rr:
+                continue
+            for i in range(n_pos):
+                sid = genome[i]
+                if sid < 0 or sid >= n_shortcuts:
+                    continue
+                if pos_layer_arr[i] != L or not pos_is_thumb_arr[i]:
+                    continue
+                if (pos_hand_arr[i] == 0 and rl) or (pos_hand_arr[i] == 1 and rr):
+                    conflict_pos = i
+                    break
+            if conflict_pos >= 0:
+                break
+        if conflict_pos < 0:
+            return False
+
+        src_layer = pos_layer_arr[conflict_pos]
+        start = layer_mutable_start[src_layer]
+        end = layer_mutable_start[src_layer + 1] if src_layer + 1 < len(layer_mutable_start) else len(layer_mutable_flat)
+        if start >= end:
+            return False
+
+        n_ne = 0
+        n_na = 0
+        non_thumb_empty = np.empty(end - start, dtype=np.int32)
+        non_thumb_any = np.empty(end - start, dtype=np.int32)
+        for p in range(start, end):
+            pos = layer_mutable_flat[p]
+            if pos == conflict_pos or pos_is_thumb_arr[pos]:
+                continue
+            non_thumb_any[n_na] = pos
+            n_na += 1
+            if genome[pos] < 0:
+                non_thumb_empty[n_ne] = pos
+                n_ne += 1
+
+        if n_ne > 0:
+            pool = non_thumb_empty
+            n_pool = n_ne
+        elif n_na > 0:
+            pool = non_thumb_any
+            n_pool = n_na
+        else:
+            return False
+
+        dest = pool[_rand_int(state, n_pool)]
+        move_sid = genome[conflict_pos]
+        displaced = genome[dest]
+        genome[dest] = move_sid
+        genome[conflict_pos] = displaced
+        return True
+
     @njit(parallel=True, cache=True)
     def _mutate_batch_numba(X, handled, probs, seeds,
                             mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr, pos_effort_arr,
@@ -954,6 +1310,9 @@ if NUMBA_AVAILABLE:
                             mouse_button_sids,
                             toggle_access_sids_arr,
                             pos_physical_id_arr,
+                            arrow_sid_by_type, arrow_quads,
+                            raw_completion_sid_by_order, raw_completion_quints,
+                            is_mouse_button_lut,
                             n_shortcuts):
         n = X.shape[0]
         for i in prange(n):
@@ -1007,6 +1366,31 @@ if NUMBA_AVAILABLE:
                                                      access_target_lut, access_is_mo_lut,
                                                      layer_mutable_flat, layer_mutable_start,
                                                      pos_is_thumb_arr, n_shortcuts):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[7]:
+                if _numba_propose_arrow_cluster(X[i], state, arrow_sid_by_type, arrow_quads, n_shortcuts):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[8]:
+                if _numba_propose_raw_completion_cluster(X[i], state, raw_completion_sid_by_order,
+                                                         raw_completion_quints, n_shortcuts):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[9]:
+                if _numba_repair_mouse_hold_conflict(X[i], state, pos_layer_arr, pos_x_arr, pos_y_arr,
+                                                     is_mouse_button_lut, access_target_lut, access_is_mo_lut,
+                                                     layer_mutable_flat, layer_mutable_start, n_shortcuts):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[10]:
+                if _numba_repair_thumb_occupancy(X[i], state, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr,
+                                                 access_target_lut, access_is_mo_lut,
+                                                 layer_mutable_flat, layer_mutable_start, n_shortcuts):
                     handled[i] = True
                     continue
 
@@ -1881,6 +2265,22 @@ class SwapMutation(Mutation):
         # coordinated relocation move directly; scoring still decides if it
         # survives.
         self.momentary_reuse_repair_prob = 0.10
+        # Constructive mutation for arrow_order/arrow_scattered: coordinating
+        # four exact positions into one valid shape is the same kind of move
+        # that plateaued momentary_key_reuse -- see the "nuclear pass" plan.
+        self.arrow_cluster_prob = 0.06
+        # Constructive mutation for raw_keyboard_completion_norwegian: same
+        # reasoning as arrow_cluster_prob above, applied to the 5-key
+        # Norwegian/raw-completion family instead of the 4-key arrow cluster.
+        self.raw_completion_cluster_prob = 0.06
+        # Repair for mouse_hold_position_conflict: relocates an off-mouse-layer
+        # momentary access key away from the exact (x, y) of a mouse button on
+        # the settled mouse layer.
+        self.mouse_hold_conflict_repair_prob = 0.05
+        # Repair for thumb_occupancy: relocates an occupied thumb position off
+        # a side that's momentarily restricted by AGENTS.md's dynamic
+        # thumb-clearance rule.
+        self.thumb_occupancy_repair_prob = 0.05
         self.mutable_indices = np.where(~frozen_mask)[0] if frozen_mask is not None else None
         self.mutable_list = self.mutable_indices.tolist() if self.mutable_indices is not None else None
         self.group_sid_sets = []
@@ -2030,6 +2430,91 @@ class SwapMutation(Mutation):
             ]
         else:
             self._assignable_not_arrow = self._assignable_arr
+
+        # Arrow-direction lookup (1=left,2=right,3=up,4=down; mirrors
+        # fitness/kernel.py's shortcut_arrow_type) and precomputed
+        # geometrically-valid same-line quads (4 mutable, non-L7 positions
+        # sharing a row, x increasing, span<=4.5 -- one of AGENTS.md's two
+        # valid raw-arrow shapes) so _numba_propose_arrow_cluster can move
+        # existing arrow shortcuts directly into a known-valid arrangement
+        # instead of relying on undirected mutation to stumble onto one, the
+        # same plateau pattern already found and fixed for momentary_key_reuse.
+        self._arrow_sid_by_type = np.full(5, -1, dtype=np.int32)
+        if layout is not None and n_sc > 0:
+            arrow_base = {"LEFTARROW": 1, "RIGHTARROW": 2, "UPARROW": 3, "DOWNARROW": 4}
+            for s in layout.shortcuts:
+                if s.base_key and not s.modifiers:
+                    t = arrow_base.get(s.base_key.upper())
+                    if t is not None and self._arrow_sid_by_type[t] < 0:
+                        self._arrow_sid_by_type[t] = s.sid
+
+        arrow_quads: list = []
+        if layout is not None:
+            by_layer_row: dict = {}
+            for idx in (self.mutable_list or []):
+                pos = layout.positions[idx]
+                if pos.layer == 7:
+                    continue
+                key = (pos.layer, round(pos.y, 2))
+                by_layer_row.setdefault(key, []).append(idx)
+            for _key, idxs in by_layer_row.items():
+                idxs_sorted = sorted(idxs, key=lambda i: layout.positions[i].x)
+                for start in range(len(idxs_sorted) - 3):
+                    window = idxs_sorted[start:start + 4]
+                    xs = [layout.positions[i].x for i in window]
+                    if xs[3] - xs[0] <= 4.5:
+                        arrow_quads.append(tuple(window))
+            arrow_quads = arrow_quads[:64]
+        self._arrow_quads = (
+            np.array(arrow_quads, dtype=np.int32) if arrow_quads else np.zeros((0, 4), dtype=np.int32)
+        )
+
+        # Norwegian/raw-completion family (mirrors fitness/kernel.py's
+        # raw_completion_order exactly): 5 base keys in a fixed order.
+        # raw_keyboard_completion_norwegian rewards concentrating all of them
+        # on one layer, in increasing-x order, rows close together -- another
+        # exact multi-key coordinated shape with no constructive mutation
+        # support before this change (only arrows had a drop operator).
+        self._raw_completion_sid_by_order = np.full(6, -1, dtype=np.int32)
+        if layout is not None and n_sc > 0:
+            _raw_completion_order = {
+                "DASH AND UNDERSCORE": 1,
+                "EQUALS AND PLUS": 2,
+                "GRAVE ACCENT AND TILDE": 3,
+                "RIGHT BRACE": 4,
+                "BACKSLASH AND PIPE": 5,
+            }
+            for s in layout.shortcuts:
+                key = (s.base_key or "").upper()
+                if key in _raw_completion_order and len(s.modifiers) == 0 and not s.is_l0_only:
+                    o = _raw_completion_order[key]
+                    if self._raw_completion_sid_by_order[o] < 0:
+                        self._raw_completion_sid_by_order[o] = s.sid
+
+        raw_completion_quints: list = []
+        if layout is not None:
+            by_layer_row_rc: dict = {}
+            for idx in (self.mutable_list or []):
+                pos = layout.positions[idx]
+                if pos.layer == 7:
+                    continue
+                key = (pos.layer, round(pos.y, 2))
+                by_layer_row_rc.setdefault(key, []).append(idx)
+            for _key, idxs in by_layer_row_rc.items():
+                idxs_sorted = sorted(idxs, key=lambda i: layout.positions[i].x)
+                for start in range(len(idxs_sorted) - 4):
+                    window = idxs_sorted[start:start + 5]
+                    raw_completion_quints.append(tuple(window))
+            # Prefer far-right clusters (AGENTS.md's backup-group rule): sort
+            # by descending average x so the rightmost valid window is tried first.
+            raw_completion_quints.sort(
+                key=lambda w: -sum(layout.positions[i].x for i in w) / 5.0
+            )
+            raw_completion_quints = raw_completion_quints[:64]
+        self._raw_completion_quints = (
+            np.array(raw_completion_quints, dtype=np.int32)
+            if raw_completion_quints else np.zeros((0, 5), dtype=np.int32)
+        )
 
         # LUTs for O(1) numpy-vectorized reachability and thumb-occupancy checks.
         # Replaces Python dict iteration in _would_break_reachability and
@@ -2215,6 +2700,14 @@ class SwapMutation(Mutation):
         for btn_idx, sid in self.mouse_button_sids.items():
             if 1 <= btn_idx <= 5:
                 self._mouse_button_sids[btn_idx] = int(sid)
+        # Boolean LUT version, used by _numba_repair_mouse_hold_conflict to
+        # detect a settled mouse layer without needing the fitness kernel's
+        # full shortcut_is_mouse/shortcut_mouse_button arrays.
+        self._is_mouse_button_lut = np.zeros(n_sc, dtype=np.bool_) if n_sc > 0 else np.array([], dtype=np.bool_)
+        if n_sc > 0:
+            for btn_idx, sid in self.mouse_button_sids.items():
+                if 1 <= btn_idx <= 5 and 0 <= sid < n_sc:
+                    self._is_mouse_button_lut[sid] = True
 
         # Toggle access sids (not @L0, not @L7) as a sorted int32 array.
         self._toggle_access_sids_arr = np.array(
@@ -3131,8 +3624,12 @@ class SwapMutation(Mutation):
         mutable_sids = genome[self._mutable_arr]
         valid = (mutable_sids >= 0) & (mutable_sids < self.n_shortcuts)
         safe_sids = np.where(valid, mutable_sids, 0)
-        # Non-thumb mutable positions holding an access key
-        is_access = valid & (self._access_target_lut[safe_sids] > 0)
+        # Non-thumb mutable positions holding an access key. >= 0 (not > 0)
+        # so this also relocates an *existing* off-thumb return-to-L0 toggle
+        # (target == 0) -- previously excluded, leaving no operator able to
+        # fix a misplaced one (see the njit twin _numba_bias_access_to_thumb
+        # for the full reasoning).
+        is_access = valid & (self._access_target_lut[safe_sids] >= 0)
         is_nonthumb = ~self._pos_is_thumb_arr[self._mutable_arr]
         nonthumb_access_mask = is_access & is_nonthumb
         if not nonthumb_access_mask.any():
@@ -3252,6 +3749,237 @@ class SwapMutation(Mutation):
         genome[move_pos] = displaced
         return True
 
+    def _propose_arrow_cluster(self, genome):
+        """Pure-Python fallback for _numba_propose_arrow_cluster (used only
+        when Numba is unavailable). Moves the four raw-arrow shortcuts
+        directly into one of AGENTS.md's valid same-line shapes using a
+        precomputed set of geometrically-valid mutable position quads.
+        """
+        n_quads = self._arrow_quads.shape[0]
+        if n_quads == 0:
+            return False
+        left_sid = int(self._arrow_sid_by_type[1])
+        right_sid = int(self._arrow_sid_by_type[2])
+        up_sid = int(self._arrow_sid_by_type[3])
+        down_sid = int(self._arrow_sid_by_type[4])
+        if left_sid < 0 or right_sid < 0 or up_sid < 0 or down_sid < 0:
+            return False
+
+        genome_arr = np.asarray(genome)
+        src_positions = {}
+        for i, v in enumerate(genome_arr):
+            iv = int(v)
+            if iv == left_sid:
+                src_positions["left"] = i
+            elif iv == right_sid:
+                src_positions["right"] = i
+            elif iv == up_sid:
+                src_positions["up"] = i
+            elif iv == down_sid:
+                src_positions["down"] = i
+
+        q = self._arrow_quads[random.randrange(n_quads)]
+        tgt_left, tgt_up, tgt_down, tgt_right = int(q[0]), int(q[1]), int(q[2]), int(q[3])
+        if (src_positions.get("left") == tgt_left and src_positions.get("up") == tgt_up
+                and src_positions.get("down") == tgt_down and src_positions.get("right") == tgt_right):
+            return False
+
+        targets = {"left": tgt_left, "up": tgt_up, "down": tgt_down, "right": tgt_right}
+        sids = {"left": left_sid, "up": up_sid, "down": down_sid, "right": right_sid}
+        for direction, pos in list(src_positions.items()):
+            genome[pos] = -1
+
+        displaced = {direction: genome[targets[direction]] for direction in targets}
+        for direction, pos in targets.items():
+            genome[pos] = sids[direction]
+
+        vacated = [
+            pos for direction, pos in src_positions.items()
+            if pos not in targets.values()
+        ]
+        vi = 0
+        for direction, sid in displaced.items():
+            if sid < 0:
+                continue
+            if vi < len(vacated):
+                genome[vacated[vi]] = sid
+                vi += 1
+        return True
+
+    def _propose_raw_completion_cluster(self, genome):
+        """Pure-Python fallback for _numba_propose_raw_completion_cluster
+        (used only when Numba is unavailable). Moves the Norwegian/raw-
+        completion family's base keys onto one precomputed quint of mutable
+        positions.
+        """
+        n_quints = self._raw_completion_quints.shape[0]
+        if n_quints == 0:
+            return False
+        sids = [int(self._raw_completion_sid_by_order[o]) for o in range(1, 6)]
+        if sum(1 for s in sids if s >= 0) < 2:
+            return False
+
+        genome_arr = np.asarray(genome)
+        src = [-1] * 5
+        for i, v in enumerate(genome_arr):
+            iv = int(v)
+            for k in range(5):
+                if sids[k] >= 0 and iv == sids[k]:
+                    src[k] = i
+
+        q = self._raw_completion_quints[random.randrange(n_quints)]
+        q = [int(x) for x in q]
+        if all(src[k] == q[k] for k in range(5) if sids[k] >= 0):
+            return False
+
+        for k in range(5):
+            if src[k] >= 0:
+                genome[src[k]] = -1
+
+        displaced = [genome[q[k]] for k in range(5)]
+        for k in range(5):
+            if sids[k] >= 0:
+                genome[q[k]] = sids[k]
+
+        vacated = [src[k] for k in range(5) if src[k] >= 0 and src[k] not in q]
+        vi = 0
+        for d in displaced:
+            if d < 0:
+                continue
+            if vi < len(vacated):
+                genome[vacated[vi]] = d
+                vi += 1
+        return True
+
+    def _repair_mouse_hold_conflict(self, genome):
+        """Pure-Python fallback for _numba_repair_mouse_hold_conflict (used
+        only when Numba is unavailable). Relocates a momentary access key
+        targeting the settled mouse layer away from the exact (x, y) of one
+        of that layer's mouse buttons.
+        """
+        genome_arr = np.asarray(genome, dtype=np.int32)
+        n_pos = len(genome_arr)
+        mb_count = np.zeros(32, dtype=np.int32)
+        for i in range(n_pos):
+            sid = int(genome_arr[i])
+            if 0 <= sid < self.n_shortcuts and self._is_mouse_button_lut[sid]:
+                lyr = int(self._pos_layer_arr[i])
+                if 0 <= lyr < 32:
+                    mb_count[lyr] += 1
+        mouse_layer = int(np.argmax(mb_count))
+        if mb_count[mouse_layer] < 3:
+            return False
+
+        mb_xy = []
+        for i in range(n_pos):
+            sid = int(genome_arr[i])
+            if (0 <= sid < self.n_shortcuts and self._is_mouse_button_lut[sid]
+                    and int(self._pos_layer_arr[i]) == mouse_layer):
+                mb_xy.append((float(self._pos_x[i]), float(self._pos_y[i])))
+        if not mb_xy:
+            return False
+
+        conflict_pos = -1
+        for i in range(n_pos):
+            sid = int(genome_arr[i])
+            if sid < 0 or sid >= self.n_shortcuts:
+                continue
+            if not self._access_is_mo_lut[sid]:
+                continue
+            if int(self._access_target_lut[sid]) != mouse_layer:
+                continue
+            if int(self._pos_layer_arr[i]) == mouse_layer:
+                continue
+            px, py = float(self._pos_x[i]), float(self._pos_y[i])
+            for mx, my in mb_xy:
+                if (px - mx) ** 2 + (py - my) ** 2 < 0.01:
+                    conflict_pos = i
+                    break
+            if conflict_pos >= 0:
+                break
+        if conflict_pos < 0:
+            return False
+
+        src_layer = int(self._pos_layer_arr[conflict_pos])
+        layer_positions = self._layer_mutable_positions.get(src_layer)
+        if not layer_positions:
+            return False
+        candidates = [p for p in layer_positions if p != conflict_pos]
+        if not candidates:
+            return False
+        empty = [p for p in candidates if genome[p] < 0]
+        pool = empty if empty else candidates
+
+        dest = int(random.choice(pool))
+        move_sid = genome[conflict_pos]
+        displaced = genome[dest]
+        genome[dest] = move_sid
+        genome[conflict_pos] = displaced
+        return True
+
+    def _repair_thumb_occupancy(self, genome):
+        """Pure-Python fallback for _numba_repair_thumb_occupancy (used only
+        when Numba is unavailable). Relocates an occupied thumb position off
+        a side that AGENTS.md's dynamic thumb-clearance rule momentarily
+        restricts on that layer.
+        """
+        genome_arr = np.asarray(genome, dtype=np.int32)
+        n_pos = len(genome_arr)
+        restrict_left = np.zeros(32, dtype=np.bool_)
+        restrict_right = np.zeros(32, dtype=np.bool_)
+        for i in range(n_pos):
+            sid = int(genome_arr[i])
+            if sid < 0 or sid >= self.n_shortcuts:
+                continue
+            if not self._access_is_mo_lut[sid]:
+                continue
+            tgt = int(self._access_target_lut[sid])
+            if tgt < 0 or tgt >= 32:
+                continue
+            if self._pos_is_thumb_arr[i]:
+                hand = int(self._pos_hand_arr[i])
+                if hand == 0:
+                    restrict_left[tgt] = True
+                elif hand == 1:
+                    restrict_right[tgt] = True
+
+        conflict_pos = -1
+        for L in range(32):
+            rl, rr = restrict_left[L], restrict_right[L]
+            if (rl and rr) or (not rl and not rr):
+                continue
+            for i in range(n_pos):
+                sid = int(genome_arr[i])
+                if sid < 0 or sid >= self.n_shortcuts:
+                    continue
+                if int(self._pos_layer_arr[i]) != L or not self._pos_is_thumb_arr[i]:
+                    continue
+                hand = int(self._pos_hand_arr[i])
+                if (hand == 0 and rl) or (hand == 1 and rr):
+                    conflict_pos = i
+                    break
+            if conflict_pos >= 0:
+                break
+        if conflict_pos < 0:
+            return False
+
+        src_layer = int(self._pos_layer_arr[conflict_pos])
+        layer_positions = self._layer_mutable_positions.get(src_layer)
+        if not layer_positions:
+            return False
+        non_thumb = [p for p in layer_positions if p != conflict_pos and not self._pos_is_thumb_arr[p]]
+        if not non_thumb:
+            return False
+        empty = [p for p in non_thumb if genome[p] < 0]
+        pool = empty if empty else non_thumb
+
+        dest = int(random.choice(pool))
+        move_sid = genome[conflict_pos]
+        displaced = genome[dest]
+        genome[dest] = move_sid
+        genome[conflict_pos] = displaced
+        return True
+
     def _do(self, problem, X, **kwargs):
         n = X.shape[0]
         prob = float(self.prob.value if hasattr(self.prob, "value") else self.prob)
@@ -3354,6 +4082,10 @@ class SwapMutation(Mutation):
                 self.access_thumb_bias_prob,
                 self.return_toggle_repair_prob,
                 self.momentary_reuse_repair_prob,
+                self.arrow_cluster_prob,
+                self.raw_completion_cluster_prob,
+                self.mouse_hold_conflict_repair_prob,
+                self.thumb_occupancy_repair_prob,
             ], dtype=np.float64)
             seeds = np.random.randint(0, 2**63, size=n, dtype=np.uint64)
             _mutate_batch_numba(
@@ -3384,6 +4116,11 @@ class SwapMutation(Mutation):
                 self._mouse_button_sids,
                 self._toggle_access_sids_arr,
                 self._pos_physical_id,
+                self._arrow_sid_by_type,
+                self._arrow_quads,
+                self._raw_completion_sid_by_order,
+                self._raw_completion_quints,
+                self._is_mouse_button_lut,
                 np.int32(self.n_shortcuts),
             )
         else:
@@ -3410,6 +4147,18 @@ class SwapMutation(Mutation):
                     handled[i] = True
                     continue
                 if random.random() < self.momentary_reuse_repair_prob and self._repair_momentary_key_reuse(X[i]):
+                    handled[i] = True
+                    continue
+                if random.random() < self.arrow_cluster_prob and self._propose_arrow_cluster(X[i]):
+                    handled[i] = True
+                    continue
+                if random.random() < self.raw_completion_cluster_prob and self._propose_raw_completion_cluster(X[i]):
+                    handled[i] = True
+                    continue
+                if random.random() < self.mouse_hold_conflict_repair_prob and self._repair_mouse_hold_conflict(X[i]):
+                    handled[i] = True
+                    continue
+                if random.random() < self.thumb_occupancy_repair_prob and self._repair_thumb_occupancy(X[i]):
                     handled[i] = True
                     continue
 

@@ -116,6 +116,30 @@ fitness:
     # empirical A/B test; this must be re-verified against fresh checkpoints
     # (not assumed from magnitude alone) before being treated as resolved.
     momentary_key_reuse: 500000000.0
+    # Full weight-magnitude audit (2026-07-12, "nuclear pass"): every
+    # violation_sub_weights entry was measured against a real checkpoint
+    # (gen 7500, v2_momentary_reuse_mutfix_20260712) using a
+    # contamination-cancelling method (isolate raw_scores[term] via
+    # violations-only weights with the target term at 1.0 vs a same-setup
+    # all-zero baseline, then subtract -- the earlier float32-cancellation
+    # bug this session found does NOT reappear here because the constant
+    # mouse_effective_access/mouse_workflow contamination is identical in
+    # both measurements and cancels exactly). Findings: layer_depth_penalty
+    # (~6.7% of viol budget) and momentary_key_reuse (~4.4%) dominate as
+    # intended. Every other term was either exactly zero (a genuinely
+    # satisfied hard constraint on this feasible checkpoint -- correct, not
+    # a bug) or a small-but-real nonzero residual (raw_keyboard_completion_norwegian
+    # ~0.06%, dynamic_mouse_layer ~0.12%, arrow_scattered ~0.002%, etc.).
+    # None showed the "1000-2500x too weak to ever matter" signature the
+    # original momentary_key_reuse guess had. No other weight changed as a
+    # result: the small-residual terms above now have dedicated constructive/
+    # repair mutation operators (evolution/__init__.py's
+    # _numba_propose_arrow_cluster, _numba_propose_raw_completion_cluster,
+    # _numba_repair_mouse_hold_conflict, _numba_repair_thumb_occupancy, plus
+    # the extended _numba_bias_access_to_thumb) that construct the fix
+    # directly rather than needing strong gradient pressure to stumble onto
+    # it by chance, so their current weights are enough to make an accepted
+    # improving move once one is proposed.
   hard_constraints:
     - missing_important
     - layer7_access
