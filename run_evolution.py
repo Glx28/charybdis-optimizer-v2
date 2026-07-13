@@ -542,7 +542,8 @@ class ExactEvalCallback(Callback):
             self.archive_stagnation = 0
             print(
                 f"    Gen {gen}: global best improved to {population_exact_entry['total_score']:.4f} "
-                f"(optimizer_side_pass={population_exact_entry['optimizer_side_pass']})",
+                f"(rebased={population_exact_entry['total_score'] + 315.0:.2f}, "
+                f"optimizer_side_pass={population_exact_entry['optimizer_side_pass']})",
                 flush=True,
             )
         else:

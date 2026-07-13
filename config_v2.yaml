@@ -74,10 +74,15 @@ fitness:
   violation_sub_weights:
     duplicate: 35.0
     l0_displacement: 50.0
-    missing_important: 500.0
+    # Recalibrated 2026-07-13 (corrected zero-others methodology): this is one
+    # of the 6 hard-constraint-driving terms (missing_important,
+    # layer7_access, natural_mouse_layer_exists, layer_reachability,
+    # toggle_back_to_l0, same_layer_duplicate) but was left at 500 while its
+    # siblings sit at 50000-200000 -- brought in line with that tier.
+    missing_important: 200000.0
     cross_layer_duplicate: 40000.0
     group_split: 200.0
-    thumb_occupancy: 30000.0
+    thumb_occupancy: 50000.0
     arrow_order: 10000.0
     hand_bias: 25000.0
     mouse_layer_access: 5000000.0
@@ -86,15 +91,49 @@ fitness:
     layer7_access: 50000.0
     duplicate_value_gap: 45000.0
     access_layout: 5000.0
-    raw_keyboard_completion_norwegian: 80000.0
-    dynamic_mouse_layer: 500000.0
+    # Recalibrated 2026-07-13: these two terms are continuous quality/
+    # refinement scores whose raw value is already an internal sum of many
+    # kernel-side sub-penalties (each already scaled to the tens of
+    # thousands, e.g. dynamic_mouse_layer's per-button ideal-position terms
+    # in fitness/kernel.py), not a simple violation count like most other
+    # terms here. Measured directly: their raw magnitude (~62600 and
+    # ~146300 respectively) was ~400-1000x larger than a typical
+    # violation-count term's raw magnitude (thumb_occupancy: ~144), so their
+    # old outer weights (80000/500000) compounded into contributions 7000x+
+    # larger than every count-based soft-pressure term combined, swamping
+    # the whole viol axis. Brought down so their contribution lands in the
+    # same tier as hand_bias (a term not implicated in this investigation).
+    raw_keyboard_completion_norwegian: 20.0
+    dynamic_mouse_layer: 50.0
     empty_position: 200.0
     layer_reachability: 50000.0
-    layer_depth_penalty: 3000000000.0
+    # Recalibrated 2026-07-13: measured directly against a real gen-30000
+    # checkpoint using the corrected zero-others methodology (see
+    # AGENTS.md/momentary_key_reuse for why this is the only valid method).
+    # At 3e9, this term alone produced a raw viol contribution ~250x larger
+    # than every other active soft-pressure term combined in that checkpoint
+    # (thumb_occupancy, hand_bias, arrow_order, access_layout, group_split,
+    # empty_position) -- not because the genome's actual depth-penalty
+    # magnitude was unusually large (it measured comparable to
+    # thumb_occupancy's own raw magnitude), but purely because of this
+    # weight. That swamped the entire shared violations axis, making every
+    # other soft-pressure term's calibration irrelevant regardless of its own
+    # weight -- confirmed to be why raising thumb_occupancy alone (even 20x)
+    # produced no measurable change in total_score. Brought down to the same
+    # tier as its layer-structure siblings (layer7_access/layer_reachability).
+    layer_depth_penalty: 50000.0
     natural_mouse_layer_exists: 200000
-    toggle_back_to_l0: 150000000000.0
-    mouse_hold_position_conflict: 150000000000.0
-    mouse_layer_depth_penalty: 150000000000.0
+    # Recalibrated 2026-07-13: these three terms shared the identical
+    # placeholder value 150000000000.0 (1.5e11) -- an obvious copy-paste/
+    # arbitrary-huge-number artifact, not a calibrated value, and 750x larger
+    # than layer_depth_penalty even before that term's own fix above.
+    # toggle_back_to_l0 is a hard-constraint-driving term -- matched to that
+    # tier (natural_mouse_layer_exists/same_layer_duplicate). The other two
+    # are soft, repair-eligible position conflicts -- matched to the
+    # layer7_access/layer_reachability tier.
+    toggle_back_to_l0: 200000.0
+    mouse_hold_position_conflict: 50000.0
+    mouse_layer_depth_penalty: 50000.0
     same_layer_duplicate: 200000.0
     # Soft pressure only (not a hard constraint, matching every other
     # UX-quality rule in this file): discourages one physical key acting as a

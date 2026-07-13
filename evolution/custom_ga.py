@@ -132,6 +132,20 @@ def _display_gap(entry, target=-49.30):
     return gap
 
 
+# Display-only rebasing (2026-07-13, user request): a healthy layout's
+# total_score has consistently landed around -315 across every checkpoint
+# this session, which reads awkwardly as a large negative number. Adding
+# this constant to total_score for DISPLAY ONLY makes -315 read as ~0 --
+# purely cosmetic, does not touch the actual objective/selection math
+# anywhere (a constant additive shift changes no relative ordering, so it
+# cannot affect evolution/acceptance/archive decisions).
+SCORE_REBASE_OFFSET = 315.0
+
+
+def _rebased(total_score):
+    return float(total_score) + SCORE_REBASE_OFFSET
+
+
 # ---------------------------------------------------------------------------
 # Main runner
 # ---------------------------------------------------------------------------
@@ -251,7 +265,7 @@ class CustomGARunner:
             gap = _display_gap(mini_entry)
             print(
                 f"    Gen {gen}: global best improved to {mini_entry['total_score']:.4f}"
-                f" (gap={gap:+.2f}, source=exact_eval)",
+                f" (rebased={_rebased(mini_entry['total_score']):.2f}, gap={gap:+.2f}, source=exact_eval)",
                 flush=True,
             )
 
@@ -591,7 +605,8 @@ class CustomGARunner:
             gap = _display_gap(entry)
             print(
                 f"    Gen {gen}: global best improved to {entry['total_score']:.4f}"
-                f" (gap={gap:+.2f}, optimizer_side_pass={entry['optimizer_side_pass']})",
+                f" (rebased={_rebased(entry['total_score']):.2f}, gap={gap:+.2f},"
+                f" optimizer_side_pass={entry['optimizer_side_pass']})",
                 flush=True,
             )
         else:
@@ -600,7 +615,8 @@ class CustomGARunner:
             if stagnant_gens >= 100000 and self.global_best_exact is not None:
                 print(
                     f"    Gen {gen}: early stop — archive stagnant for {stagnant_gens} gens"
-                    f" (best score={self.global_best_exact['total_score']:.4f})",
+                    f" (best score={self.global_best_exact['total_score']:.4f},"
+                    f" rebased={_rebased(self.global_best_exact['total_score']):.2f})",
                     flush=True,
                 )
                 self._should_stop = True

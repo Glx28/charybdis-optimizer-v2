@@ -187,8 +187,11 @@ def main():
     print(f"Generation: {gen}")
     archive_total = best_exact.get("total_score", total)
     pop_total = pop_exact.get("total_score", 0.0)
-    print(f"Archive best total: {archive_total:.4f} (gap {archive_total + 49.30:+.2f})")
-    print(f"Population best total: {pop_total:.4f} (gap {pop_total + 49.30:+.2f})")
+    # Display-only rebasing (2026-07-13): a healthy layout has consistently
+    # scored around -315 this session, so +315 makes that read as ~0. Purely
+    # cosmetic -- does not affect any optimization/acceptance logic.
+    print(f"Archive best total: {archive_total:.4f} (rebased {archive_total + 315.0:+.2f}, gap {archive_total + 49.30:+.2f})")
+    print(f"Population best total: {pop_total:.4f} (rebased {pop_total + 315.0:+.2f}, gap {pop_total + 49.30:+.2f})")
     print(f"Objectives (recomputed): effort={F[0,0]:.4f} adj={F[0,1]:.4f} viol={F[0,2]:.4f}")
     print(f"Constraints: {[int(c) for c in G[0]]}")
     optimizer_side_pass = bool(acc.get("optimizer_side_pass", False)) and all(int(c) == 0 for c in G[0])
@@ -273,7 +276,7 @@ def main():
             print(f"  L{lyr} pos{pos:3d} effort={eff:.2f}")
         print()
 
-    print(f"Re-evaluated total score: {total:.4f} (gap {gap:+.2f})")
+    print(f"Re-evaluated total score: {total:.4f} (rebased {total + 315.0:+.2f}, gap {gap:+.2f})")
 
 
 if __name__ == "__main__":
