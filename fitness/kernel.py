@@ -2250,6 +2250,18 @@ if NUMBA_AVAILABLE:
             layer_factor = 3.0 / (1.0 + lc * 0.15)
             if layer_factor > 4.0:
                 layer_factor = 4.0
+            # Floor confirmed necessary 2026-07-13: without it, a handful of
+            # genuinely prime (effort==0) empty slots on expensive-to-reach
+            # layers were found sitting empty and completely flat across
+            # 1000+ real generations late in a 30k run (L5/L9/L10, 6 such
+            # slots total) -- access-cost scaling correctly identifies these
+            # as harder-to-reach layers, but was allowed to crush the
+            # pressure on their own best slots to near-zero, which AGENTS.md
+            # never intended (only L0 is meant to get special treatment;
+            # other layers' prime slots should still be contested, just less
+            # fiercely than L0's).
+            if layer_factor < 0.5:
+                layer_factor = 0.5
             ld = layer_demand[layer]
             demand_scale = 1.0 + ld / (1.0 + ld * 2.0) * 0.6
             _empty_penalty = gate * layer_factor * demand_scale * 20.0

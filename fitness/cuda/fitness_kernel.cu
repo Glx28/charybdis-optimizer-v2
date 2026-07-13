@@ -1963,6 +1963,11 @@ __device__ void evaluate_single(
         float lc = s->layer_access_cost[layer];
         float layer_factor = 3.0f / (1.0f + lc * 0.15f);
         if (layer_factor > 4.0f) layer_factor = 4.0f;
+        // Floor confirmed necessary 2026-07-13 (see fitness/kernel.py for the
+        // full reasoning): without it, prime (effort==0) empty slots on
+        // expensive-to-reach layers can have their pressure crushed to
+        // near-zero and sit empty indefinitely.
+        if (layer_factor < 0.5f) layer_factor = 0.5f;
         float ld = s->layer_demand[layer];
         float demand_scale = 1.0f + ld / (1.0f + ld * 2.0f) * 0.6f;
         float empty_penalty = gate * layer_factor * demand_scale * 20.0f;
