@@ -870,7 +870,16 @@ if NUMBA_AVAILABLE:
             if target < 0 or target >= 32:
                 continue
             source = pos_layer[i]
-            if source < 0 or source >= 32:
+            if source < 0 or source >= 32 or source == target:
+                # A self-referential access key (source layer == target layer,
+                # e.g. a "Toggle Layer 9" key placed ON layer 9) can only ever
+                # be pressed once the user is already on that layer via some
+                # other entry path. It is not a real external entry point, so
+                # it must never satisfy reachability/return-toggle/mouse-layer
+                # checks -- mirrors the same exclusion the direct_toggle_access
+                # loop above already applies. Omitting this let a self-ref
+                # toggle wrongly grant natural_mouse_layer_exists (a hard
+                # constraint) without any genuine external toggle path existing.
                 continue
             if not shortcut_access_momentary[sid] and layer_access_cost[source] < 999999.0:
                 reachable_toggle_access[target] = True

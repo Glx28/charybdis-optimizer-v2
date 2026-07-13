@@ -244,6 +244,35 @@ general access-layout thumb preference. This is soft pressure, not a hard
 constraint — a layer can still legally keep its return toggle elsewhere, it
 just competes against this pressure like any other placement choice.
 
+**Self-referential access keys never satisfy any reachability, return-toggle,
+or access-path requirement.** An access shortcut (hold or toggle) whose source
+layer equals its own target layer — e.g. a "Toggle Layer 9" key physically
+placed on layer 9 — can only ever be pressed once the user is already on that
+layer via some other genuine entry path. It is not a real external entry
+point and must be excluded, everywhere reachability/access is computed, with
+the same `source_layer != target_layer` check already used for
+`momentary_key_reuse` and `direct_toggle_access`/`toggle_back_to_l0`. This was
+found broken on 2026-07-13: a second, independent reachability computation
+(`reachable_toggle_access`, used by `natural_mouse_layer_exists`, L7 access,
+and the momentary-thumb-clearance check) lacked this exclusion while the
+first one (`direct_toggle_access`, used by `toggle_back_to_l0`) already had
+it — so a self-referential toggle could wrongly grant a layer
+`natural_mouse_layer_exists` (a hard constraint) with zero genuine toggle-in
+path and zero real return-to-L0, and the layer's own acceptance-report check
+(`evolution/acceptance.py`'s `_dynamic_mouse_layer_report`) had the identical
+gap and reported it as passing. Fixed in `fitness/kernel.py`,
+`fitness/cuda/fitness_kernel.cu`, and `evolution/acceptance.py`
+(`_dynamic_mouse_layer_report`, `_momentary_thumb_clearance` incoming-access
+list, `_layer7_access_report`) — all four now share the same exclusion. Any
+new reachability/access-graph computation added to this codebase (kernel,
+CUDA kernel, or acceptance/reporting code) must apply this same exclusion, or
+verify by direct construction (a synthetic self-referential toggle test case
+per candidate layer) that it does not silently pass. Do not trust "acceptance
+checks all green" as proof a layer is genuinely reachable — recompute
+reachability from the raw genome/access graph and check for self-referential
+edges explicitly when auditing a checkpoint's mouse layer, L7 access, or any
+toggle-accessed layer.
+
 A physical key's momentary-hold job should stay consistent regardless of
 which layer is currently active. Momentary and toggle access shortcuts can be
 placed on any layer as a source, and nested/stacked momentary chains are

@@ -236,6 +236,12 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
             if (
                 row["source_layer"] in reachable_layers
                 and row["target_layer"] == layer
+                and row["source_layer"] != layer
+                # A self-referential toggle (source layer == target layer, e.g.
+                # a "Toggle Layer 9" key placed ON layer 9) can only be pressed
+                # once the user is already on that layer via some other entry
+                # path. It is not a real external toggle-in and must not count
+                # here -- mirrors the same exclusion in fitness/kernel.py.
                 and not row["momentary"]
                 and not row["frozen"]
             )
@@ -427,7 +433,16 @@ def _momentary_only_thumb_clearance_report(layout: Layout) -> Dict:
     for layer in sorted({row["target_layer"] for row in access_rows if row["target_layer"] not in (0, 7)}):
         incoming = [
             row for row in access_rows
-            if row["target_layer"] == layer and row["source_layer"] in reachable_layers
+            if (
+                row["target_layer"] == layer
+                and row["source_layer"] in reachable_layers
+                # Exclude self-referential access (source layer == target
+                # layer): a key that only fires once you're already on this
+                # layer is not a real external entry path. Mirrors the same
+                # exclusion in fitness/kernel.py and the mouse-layer check
+                # above.
+                and row["source_layer"] != layer
+            )
         ]
         toggles = [row for row in incoming if not row["momentary"]]
         thumb_momentary_hands: Set[str] = {
@@ -531,11 +546,21 @@ def _layer7_access_report(layout: Layout) -> Dict:
     reachable_layers = _reachable_layers_from_access_rows(access_rows)
     momentary = [
         row for row in access_rows
-        if row["target_layer"] == 7 and row["momentary"] and row["source_layer"] in reachable_layers
+        if (
+            row["target_layer"] == 7
+            and row["momentary"]
+            and row["source_layer"] in reachable_layers
+            and row["source_layer"] != 7  # self-referential access is not a real entry path
+        )
     ]
     toggle = [
         row for row in access_rows
-        if row["target_layer"] == 7 and not row["momentary"] and row["source_layer"] in reachable_layers
+        if (
+            row["target_layer"] == 7
+            and not row["momentary"]
+            and row["source_layer"] in reachable_layers
+            and row["source_layer"] != 7  # self-referential access is not a real entry path
+        )
     ]
     return {
         "acceptance_pass": bool(momentary) and bool(toggle),

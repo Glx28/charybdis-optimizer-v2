@@ -484,7 +484,12 @@ __device__ void evaluate_single(
         int target = shortcut_access_target[sid];
         if (target < 0 || target >= MAX_LAYERS) continue;
         int source = pos_layer[i];
-        if (source < 0 || source >= MAX_LAYERS) continue;
+        // A self-referential access key (source layer == target layer, e.g. a
+        // "Toggle Layer 9" key placed ON layer 9) can only be pressed once the
+        // user is already on that layer via some other entry path -- it is not
+        // a real external entry point and must never satisfy reachability,
+        // return-toggle, or mouse-layer checks. Mirrors fitness/kernel.py.
+        if (source < 0 || source >= MAX_LAYERS || source == target) continue;
         if (!shortcut_access_momentary[sid] && s->layer_access_cost[source] < 999999.0f) {
             s->reachable_toggle_access[target] = true;
         }

@@ -1631,9 +1631,15 @@ class TestEvaluator(unittest.TestCase):
             shortcuts,
             frozen,
         )
+        # A toggle shortcut placed ON the mouse layer itself (source layer ==
+        # target layer) can only ever be pressed once the user is already on
+        # that layer via some other entry path -- it is not a real external
+        # toggle-in and must NOT satisfy the reachable-toggle-access
+        # requirement, even though the shortcut's own label still says
+        # "L0->L3". Placement determines the real source layer, not the label.
         self_toggle_report = _dynamic_mouse_layer_report(self_toggle_on_mouse_layer)
-        self.assertTrue(self_toggle_report["acceptance_pass"])
-        self.assertTrue(self_toggle_report["best_candidate"]["reachable_toggle_access"])
+        self.assertFalse(self_toggle_report["acceptance_pass"])
+        self.assertFalse(self_toggle_report["best_candidate"]["reachable_toggle_access"])
 
         no_momentary_access = Layout(
             np.array([-1, 1, -1, 2, 3, 4, 5, 6, -1, 7], dtype=np.int32),
