@@ -168,11 +168,26 @@ layer receives the primary mouse-workflow bonus. Within that layer, MB2 is
 more valuable than MB3/MB4/MB5 and should win better placement when usage does
 not prove otherwise. MB1/MB2 and MB4/MB5 each form an inner group of the mouse
 group, scoped to the settled dynamic mouse layer only: MB1 must sit left of
-MB2, and MB4 must sit left of MB5, with a same-row proximity bonus for each
-pair. Left-right order is firmly enforced (a large penalty applies when the
-order is reversed), but this remains soft scoring pressure, not a hard
-constraint or fixed coordinates — a strong enough workflow reason can still
-displace it.
+MB2, and MB4 must sit left of MB5, with a same-row requirement for each pair
+weighted well above the other per-button placement terms so it reliably wins
+in practice, not just occasionally. MB4/MB5 additionally require exact
+x-adjacency once on the same row and correctly ordered: MB4 sits exactly one
+slot left of MB5 (MB4.x = MB5.x − 1), not merely "somewhere to the left" —
+confirmed 2026-07-13 after a real checkpoint had MB4/MB5 correctly ordered
+and on the same row but 2 slots apart, uncorrected by the weaker proximity-only
+pressure that existed before. MB1/MB2 has no equivalent adjacency requirement,
+since a Scroll key sitting directly between them is the specifically rewarded
+shape (see next paragraph). Left-right order is firmly enforced (a large
+penalty applies when the order is reversed), but all of this remains soft
+scoring pressure, not a hard constraint or fixed coordinates — a strong enough
+workflow reason can still displace it.
+
+A named bonus rewards MB1, a right-hand non-thumb momentary Scroll key, and
+MB2 sitting on one row in that left-to-right order (mirroring a physical
+mouse: left-click / wheel / right-click). This is deliberately compatible
+with the MB1/MB2 same-row requirement above without requiring MB1/MB2 to be
+adjacent to each other — the Scroll key occupying the slot between them is
+exactly the arrangement being rewarded, not a violation of it.
 
 Once a natural generated mouse layer exists, it should dominate mouse
 interactions. Mouse buttons on other layers receive lower value and extra
