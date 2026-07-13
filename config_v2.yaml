@@ -85,8 +85,28 @@ fitness:
     thumb_occupancy: 50000.0
     arrow_order: 10000.0
     hand_bias: 25000.0
-    mouse_layer_access: 5000000.0
-    arrow_scattered: 50000.0
+    # Recalibrated 2026-07-13: formula (fitness/kernel.py ~1087) is a simple
+    # per-occurrence penalty (imp * 100.0), structurally identical to
+    # thumb_occupancy/l0_displacement -- not an internally pre-scaled sum.
+    # At 5000000 (100x its logical tier), a single occurrence would
+    # contribute ~2.5e9-2e10, the same swamping magnitude found and fixed for
+    # momentary_key_reuse in this same sweep. Neither checkpoint measured
+    # this session currently violates this term (so its true live
+    # contribution couldn't be directly re-verified the way the other fixes
+    # were), but the weight was clearly never calibrated against this
+    # formula's actual scale -- brought down to the matching soft-pressure
+    # tier now, re-verify empirically the next time a genome actually
+    # violates it.
+    mouse_layer_access: 50000.0
+    # Recalibrated 2026-07-13: this term's raw value is already an internal
+    # sum of several sub-penalties pre-scaled to the thousands/tens-of-
+    # thousands (fitness/kernel.py's arrow_scattered block), the same pattern
+    # as dynamic_mouse_layer/raw_keyboard_completion_norwegian below -- not a
+    # simple violation count. Measured on a real checkpoint at the old weight
+    # (50000): contributed 4.0e8, comparable in scale to the other swamping
+    # terms fixed in this same sweep. Brought down so its contribution lands
+    # in the same tier as an uninvolved reference term (hand_bias).
+    arrow_scattered: 400.0
     mouse_scattered: 500.0
     layer7_access: 50000.0
     duplicate_value_gap: 45000.0
@@ -141,20 +161,25 @@ fitness:
     # layer is currently active, distinct from layer_depth_penalty's purely
     # economic hop-depth cost.
     #
-    # 40000.0 (original guess) was measured directly against a real gen-45000
-    # checkpoint on 2026-07-11 and found to contribute only ~0.0002 normalized
-    # violation units out of a ~5.9 total viol objective (~0.003% of budget) --
-    # 1000-2500x too weak to ever compete, the same magnitude-guessing mistake
-    # the return-to-L0-thumb penalty needed two rounds to fix earlier in this
-    # repo's history. First recalibration to 50000000.0 (5e7) targeted
-    # 0.2-0.3 normalized units, but empirical checkpoint tracking on a fresh
-    # warmstarted run (gen 10500-12500, same 4 reused keys, zero movement for
-    # 2000 gens straight -- ~2.2% of viol budget at that weight) showed this
-    # was still not enough to actually move the population off the reuse
-    # configuration. Raised another 10x to 500000000.0 (5e8) for a second
-    # empirical A/B test; this must be re-verified against fresh checkpoints
-    # (not assumed from magnitude alone) before being treated as resolved.
-    momentary_key_reuse: 500000000.0
+    # History: 40000.0 (original guess) measured too weak (~0.003% of viol
+    # budget), raised to 5e7, still too weak (~2.2%), raised again to 5e8 as
+    # a "second empirical A/B test" -- but that escalation was validated only
+    # by checking that the reused-key COUNT dropped, never by checking this
+    # term's actual weighted CONTRIBUTION relative to every other term. Real
+    # bug found 2026-07-13 (zero-others methodology against a live archive
+    # checkpoint): at 5e8, this term contributed 4.085e10 -- 175x larger than
+    # every other active violation term COMBINED on that same genome (next
+    # largest: layer_depth_penalty at 2.3e8) -- the exact same
+    # weight-swamping bug already found and fixed this session for
+    # layer_depth_penalty/toggle_back_to_l0/dynamic_mouse_layer/
+    # raw_keyboard_completion_norwegian, just undiscovered until a repo-wide
+    # re-sweep. The escalate-until-count-drops methodology never checks for
+    # this failure mode, since a term swamping the whole axis will *always*
+    # look like it's "working" (it dominates whatever it touches) even when
+    # it has made every other term's calibration meaningless. Raw magnitude
+    # here is modest (~82, comparable to thumb_occupancy's ~144) -- brought
+    # down to the same soft-pressure tier (50000) as its listed siblings.
+    momentary_key_reuse: 50000.0
     # Full weight-magnitude audit (2026-07-12, "nuclear pass"): every
     # violation_sub_weights entry was measured against a real checkpoint
     # (gen 7500, v2_momentary_reuse_mutfix_20260712) using a
