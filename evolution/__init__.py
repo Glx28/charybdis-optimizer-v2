@@ -1329,6 +1329,66 @@ if NUMBA_AVAILABLE:
         genome[conflict_pos] = displaced
         return True
 
+    @njit(cache=True)
+    def _numba_repair_same_layer_duplicate(genome, state, pos_layer_arr, pos_is_frozen_arr, is_mouse_button_lut, n_shortcuts):
+        """Repair for same_layer_duplicate: a hard constraint (AGENTS.md: "no
+        shortcut may appear more than once on the same layer", with exactly
+        one exception -- one extra left+right copy of a core mouse button on
+        the settled dynamic mouse layer). No dedicated repair existed for
+        this before 2026-07-14 despite it being one of the 6 hard
+        constraints -- confirmed missing during a repo sweep after a run's
+        archive got stuck unable to promote a fully-filled-but-duplicated
+        population genome (cv=4 on this exact constraint) past a sparser but
+        feasible one. Detects a genuine duplicate (skipping mouse-button sids
+        at exactly 2 copies, since that may be the sanctioned exception --
+        3+ copies of a mouse button is never legal) and clears one mutable
+        copy, mirroring how other repair operators here relocate/clear a
+        conflicting occupant and let scoring decide the rest.
+        """
+        n_pos = len(genome)
+        layer_sid_count = np.zeros((32, n_shortcuts), dtype=np.int32)
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            lyr = pos_layer_arr[i]
+            if lyr == 7 or lyr < 0 or lyr >= 32:
+                continue
+            layer_sid_count[lyr, sid] += 1
+
+        target_layer = -1
+        target_sid = -1
+        for lyr in range(32):
+            if lyr == 7:
+                continue
+            for sid in range(n_shortcuts):
+                count = layer_sid_count[lyr, sid]
+                if count < 2:
+                    continue
+                if is_mouse_button_lut[sid] and count == 2:
+                    continue
+                target_layer = lyr
+                target_sid = sid
+                break
+            if target_layer >= 0:
+                break
+        if target_layer < 0:
+            return False
+
+        dup_positions = np.empty(n_pos, dtype=np.int32)
+        n_dup = 0
+        for i in range(n_pos):
+            if genome[i] == target_sid and pos_layer_arr[i] == target_layer and not pos_is_frozen_arr[i]:
+                dup_positions[n_dup] = i
+                n_dup += 1
+        if n_dup < 1:
+            # Every copy on this layer is frozen -- nothing a mutation can fix.
+            return False
+
+        clear_pos = dup_positions[_rand_int(state, n_dup)]
+        genome[clear_pos] = -1
+        return True
+
     @njit(parallel=True, cache=True)
     def _mutate_batch_numba(X, handled, probs, seeds,
                             mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr, pos_effort_arr,
@@ -1345,6 +1405,7 @@ if NUMBA_AVAILABLE:
                             arrow_sid_by_type, arrow_quads,
                             raw_completion_sid_by_order, raw_completion_quints,
                             is_mouse_button_lut,
+                            pos_is_frozen_arr,
                             n_shortcuts):
         n = X.shape[0]
         for i in prange(n):
@@ -1424,6 +1485,12 @@ if NUMBA_AVAILABLE:
                 if _numba_repair_thumb_occupancy(X[i], state, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr,
                                                  access_target_lut, access_is_mo_lut,
                                                  layer_mutable_flat, layer_mutable_start, n_shortcuts):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[11]:
+                if _numba_repair_same_layer_duplicate(X[i], state, pos_layer_arr, pos_is_frozen_arr,
+                                                      is_mouse_button_lut, n_shortcuts):
                     handled[i] = True
                     continue
 
@@ -2314,6 +2381,12 @@ class SwapMutation(Mutation):
         # a side that's momentarily restricted by AGENTS.md's dynamic
         # thumb-clearance rule.
         self.thumb_occupancy_repair_prob = 0.05
+        # Repair for same_layer_duplicate (hard constraint): clears one
+        # mutable copy of a shortcut duplicated on the same layer. Added
+        # 2026-07-14 -- no dedicated repair existed for this before, despite
+        # it being one of the 6 hard constraints (found missing during a
+        # repo sweep after a run's archive got stuck on exactly this).
+        self.same_layer_duplicate_repair_prob = 0.05
         self.mutable_indices = np.where(~frozen_mask)[0] if frozen_mask is not None else None
         self.mutable_list = self.mutable_indices.tolist() if self.mutable_indices is not None else None
         self.group_sid_sets = []
@@ -2338,6 +2411,7 @@ class SwapMutation(Mutation):
         self._pos_layer_arr = np.zeros(len(layout.positions) if layout is not None else 0, dtype=np.int32)
         self._pos_hand_arr = np.zeros(len(layout.positions) if layout is not None else 0, dtype=np.int32)
         self._pos_is_thumb_arr = np.zeros(len(layout.positions) if layout is not None else 0, dtype=np.bool_)
+        self._pos_is_frozen_arr = np.zeros(len(layout.positions) if layout is not None else 0, dtype=np.bool_)
         self._access_sid_targets: dict = {}
         self._access_sid_momentary: dict = {}
         if layout is not None:
@@ -2345,6 +2419,7 @@ class SwapMutation(Mutation):
                 self._pos_layer_arr[idx] = int(pos.layer)
                 self._pos_hand_arr[idx] = 1 if pos.hand == "right" else 0
                 self._pos_is_thumb_arr[idx] = bool(pos.is_thumb)
+                self._pos_is_frozen_arr[idx] = bool(pos.is_frozen)
                 if pos.is_frozen or pos.layer == 7 or pos.layer == 0:
                     continue
                 layer_i = int(pos.layer)
@@ -4041,6 +4116,52 @@ class SwapMutation(Mutation):
         genome[conflict_pos] = displaced
         return True
 
+    def _repair_same_layer_duplicate(self, genome):
+        """Pure-Python fallback for _numba_repair_same_layer_duplicate (used
+        only when Numba is unavailable). Clears one mutable copy of a
+        shortcut duplicated on the same layer -- a hard constraint
+        (AGENTS.md: no shortcut may appear more than once on the same layer,
+        with exactly one exception: one extra left+right copy of a core
+        mouse button on the settled dynamic mouse layer).
+        """
+        genome_arr = np.asarray(genome, dtype=np.int32)
+        n_pos = len(genome_arr)
+        layer_sid_count: dict = {}
+        for i in range(n_pos):
+            sid = int(genome_arr[i])
+            if sid < 0 or sid >= self.n_shortcuts:
+                continue
+            layer = int(self._pos_layer_arr[i])
+            if layer == 7:
+                continue
+            key = (layer, sid)
+            layer_sid_count[key] = layer_sid_count.get(key, 0) + 1
+
+        target_layer = -1
+        target_sid = -1
+        for (layer, sid), count in layer_sid_count.items():
+            if count < 2:
+                continue
+            if self._is_mouse_button_lut[sid] and count == 2:
+                continue
+            target_layer, target_sid = layer, sid
+            break
+        if target_layer < 0:
+            return False
+
+        dup_positions = [
+            i for i in range(n_pos)
+            if int(genome_arr[i]) == target_sid
+            and int(self._pos_layer_arr[i]) == target_layer
+            and not self._pos_is_frozen_arr[i]
+        ]
+        if not dup_positions:
+            return False
+
+        clear_pos = int(random.choice(dup_positions))
+        genome[clear_pos] = -1
+        return True
+
     def _do(self, problem, X, **kwargs):
         n = X.shape[0]
         prob = float(self.prob.value if hasattr(self.prob, "value") else self.prob)
@@ -4147,6 +4268,7 @@ class SwapMutation(Mutation):
                 self.raw_completion_cluster_prob,
                 self.mouse_hold_conflict_repair_prob,
                 self.thumb_occupancy_repair_prob,
+                self.same_layer_duplicate_repair_prob,
             ], dtype=np.float64)
             seeds = np.random.randint(0, 2**63, size=n, dtype=np.uint64)
             _mutate_batch_numba(
@@ -4182,6 +4304,7 @@ class SwapMutation(Mutation):
                 self._raw_completion_sid_by_order,
                 self._raw_completion_quints,
                 self._is_mouse_button_lut,
+                self._pos_is_frozen_arr,
                 np.int32(self.n_shortcuts),
             )
         else:
@@ -4220,6 +4343,9 @@ class SwapMutation(Mutation):
                     handled[i] = True
                     continue
                 if random.random() < self.thumb_occupancy_repair_prob and self._repair_thumb_occupancy(X[i]):
+                    handled[i] = True
+                    continue
+                if random.random() < self.same_layer_duplicate_repair_prob and self._repair_same_layer_duplicate(X[i]):
                     handled[i] = True
                     continue
 

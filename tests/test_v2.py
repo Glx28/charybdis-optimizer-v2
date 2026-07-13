@@ -3924,7 +3924,7 @@ class TestSwapMutationNumba(unittest.TestCase):
         pop[pop == 11] = -1
         handled = np.zeros(n, dtype=np.bool_)
         seeds = np.random.randint(0, 2**63, size=n, dtype=np.uint64)
-        probs = np.array([0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float64)
+        probs = np.array([0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float64)
         out1 = pop.copy()
         _mutate_batch_numba(
             out1, handled.copy(), probs, seeds,
@@ -3956,6 +3956,7 @@ class TestSwapMutationNumba(unittest.TestCase):
             mutation._raw_completion_sid_by_order,
             mutation._raw_completion_quints,
             mutation._is_mouse_button_lut,
+            mutation._pos_is_frozen_arr,
             np.int32(mutation.n_shortcuts),
         )
         out2 = pop.copy()
@@ -3989,6 +3990,7 @@ class TestSwapMutationNumba(unittest.TestCase):
             mutation._raw_completion_sid_by_order,
             mutation._raw_completion_quints,
             mutation._is_mouse_button_lut,
+            mutation._pos_is_frozen_arr,
             np.int32(mutation.n_shortcuts),
         )
         np.testing.assert_array_equal(out1, out2)
@@ -4313,6 +4315,50 @@ class TestSwapMutationNumba(unittest.TestCase):
                 self.assertEqual(g[1], -1)
                 break
         self.assertTrue(fixed, "thumb_occupancy repair never relocated the occupant off the restricted side")
+
+    def test_repair_same_layer_duplicate_clears_one_copy(self):
+        """same_layer_duplicate is a hard constraint (no shortcut may appear
+        more than once on the same layer, L7 excluded, with a mouse-button
+        left+right exception). A non-mouse-button shortcut duplicated twice
+        on the same layer must have one mutable copy cleared, matching
+        fitness/kernel.py's same_layer_duplicate scoring.
+        """
+        positions = (
+            Position(0, 1, 0.0, 0.0, "left", 1, 1.0),
+            Position(1, 1, 1.0, 0.0, "left", 1, 1.0),
+            Position(2, 1, 2.0, 0.0, "left", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+A", "Select All", "Editor", 3.0),
+        )
+        frozen = np.zeros(3, dtype=np.bool_)
+        genome = np.array([0, 0, -1], dtype=np.int32)
+        layout = Layout(genome.copy(), positions, shortcuts, frozen)
+
+        mutation = SwapMutation(
+            prob=0.0,
+            frozen_mask=layout.frozen_mask,
+            layout=layout,
+            mouse_workflow_prob=0.0,
+            l7_access_prob=0.0,
+            group_overwrite_prob=0.0,
+            optional_arrow_drop_prob=0.0,
+            bulk_assign_prob=0.0,
+            cluster_app_prob=0.0,
+            random_assign_prob=0.0,
+            effort_swap_prob=0.0,
+            smart_duplicate_prob=0.0,
+        )
+
+        fixed = False
+        for _ in range(20):
+            g = genome.copy()
+            if mutation._repair_same_layer_duplicate(g):
+                fixed = True
+                cleared = sum(1 for v in g if v == 0)
+                self.assertEqual(cleared, 1, "exactly one duplicate copy must be cleared")
+                break
+        self.assertTrue(fixed, "same_layer_duplicate repair never cleared a duplicate copy")
 
     def test_numba_random_reassign_pairs_return_toggle(self):
         """Numba random_reassign must place a return toggle when creating a toggle access."""
