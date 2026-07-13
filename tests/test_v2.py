@@ -1649,6 +1649,25 @@ class TestEvaluator(unittest.TestCase):
         )
         self.assertTrue(_dynamic_mouse_layer_report(no_momentary_access)["acceptance_pass"])
 
+        # A momentary-hold shortcut placed ON the mouse layer itself (source
+        # layer == target layer, e.g. sid=10's own "L0->L3" label but placed
+        # at position 8, which is layer 3's right thumb) can only be pressed
+        # once already on that layer via some other entry path. It must NOT
+        # count as disqualifying right-thumb momentary access into the mouse
+        # layer, even though it sits on the right thumb, or it would produce
+        # exactly the false-negative found in the gen-29000 checkpoint audit
+        # on 2026-07-13 (a genuinely valid mouse layer failing acceptance
+        # solely due to a self-referential momentary hold on right thumb).
+        self_momentary_on_mouse_layer = Layout(
+            np.array([0, 1, -1, 2, 3, 4, 5, 6, 10, 7], dtype=np.int32),
+            positions,
+            shortcuts,
+            frozen,
+        )
+        self_momentary_report = _dynamic_mouse_layer_report(self_momentary_on_mouse_layer)
+        self.assertTrue(self_momentary_report["acceptance_pass"])
+        self.assertFalse(self_momentary_report["best_candidate"]["right_thumb_momentary_access"])
+
         non_l0_toggle = Layout(
             np.array([0, 9, 8, 2, 3, 4, 5, 6, -1, 7], dtype=np.int32),
             positions,

@@ -223,6 +223,15 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
             row for row in access_rows
             if (
                 row["target_layer"] == layer
+                and row["source_layer"] != layer
+                # Self-referential access (source layer == target layer, e.g.
+                # a "Momentary Layer 4" key placed ON layer 4) can only be
+                # pressed once already on that layer via some other entry
+                # path -- it is not a real external entry point and must not
+                # count as disqualifying right-thumb momentary access into
+                # this layer. Mirrors the same exclusion already applied to
+                # reachable_toggle_access below, in fitness/kernel.py, and in
+                # _layer7_access_report/the thumb-clearance incoming list.
                 and row["momentary"]
                 and not row["frozen"]
             )
