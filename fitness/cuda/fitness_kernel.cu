@@ -1690,7 +1690,10 @@ __device__ void evaluate_single(
             // points is statistically invisible next to tens-of-thousands
             // terms, no matter how many generations run.
             candidate_penalty += dist12 * 25000.0f;
-            candidate_penalty += dy * 30000.0f;
+            // Same-row requirement for MB1/MB2 (confirmed 2026-07-13),
+            // weighted well above the other per-button terms so it reliably
+            // wins instead of occasionally losing to workflow placement.
+            candidate_penalty += dy * 60000.0f;
         }
         if (s->mouse_button_right[layer][4] > 0 && s->mouse_button_right[layer][5] > 0) {
             float dx = s->mouse_button_x[layer][5] - s->mouse_button_x[layer][4];
@@ -1698,7 +1701,19 @@ __device__ void evaluate_single(
             float dist45 = sqrtf(dx * dx + dy * dy);
             if (dx <= 0.0f) candidate_penalty += 100000.0f + (1.0f - dx) * 800.0f;
             candidate_penalty += dist45 * 18000.0f;
-            candidate_penalty += dy * 20000.0f;
+            // Same-row requirement for MB4/MB5, weighted well above the
+            // other per-button terms (see MB1/MB2 above).
+            candidate_penalty += dy * 60000.0f;
+            // MB4/MB5 adjacency requirement (confirmed 2026-07-13): once same
+            // row and correctly ordered, MB4 must sit exactly one slot left
+            // of MB5 (dx==1), not just "somewhere to the left". Mirrors
+            // fitness/kernel.py.
+            if (dy == 0.0f && dx > 0.0f) {
+                float adjacency_gap = fabsf(dx - 1.0f);
+                if (adjacency_gap > 0.0f) {
+                    candidate_penalty += adjacency_gap * 90000.0f;
+                }
+            }
         }
         if (s->mouse_button_right[layer][1] > 0 && s->mouse_button_right_thumb[layer][1] == 0) {
             candidate_penalty += fabsf(s->mouse_button_x[layer][1] - 8.0f) * 28000.0f;
@@ -1743,6 +1758,31 @@ __device__ void evaluate_single(
             }
         } else {
             candidate_penalty += 25000.0f;
+        }
+        // MB1-Scroll-MB2 arrangement bonus (confirmed 2026-07-13 as a
+        // user-liked pattern worth rewarding more): MB1, a right-hand
+        // non-thumb momentary Scroll, and MB2 on the same row in that
+        // left-to-right x order mirrors a physical mouse (left button /
+        // wheel / right button). Does not require MB1/MB2 to be immediately
+        // adjacent -- a scroll key between them is exactly the rewarded
+        // shape. Mirrors fitness/kernel.py.
+        if (
+            s->mouse_button_right[layer][1] > 0
+            && s->mouse_button_right[layer][2] > 0
+            && s->scroll_right_momentary[layer]
+            && s->mouse_button_right_thumb[layer][1] == 0
+            && s->mouse_button_right_thumb[layer][2] == 0
+            && !s->scroll_right_momentary_thumb[layer]
+        ) {
+            float row_gap = fabsf(s->mouse_button_y[layer][1] - s->mouse_button_y[layer][2])
+                + fabsf(s->scroll_right_momentary_y[layer] - s->mouse_button_y[layer][1]);
+            if (
+                row_gap == 0.0f
+                && s->mouse_button_x[layer][1] < s->scroll_right_momentary_x[layer]
+                && s->scroll_right_momentary_x[layer] < s->mouse_button_x[layer][2]
+            ) {
+                candidate_penalty -= 70000.0f;
+            }
         }
         if (s->scroll_right_momentary_thumb[layer]) {
             candidate_penalty += 25000.0f;

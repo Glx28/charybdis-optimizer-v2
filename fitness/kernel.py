@@ -1963,7 +1963,12 @@ if NUMBA_AVAILABLE:
                 # hundred points is statistically invisible next to terms in
                 # the tens of thousands, no matter how many generations run.
                 candidate_penalty += dist12 * 25000.0
-                candidate_penalty += dy * 30000.0
+                # Same-row requirement for MB1/MB2 (confirmed 2026-07-13 as a
+                # user-required property, not just a nice-to-have): weighted
+                # well above the other per-button terms in this sum so it
+                # reliably wins instead of occasionally losing to workflow
+                # placement pressure elsewhere.
+                candidate_penalty += dy * 60000.0
             if mouse_button_right[layer, 4] > 0 and mouse_button_right[layer, 5] > 0:
                 dx = mouse_button_x[layer, 5] - mouse_button_x[layer, 4]
                 dy = abs(mouse_button_y[layer, 5] - mouse_button_y[layer, 4])
@@ -1971,7 +1976,21 @@ if NUMBA_AVAILABLE:
                 if dx <= 0.0:
                     candidate_penalty += 100000.0 + (1.0 - dx) * 800.0
                 candidate_penalty += dist45 * 18000.0
-                candidate_penalty += dy * 20000.0
+                # Same-row requirement for MB4/MB5, weighted well above the
+                # other per-button terms (see MB1/MB2 above).
+                candidate_penalty += dy * 60000.0
+                # MB4/MB5 adjacency requirement (confirmed 2026-07-13): when
+                # both are already on the same row (dy==0) and correctly
+                # ordered (dx>0), MB4 must sit exactly one slot left of MB5
+                # (dx==1), not just "somewhere to the left". A checkpoint
+                # audited that day had them on the same row but 2 slots
+                # apart (dx=2) and that alone was not penalized -- dist45
+                # above pulls toward closeness but was not strong enough by
+                # itself to reliably close a 1-slot gap in practice.
+                if dy == 0.0 and dx > 0.0:
+                    adjacency_gap = abs(dx - 1.0)
+                    if adjacency_gap > 0.0:
+                        candidate_penalty += adjacency_gap * 90000.0
             # Prefer primary mouse buttons on the home row, with MB2 weighted
             # above MB3/MB4/MB5 because right-click is a high-value action.
             # Both index-home and pinky-home can have eff=0; x/y penalties
@@ -2011,6 +2030,31 @@ if NUMBA_AVAILABLE:
                             candidate_penalty += effort_gap * usage_scale * 600000.0
             else:
                 candidate_penalty += 25000.0
+            # MB1-Scroll-MB2 arrangement bonus (confirmed 2026-07-13 as a
+            # user-liked pattern worth rewarding more): when MB1, a right-hand
+            # non-thumb momentary Scroll, and MB2 all sit on the same row in
+            # that left-to-right x order, it mirrors a physical mouse (left
+            # button / wheel / right button). This is an bonus on top of the
+            # existing MB1/MB2 same-row and ordering pressure above -- it
+            # does not require MB1/MB2 to be immediately adjacent, since a
+            # scroll key sitting between them is exactly the rewarded shape.
+            if (
+                mouse_button_right[layer, 1] > 0
+                and mouse_button_right[layer, 2] > 0
+                and scroll_right_momentary[layer]
+                and mouse_button_right_thumb[layer, 1] == 0
+                and mouse_button_right_thumb[layer, 2] == 0
+                and not scroll_right_momentary_thumb[layer]
+            ):
+                row_gap = abs(mouse_button_y[layer, 1] - mouse_button_y[layer, 2]) + abs(
+                    scroll_right_momentary_y[layer] - mouse_button_y[layer, 1]
+                )
+                if (
+                    row_gap == 0.0
+                    and mouse_button_x[layer, 1] < scroll_right_momentary_x[layer]
+                    and scroll_right_momentary_x[layer] < mouse_button_x[layer, 2]
+                ):
+                    candidate_penalty -= 70000.0
             if scroll_right_momentary_thumb[layer]:
                 candidate_penalty += 25000.0
             if right_thumb_momentary_access[layer]:
