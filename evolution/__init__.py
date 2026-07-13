@@ -671,10 +671,38 @@ if NUMBA_AVAILABLE:
 
     @njit(cache=True)
     def _numba_bias_access_to_thumb(genome, state, mutable_arr, pos_layer_arr, pos_is_thumb_arr,
-                                    access_target_lut, is_group_sid_lut, n_shortcuts):
+                                    pos_hand_arr, access_target_lut, access_is_mo_lut,
+                                    is_group_sid_lut, n_shortcuts):
         n_mut = len(mutable_arr)
         if n_mut == 0:
             return False
+
+        # AGENTS.md's dynamic thumb-clearance rule: a layer reached by a
+        # momentary thumb key from only one side restricts that same side's
+        # thumb area on the target layer. Without this check, this operator
+        # would fight _numba_repair_thumb_occupancy forever -- repair clears a
+        # restricted thumb slot, this operator immediately refills it with an
+        # access key (its whole purpose is moving access keys onto thumbs),
+        # producing a permanent plateau instead of a real fix. Confirmed
+        # in practice: 2026-07-13, gen 30000 checkpoint had 4 layers stuck
+        # violating this identically across the entire last 2000 generations.
+        direct_left_thumb_mo = np.zeros(32, dtype=np.bool_)
+        direct_right_thumb_mo = np.zeros(32, dtype=np.bool_)
+        for k in range(n_mut):
+            pos = mutable_arr[k]
+            sid = genome[pos]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            if not access_is_mo_lut[sid]:
+                continue
+            tgt = access_target_lut[sid]
+            if tgt < 0 or tgt >= 32:
+                continue
+            if pos_is_thumb_arr[pos]:
+                if pos_hand_arr[pos] == 0:
+                    direct_left_thumb_mo[tgt] = True
+                elif pos_hand_arr[pos] == 1:
+                    direct_right_thumb_mo[tgt] = True
 
         cand_positions = np.empty(n_mut, dtype=np.int32)
         n_cand = 0
@@ -709,6 +737,10 @@ if NUMBA_AVAILABLE:
             if pos == src_pos:
                 continue
             if not pos_is_thumb_arr[pos]:
+                continue
+            layer = pos_layer_arr[pos]
+            hand = pos_hand_arr[pos]
+            if (hand == 0 and direct_left_thumb_mo[layer]) or (hand == 1 and direct_right_thumb_mo[layer]):
                 continue
             sid = genome[pos]
             if sid >= 0 and sid < n_shortcuts and is_group_sid_lut[sid]:
@@ -1350,7 +1382,8 @@ if NUMBA_AVAILABLE:
 
             if _rand_float(state) < probs[4]:
                 if _numba_bias_access_to_thumb(X[i], state, mutable_arr, pos_layer_arr, pos_is_thumb_arr,
-                                               access_target_lut, is_group_sid_lut, n_shortcuts):
+                                               pos_hand_arr, access_target_lut, access_is_mo_lut,
+                                               is_group_sid_lut, n_shortcuts):
                     handled[i] = True
                     continue
 
@@ -3637,11 +3670,39 @@ class SwapMutation(Mutation):
         candidates = self._mutable_arr[nonthumb_access_mask]
         src_pos = int(candidates[np.random.randint(len(candidates))])
         src_layer = int(self._pos_layer_arr[src_pos])
+
+        # AGENTS.md's dynamic thumb-clearance rule: a layer reached by a
+        # momentary thumb key from only one side restricts that same side's
+        # thumb area on the target layer. Without this check, this operator
+        # fights _repair_thumb_occupancy forever -- repair clears a
+        # restricted thumb slot, this operator immediately refills it with an
+        # access key, producing a permanent plateau (see the njit twin
+        # _numba_bias_access_to_thumb for the full reasoning).
+        is_mo_access = valid & self._access_is_mo_lut[safe_sids]
+        mo_thumb = is_mo_access & self._pos_is_thumb_arr[self._mutable_arr]
+        restrict_left = np.zeros(32, dtype=np.bool_)
+        restrict_right = np.zeros(32, dtype=np.bool_)
+        mo_thumb_pos = self._mutable_arr[mo_thumb]
+        for pos in mo_thumb_pos:
+            tgt = int(self._access_target_lut[int(genome[pos])])
+            if tgt < 0 or tgt >= 32:
+                continue
+            if int(self._pos_hand_arr[pos]) == 0:
+                restrict_left[tgt] = True
+            elif int(self._pos_hand_arr[pos]) == 1:
+                restrict_right[tgt] = True
+
         # Find mutable thumb positions (prefer same layer)
         is_group_m = self._is_group_sid_lut[np.where(valid, safe_sids, 0)] & valid
         is_thumb_m = self._pos_is_thumb_arr[self._mutable_arr]
         not_src = self._mutable_arr != src_pos
-        thumb_pool = self._mutable_arr[is_thumb_m & not_src & ~is_group_m]
+        candidate_layers = self._pos_layer_arr[self._mutable_arr]
+        candidate_hands = self._pos_hand_arr[self._mutable_arr]
+        not_restricted = ~(
+            ((candidate_hands == 0) & restrict_left[candidate_layers])
+            | ((candidate_hands == 1) & restrict_right[candidate_layers])
+        )
+        thumb_pool = self._mutable_arr[is_thumb_m & not_src & ~is_group_m & not_restricted]
         if len(thumb_pool) == 0:
             return False
         same_layer = thumb_pool[self._pos_layer_arr[thumb_pool] == src_layer]
