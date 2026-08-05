@@ -683,9 +683,8 @@ if NUMBA_AVAILABLE:
         # would fight _numba_repair_thumb_occupancy forever -- repair clears a
         # restricted thumb slot, this operator immediately refills it with an
         # access key (its whole purpose is moving access keys onto thumbs),
-        # producing a permanent plateau instead of a real fix. Confirmed
-        # in practice: 2026-07-13, gen 30000 checkpoint had 4 layers stuck
-        # violating this identically across the entire last 2000 generations.
+        # producing a permanent plateau instead of a real fix (observed on a
+        # real checkpoint; see DECISION_LOG.md).
         direct_left_thumb_mo = np.zeros(32, dtype=np.bool_)
         direct_right_thumb_mo = np.zeros(32, dtype=np.bool_)
         for k in range(n_mut):
@@ -847,12 +846,10 @@ if NUMBA_AVAILABLE:
         """Mutation proposal (not post-hoc repair): relocate one momentary-hold
         source off a physical key that currently jumps to different target
         layers depending on which layer is active, matching fitness/kernel.py's
-        momentary_key_reuse scoring. Pure fitness pressure was empirically
-        confirmed (2026-07-11/12) to plateau on this configuration across
-        thousands of generations even at a strongly recalibrated weight,
-        because escaping it needs a coordinated single-generation move that
-        independent random mutation rarely produces. This proposes exactly
-        that move; scoring still decides whether it survives selection.
+        momentary_key_reuse scoring. Pure fitness pressure plateaus on this
+        configuration because escaping it needs a coordinated single-generation
+        move that independent random mutation rarely produces. This proposes
+        exactly that move; scoring still decides whether it survives selection.
         """
         n_pos = len(genome)
         max_phys = 0
@@ -978,6 +975,113 @@ if NUMBA_AVAILABLE:
         displaced = genome[dest]
         genome[dest] = move_sid
         genome[move_pos] = displaced
+        return True
+
+    @njit(cache=True)
+    def _numba_repair_l0_hold_completion(genome, state, pos_layer_arr, pos_physical_id_arr,
+                                         access_target_lut, access_is_mo_lut,
+                                         layer_mutable_flat, layer_mutable_start,
+                                         pos_is_thumb_arr, hold_sid_for_target, n_shortcuts):
+        """Mutation proposal (not post-hoc repair): add a direct L0 momentary
+        hold to a target layer that L0 can currently only reach via toggle,
+        landing the new hold on a physical key not already doing hold duty
+        for some other layer. fitness/kernel.py's access_layout
+        toggle-without-hold term rewards this move in isolation, but a naive
+        same-key swap collides with momentary_key_reuse when that key is
+        already busy elsewhere -- this proposes the move onto a genuinely
+        free key instead, mirroring _numba_repair_momentary_key_reuse's
+        seen[phys, target] occupancy table above.
+        """
+        n_pos = len(genome)
+
+        # Which L0 targets have a toggle but no hold (mirrors fitness/kernel.py's
+        # l0_direct_hold_count / l0_direct_toggle_count, source==0 only).
+        has_toggle = np.zeros(32, dtype=np.bool_)
+        has_hold = np.zeros(32, dtype=np.bool_)
+        for i in range(n_pos):
+            if pos_layer_arr[i] != 0:
+                continue
+            sid = genome[i]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            tgt = access_target_lut[sid]
+            if tgt < 0 or tgt >= 32 or tgt == 0:
+                continue
+            if access_is_mo_lut[sid]:
+                has_hold[tgt] = True
+            else:
+                has_toggle[tgt] = True
+
+        missing = np.empty(32, dtype=np.int32)
+        n_missing = 0
+        for t in range(32):
+            if has_toggle[t] and not has_hold[t] and hold_sid_for_target[t] >= 0:
+                missing[n_missing] = t
+                n_missing += 1
+        if n_missing == 0:
+            return False
+
+        target = missing[_rand_int(state, n_missing)]
+        hold_sid = hold_sid_for_target[target]
+
+        # Physical keys already doing hold duty for ANY target, anywhere --
+        # these are ineligible destinations (would create momentary_key_reuse).
+        max_phys = 0
+        for i in range(n_pos):
+            pid = pos_physical_id_arr[i]
+            if pid > max_phys:
+                max_phys = pid
+        n_phys = max_phys + 1
+        busy = np.zeros(n_phys, dtype=np.bool_)
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_shortcuts or not access_is_mo_lut[sid]:
+                continue
+            tgt = access_target_lut[sid]
+            if tgt < 0 or tgt >= 32:
+                continue
+            src = pos_layer_arr[i]
+            if src < 0 or src >= 32 or src == tgt:
+                continue
+            busy[pos_physical_id_arr[i]] = True
+
+        start = layer_mutable_start[0]
+        end = layer_mutable_start[1] if 1 < len(layer_mutable_start) else len(layer_mutable_flat)
+        if start >= end:
+            return False
+
+        n_te = 0
+        n_ae = 0
+        n_ap = 0
+        thumb_empty = np.empty(end - start, dtype=np.int32)
+        any_empty = np.empty(end - start, dtype=np.int32)
+        any_positions = np.empty(end - start, dtype=np.int32)
+        for p in range(start, end):
+            pos = layer_mutable_flat[p]
+            if busy[pos_physical_id_arr[pos]]:
+                continue
+            any_positions[n_ap] = pos
+            n_ap += 1
+            if genome[pos] < 0:
+                any_empty[n_ae] = pos
+                n_ae += 1
+                if pos_is_thumb_arr[pos]:
+                    thumb_empty[n_te] = pos
+                    n_te += 1
+
+        if n_te > 0:
+            pool = thumb_empty
+            n_pool = n_te
+        elif n_ae > 0:
+            pool = any_empty
+            n_pool = n_ae
+        elif n_ap > 0:
+            pool = any_positions
+            n_pool = n_ap
+        else:
+            return False
+
+        genome[pool[_rand_int(state, n_pool)]] = hold_sid
         return True
 
     @njit(cache=True)
@@ -1334,16 +1438,12 @@ if NUMBA_AVAILABLE:
         """Repair for same_layer_duplicate: a hard constraint (AGENTS.md: "no
         shortcut may appear more than once on the same layer", with exactly
         one exception -- one extra left+right copy of a core mouse button on
-        the settled dynamic mouse layer). No dedicated repair existed for
-        this before 2026-07-14 despite it being one of the 6 hard
-        constraints -- confirmed missing during a repo sweep after a run's
-        archive got stuck unable to promote a fully-filled-but-duplicated
-        population genome (cv=4 on this exact constraint) past a sparser but
-        feasible one. Detects a genuine duplicate (skipping mouse-button sids
-        at exactly 2 copies, since that may be the sanctioned exception --
-        3+ copies of a mouse button is never legal) and clears one mutable
-        copy, mirroring how other repair operators here relocate/clear a
-        conflicting occupant and let scoring decide the rest.
+        the settled dynamic mouse layer). Detects a genuine duplicate
+        (skipping mouse-button sids at exactly 2 copies, since that may be
+        the sanctioned exception -- 3+ copies of a mouse button is never
+        legal) and clears one mutable copy, mirroring how other repair
+        operators here relocate/clear a conflicting occupant and let scoring
+        decide the rest.
         """
         n_pos = len(genome)
         layer_sid_count = np.zeros((32, n_shortcuts), dtype=np.int32)
@@ -1389,6 +1489,69 @@ if NUMBA_AVAILABLE:
         genome[clear_pos] = -1
         return True
 
+    @njit(cache=True)
+    def _numba_repair_unsupported_duplicate(genome, pos_layer_arr, pos_is_frozen_arr,
+                                            pos_effort_arr, is_mouse_button_lut, is_group_sid_lut,
+                                            dup_support_arr, n_shortcuts):
+        """Repair for unsupported_duplicates_near_zero (acceptance check):
+        a duplicated shortcut fails acceptance when it has some usage
+        evidence but duplicate support < 0.25. Zero-evidence duplicates
+        (support == 0) are tolerated by acceptance and left alone; mouse
+        buttons and protected-group sids are skipped (their duplicate rules
+        live elsewhere). Keeps the frozen copy if one exists, otherwise the
+        lowest-effort copy, and blanks the other mutable copies in one
+        coordinated move. Scoring still decides whether the repair survives.
+        """
+        n_pos = len(genome)
+        sid_count = np.zeros(n_shortcuts, dtype=np.int32)
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            if pos_layer_arr[i] == 7:
+                continue
+            sid_count[sid] += 1
+
+        target_sid = -1
+        for sid in range(n_shortcuts):
+            if sid_count[sid] < 2:
+                continue
+            if is_mouse_button_lut[sid] or is_group_sid_lut[sid]:
+                continue
+            support = dup_support_arr[sid]
+            if support <= 0.0 or support >= 0.25:
+                continue
+            target_sid = sid
+            break
+        if target_sid < 0:
+            return False
+
+        # Choose the copy to keep: a frozen copy if any (untouchable),
+        # otherwise the lowest-effort position.
+        keep_pos = -1
+        keep_effort = 1e30
+        for i in range(n_pos):
+            if genome[i] != target_sid or pos_layer_arr[i] == 7:
+                continue
+            if pos_is_frozen_arr[i]:
+                keep_pos = i
+                break
+            if keep_pos < 0 and pos_effort_arr[i] < keep_effort:
+                keep_effort = pos_effort_arr[i]
+                keep_pos = i
+        if keep_pos < 0:
+            return False
+
+        changed = False
+        for i in range(n_pos):
+            if i == keep_pos or genome[i] != target_sid or pos_layer_arr[i] == 7:
+                continue
+            if pos_is_frozen_arr[i]:
+                continue
+            genome[i] = -1
+            changed = True
+        return changed
+
     @njit(parallel=True, cache=True)
     def _mutate_batch_numba(X, handled, probs, seeds,
                             mutable_arr, pos_layer_arr, pos_hand_arr, pos_is_thumb_arr, pos_effort_arr,
@@ -1406,6 +1569,8 @@ if NUMBA_AVAILABLE:
                             raw_completion_sid_by_order, raw_completion_quints,
                             is_mouse_button_lut,
                             pos_is_frozen_arr,
+                            hold_sid_for_target,
+                            dup_support_arr,
                             n_shortcuts):
         n = X.shape[0]
         for i in prange(n):
@@ -1491,6 +1656,21 @@ if NUMBA_AVAILABLE:
             if _rand_float(state) < probs[11]:
                 if _numba_repair_same_layer_duplicate(X[i], state, pos_layer_arr, pos_is_frozen_arr,
                                                       is_mouse_button_lut, n_shortcuts):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[12]:
+                if _numba_repair_l0_hold_completion(X[i], state, pos_layer_arr, pos_physical_id_arr,
+                                                    access_target_lut, access_is_mo_lut,
+                                                    layer_mutable_flat, layer_mutable_start,
+                                                    pos_is_thumb_arr, hold_sid_for_target, n_shortcuts):
+                    handled[i] = True
+                    continue
+
+            if _rand_float(state) < probs[13]:
+                if _numba_repair_unsupported_duplicate(X[i], pos_layer_arr, pos_is_frozen_arr,
+                                                       pos_effort_arr, is_mouse_button_lut,
+                                                       is_group_sid_lut, dup_support_arr, n_shortcuts):
                     handled[i] = True
                     continue
 
@@ -2341,6 +2521,17 @@ class SwapMutation(Mutation):
         cluster_app_prob=0.20,
         effort_swap_prob=0.06,
         smart_duplicate_prob=0.20,
+        access_thumb_bias_prob=0.15,
+        return_toggle_repair_prob=0.10,
+        toggle_own_layer_bias_prob=0.12,
+        momentary_reuse_repair_prob=0.10,
+        arrow_cluster_prob=0.06,
+        raw_completion_cluster_prob=0.06,
+        mouse_hold_conflict_repair_prob=0.05,
+        thumb_occupancy_repair_prob=0.05,
+        same_layer_duplicate_repair_prob=0.05,
+        l0_hold_completion_prob=0.08,
+        unsupported_duplicate_repair_prob=0.05,
     ):
         super().__init__()
         self.prob = prob
@@ -2355,38 +2546,39 @@ class SwapMutation(Mutation):
         self.cluster_app_prob = cluster_app_prob
         self.effort_swap_prob = effort_swap_prob
         self.smart_duplicate_prob = smart_duplicate_prob
-        self.access_thumb_bias_prob = 0.15
-        self.return_toggle_repair_prob = 0.10
-        self.toggle_own_layer_bias_prob = 0.12
-        # Repair-mutation for momentary_key_reuse (fitness/kernel.py): pure
-        # fitness pressure alone plateaued on this issue across thousands of
-        # real generations even at a strongly recalibrated weight (see
-        # AGENTS.md "Normal Run Length" section), so this proposes the
-        # coordinated relocation move directly; scoring still decides if it
-        # survives.
-        self.momentary_reuse_repair_prob = 0.10
-        # Constructive mutation for arrow_order/arrow_scattered: coordinating
-        # four exact positions into one valid shape is the same kind of move
-        # that plateaued momentary_key_reuse -- see the "nuclear pass" plan.
-        self.arrow_cluster_prob = 0.06
-        # Constructive mutation for raw_keyboard_completion_norwegian: same
-        # reasoning as arrow_cluster_prob above, applied to the 5-key
-        # Norwegian/raw-completion family instead of the 4-key arrow cluster.
-        self.raw_completion_cluster_prob = 0.06
+        self.access_thumb_bias_prob = access_thumb_bias_prob
+        self.return_toggle_repair_prob = return_toggle_repair_prob
+        self.toggle_own_layer_bias_prob = toggle_own_layer_bias_prob
+        # Repair for momentary_key_reuse: pure fitness pressure plateaued on
+        # this configuration, so propose the relocation directly; scoring
+        # still decides survival (history: DECISION_LOG.md).
+        self.momentary_reuse_repair_prob = momentary_reuse_repair_prob
+        # Constructive arrow_order/arrow_scattered move; same plateau class
+        # as momentary_reuse above.
+        self.arrow_cluster_prob = arrow_cluster_prob
+        # Same, for the 5-key Norwegian/raw-completion family.
+        self.raw_completion_cluster_prob = raw_completion_cluster_prob
         # Repair for mouse_hold_position_conflict: relocates an off-mouse-layer
         # momentary access key away from the exact (x, y) of a mouse button on
         # the settled mouse layer.
-        self.mouse_hold_conflict_repair_prob = 0.05
+        self.mouse_hold_conflict_repair_prob = mouse_hold_conflict_repair_prob
         # Repair for thumb_occupancy: relocates an occupied thumb position off
         # a side that's momentarily restricted by AGENTS.md's dynamic
         # thumb-clearance rule.
-        self.thumb_occupancy_repair_prob = 0.05
+        self.thumb_occupancy_repair_prob = thumb_occupancy_repair_prob
         # Repair for same_layer_duplicate (hard constraint): clears one
-        # mutable copy of a shortcut duplicated on the same layer. Added
-        # 2026-07-14 -- no dedicated repair existed for this before, despite
-        # it being one of the 6 hard constraints (found missing during a
-        # repo sweep after a run's archive got stuck on exactly this).
-        self.same_layer_duplicate_repair_prob = 0.05
+        # mutable copy of a shortcut duplicated on the same layer.
+        self.same_layer_duplicate_repair_prob = same_layer_duplicate_repair_prob
+        # Repair for access_layout's L0 toggle-without-hold penalty: proposes
+        # the hold onto a genuinely free physical key (a naive same-key
+        # toggle->hold swap collides with momentary_key_reuse).
+        self.l0_hold_completion_prob = l0_hold_completion_prob
+        # Repair for unsupported_duplicates_near_zero (acceptance check):
+        # blanks extra copies of duplicates that have some usage evidence but
+        # duplicate support < 0.25. No other operator removes cross-layer
+        # duplicates, and the penalty alone sits below the selection noise
+        # floor against the adjacency benefit they buy.
+        self.unsupported_duplicate_repair_prob = unsupported_duplicate_repair_prob
         self.mutable_indices = np.where(~frozen_mask)[0] if frozen_mask is not None else None
         self.mutable_list = self.mutable_indices.tolist() if self.mutable_indices is not None else None
         self.group_sid_sets = []
@@ -2681,6 +2873,12 @@ class SwapMutation(Mutation):
         self._return_toggle_sid = None
         self._toggle_access_sids: set = set()
         self._layer_mutable_positions: dict = {}
+        # Per-target-layer momentary-hold sid, used by
+        # _repair_l0_hold_completion / _numba_repair_l0_hold_completion to
+        # know which sid to place when L0 has a toggle but no hold to a
+        # given target layer. -1 where no hold-mode shortcut exists for that
+        # target (e.g. L7, which is frozen and excluded here).
+        self._hold_sid_for_target = np.full(32, -1, dtype=np.int32)
         if layout is not None:
             for s in layout.shortcuts:
                 if s.is_layer_access and not s.access_is_momentary:
@@ -2688,6 +2886,9 @@ class SwapMutation(Mutation):
                         self._return_toggle_sid = s.sid
                     elif s.access_target_layer != 7:
                         self._toggle_access_sids.add(s.sid)
+                elif s.is_layer_access and s.access_is_momentary:
+                    if 0 < s.access_target_layer < 32 and s.access_target_layer != 7:
+                        self._hold_sid_for_target[s.access_target_layer] = s.sid
             for idx in (self.mutable_list or []):
                 lyr = int(layout.positions[idx].layer)
                 self._layer_mutable_positions.setdefault(lyr, []).append(idx)
@@ -2831,6 +3032,17 @@ class SwapMutation(Mutation):
             for s in layout.shortcuts:
                 if 0 <= s.sid < n_sc:
                     self._sid_importance_arr[s.sid] = float(s.importance)
+
+        # Duplicate support per sid (usage/workflow evidence), for
+        # _numba_repair_unsupported_duplicate. Computed once here -- the
+        # kernel's helper is memoized and the values never change within a
+        # run (they depend only on layout.shortcuts and layout.usage_data).
+        self._dup_support_arr = np.zeros(n_sc, dtype=np.float32)
+        if layout is not None and n_sc > 0:
+            from fitness.kernel import _shortcut_duplicate_support
+            self._dup_support_arr = np.asarray(
+                _shortcut_duplicate_support(layout), dtype=np.float32
+            )
 
     def _build_protected_group_moves(self, layout):
         """Precompute whole-group mutation targets via build_group_placements."""
@@ -3885,6 +4097,54 @@ class SwapMutation(Mutation):
         genome[move_pos] = displaced
         return True
 
+    def _repair_l0_hold_completion(self, genome):
+        """Pure-Python fallback for _numba_repair_l0_hold_completion (used
+        only when Numba is unavailable). Adds a direct L0 momentary hold to
+        a target layer that L0 can currently only reach via toggle, landing
+        it on a physical key not already doing hold duty elsewhere -- see
+        the numba version's docstring for the empirical finding behind this.
+        """
+        genome_arr = np.asarray(genome, dtype=np.int32)
+        valid = (genome_arr >= 0) & (genome_arr < self.n_shortcuts)
+        if not valid.any():
+            return False
+        sids = genome_arr
+        tgts = self._access_target_lut[sids]
+        is_access = valid & (tgts > 0) & (tgts < 32)
+        on_l0 = is_access & (self._pos_layer_arr == 0)
+        if not on_l0.any():
+            return False
+
+        toggle_targets = set(tgts[on_l0 & (~self._access_is_mo_lut[sids])].tolist())
+        hold_targets = set(tgts[on_l0 & self._access_is_mo_lut[sids]].tolist())
+        missing = [t for t in toggle_targets if t not in hold_targets
+                   and int(self._hold_sid_for_target[t]) >= 0]
+        if not missing:
+            return False
+        target = random.choice(missing)
+        hold_sid = int(self._hold_sid_for_target[target])
+
+        is_mo = valid & self._access_is_mo_lut[sids]
+        is_mo = is_mo & (tgts >= 0) & (tgts < 32) & (tgts != self._pos_layer_arr)
+        busy_phys = set(self._pos_physical_id[is_mo].tolist())
+
+        l0_positions = self._layer_mutable_positions.get(0)
+        if not l0_positions:
+            return False
+        candidates = np.asarray(
+            [p for p in l0_positions if int(self._pos_physical_id[p]) not in busy_phys],
+            dtype=np.int32,
+        )
+        if len(candidates) == 0:
+            return False
+        values = genome_arr[candidates]
+        thumb_empty = candidates[(values < 0) & self._pos_is_thumb_arr[candidates]]
+        any_empty = candidates[values < 0]
+        pool = thumb_empty if len(thumb_empty) > 0 else (any_empty if len(any_empty) > 0 else candidates)
+
+        genome[int(random.choice(pool))] = hold_sid
+        return True
+
     def _propose_arrow_cluster(self, genome):
         """Pure-Python fallback for _numba_propose_arrow_cluster (used only
         when Numba is unavailable). Moves the four raw-arrow shortcuts
@@ -4162,6 +4422,56 @@ class SwapMutation(Mutation):
         genome[clear_pos] = -1
         return True
 
+    def _repair_unsupported_duplicate(self, genome):
+        """Pure-Python fallback for _numba_repair_unsupported_duplicate (used
+        only when Numba is unavailable). Blanks extra copies of a duplicated
+        shortcut that has some usage evidence but duplicate support < 0.25
+        (the unsupported_duplicates_near_zero acceptance criterion), keeping
+        the frozen or lowest-effort copy.
+        """
+        genome_arr = np.asarray(genome, dtype=np.int32)
+        n_pos = len(genome_arr)
+        sid_count: dict = {}
+        for i in range(n_pos):
+            sid = int(genome_arr[i])
+            if sid < 0 or sid >= self.n_shortcuts:
+                continue
+            if int(self._pos_layer_arr[i]) == 7:
+                continue
+            sid_count[sid] = sid_count.get(sid, 0) + 1
+
+        target_sid = -1
+        for sid, count in sid_count.items():
+            if count < 2:
+                continue
+            if self._is_mouse_button_lut[sid] or self._is_group_sid_lut[sid]:
+                continue
+            support = float(self._dup_support_arr[sid])
+            if support <= 0.0 or support >= 0.25:
+                continue
+            target_sid = sid
+            break
+        if target_sid < 0:
+            return False
+
+        positions = [
+            i for i in range(n_pos)
+            if int(genome_arr[i]) == target_sid and int(self._pos_layer_arr[i]) != 7
+        ]
+        frozen_positions = [i for i in positions if self._pos_is_frozen_arr[i]]
+        if frozen_positions:
+            keep_pos = frozen_positions[0]
+        else:
+            keep_pos = min(positions, key=lambda i: float(self._pos_effort_arr[i]))
+
+        changed = False
+        for i in positions:
+            if i == keep_pos or self._pos_is_frozen_arr[i]:
+                continue
+            genome[i] = -1
+            changed = True
+        return changed
+
     def _do(self, problem, X, **kwargs):
         n = X.shape[0]
         prob = float(self.prob.value if hasattr(self.prob, "value") else self.prob)
@@ -4269,6 +4579,8 @@ class SwapMutation(Mutation):
                 self.mouse_hold_conflict_repair_prob,
                 self.thumb_occupancy_repair_prob,
                 self.same_layer_duplicate_repair_prob,
+                self.l0_hold_completion_prob,
+                self.unsupported_duplicate_repair_prob,
             ], dtype=np.float64)
             seeds = np.random.randint(0, 2**63, size=n, dtype=np.uint64)
             _mutate_batch_numba(
@@ -4305,6 +4617,8 @@ class SwapMutation(Mutation):
                 self._raw_completion_quints,
                 self._is_mouse_button_lut,
                 self._pos_is_frozen_arr,
+                self._hold_sid_for_target,
+                self._dup_support_arr,
                 np.int32(self.n_shortcuts),
             )
         else:
@@ -4346,6 +4660,13 @@ class SwapMutation(Mutation):
                     handled[i] = True
                     continue
                 if random.random() < self.same_layer_duplicate_repair_prob and self._repair_same_layer_duplicate(X[i]):
+                    handled[i] = True
+                    continue
+                if random.random() < self.l0_hold_completion_prob and self._repair_l0_hold_completion(X[i]):
+                    handled[i] = True
+                    continue
+                if (random.random() < self.unsupported_duplicate_repair_prob
+                        and self._repair_unsupported_duplicate(X[i])):
                     handled[i] = True
                     continue
 

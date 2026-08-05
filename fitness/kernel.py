@@ -1963,11 +1963,10 @@ if NUMBA_AVAILABLE:
                 # hundred points is statistically invisible next to terms in
                 # the tens of thousands, no matter how many generations run.
                 candidate_penalty += dist12 * 25000.0
-                # Same-row requirement for MB1/MB2 (confirmed 2026-07-13 as a
-                # user-required property, not just a nice-to-have): weighted
-                # well above the other per-button terms in this sum so it
-                # reliably wins instead of occasionally losing to workflow
-                # placement pressure elsewhere.
+                # Same-row requirement for MB1/MB2: a user-required property,
+                # weighted well above the other per-button terms in this sum
+                # so it reliably wins instead of occasionally losing to
+                # workflow placement pressure elsewhere.
                 candidate_penalty += dy * 60000.0
             if mouse_button_right[layer, 4] > 0 and mouse_button_right[layer, 5] > 0:
                 dx = mouse_button_x[layer, 5] - mouse_button_x[layer, 4]
@@ -1979,14 +1978,11 @@ if NUMBA_AVAILABLE:
                 # Same-row requirement for MB4/MB5, weighted well above the
                 # other per-button terms (see MB1/MB2 above).
                 candidate_penalty += dy * 60000.0
-                # MB4/MB5 adjacency requirement (confirmed 2026-07-13): when
-                # both are already on the same row (dy==0) and correctly
-                # ordered (dx>0), MB4 must sit exactly one slot left of MB5
-                # (dx==1), not just "somewhere to the left". A checkpoint
-                # audited that day had them on the same row but 2 slots
-                # apart (dx=2) and that alone was not penalized -- dist45
-                # above pulls toward closeness but was not strong enough by
-                # itself to reliably close a 1-slot gap in practice.
+                # MB4/MB5 adjacency requirement: when both are already on the
+                # same row (dy==0) and correctly ordered (dx>0), MB4 must sit
+                # exactly one slot left of MB5 (dx==1), not just "somewhere to
+                # the left" -- dist45 above pulls toward closeness but is not
+                # strong enough by itself to reliably close a 1-slot gap.
                 if dy == 0.0 and dx > 0.0:
                     adjacency_gap = abs(dx - 1.0)
                     if adjacency_gap > 0.0:
@@ -2030,11 +2026,10 @@ if NUMBA_AVAILABLE:
                             candidate_penalty += effort_gap * usage_scale * 600000.0
             else:
                 candidate_penalty += 25000.0
-            # MB1-Scroll-MB2 arrangement bonus (confirmed 2026-07-13 as a
-            # user-liked pattern worth rewarding more): when MB1, a right-hand
+            # MB1-Scroll-MB2 arrangement bonus: when MB1, a right-hand
             # non-thumb momentary Scroll, and MB2 all sit on the same row in
             # that left-to-right x order, it mirrors a physical mouse (left
-            # button / wheel / right button). This is an bonus on top of the
+            # button / wheel / right button). This is a bonus on top of the
             # existing MB1/MB2 same-row and ordering pressure above -- it
             # does not require MB1/MB2 to be immediately adjacent, since a
             # scroll key sitting between them is exactly the rewarded shape.
@@ -2250,16 +2245,12 @@ if NUMBA_AVAILABLE:
             layer_factor = 3.0 / (1.0 + lc * 0.15)
             if layer_factor > 4.0:
                 layer_factor = 4.0
-            # Floor confirmed necessary 2026-07-13: without it, a handful of
-            # genuinely prime (effort==0) empty slots on expensive-to-reach
-            # layers were found sitting empty and completely flat across
-            # 1000+ real generations late in a 30k run (L5/L9/L10, 6 such
-            # slots total) -- access-cost scaling correctly identifies these
-            # as harder-to-reach layers, but was allowed to crush the
-            # pressure on their own best slots to near-zero, which AGENTS.md
-            # never intended (only L0 is meant to get special treatment;
-            # other layers' prime slots should still be contested, just less
-            # fiercely than L0's).
+            # Floor: without it, genuinely prime (effort==0) empty slots on
+            # expensive-to-reach layers get their pressure crushed to
+            # near-zero by access-cost scaling and can sit empty indefinitely
+            # (observed on real checkpoints; see DECISION_LOG.md). AGENTS.md
+            # intends only L0 to get special treatment -- other layers' prime
+            # slots should still be contested, just less fiercely than L0's.
             if layer_factor < 0.5:
                 layer_factor = 0.5
             ld = layer_demand[layer]

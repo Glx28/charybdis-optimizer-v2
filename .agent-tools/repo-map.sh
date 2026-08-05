@@ -11,7 +11,7 @@ mkdir -p .ai/context
   echo
   echo "## Files"
   if command -v rg >/dev/null 2>&1; then
-    rg --files -g '!node_modules' -g '!dist' -g '!build' -g '!target' -g '!.git' -g '!.venv' -g '!venv' -g '!__pycache__' -g '!.ai' | sed 's#^#- #'
+    rg --files -g '!node_modules' -g '!dist' -g '!build' -g '!target' -g '!.git' -g '!.venv' -g '!venv' -g '!__pycache__' -g '!.ai' -g '!data' | sed 's#^#- #'
   else
     find . -type f | sed 's#^\./#- #'
   fi
@@ -20,7 +20,9 @@ mkdir -p .ai/context
   command -v tokei >/dev/null 2>&1 && tokei . || true
 } > .ai/context/repo-map.md
 if command -v repomix >/dev/null 2>&1; then
-  repomix --output .ai/context/repomix.xml --style xml --remove-comments --remove-empty-lines --ignore "node_modules,dist,build,target,.git,.venv,venv,__pycache__,.ai" >/dev/null 2>&1 || true
+  # data/ is machine-generated JSON (1.3MB): agents must query it with tools,
+  # never load it into context.
+  repomix --output .ai/context/repomix.xml --style xml --remove-comments --remove-empty-lines --ignore "node_modules,dist,build,target,.git,.venv,venv,__pycache__,.ai,data" >/dev/null 2>&1 || true
 fi
 echo "Wrote .ai/context/repo-map.md"
 [ -f .ai/context/repomix.xml ] && echo "Wrote .ai/context/repomix.xml"

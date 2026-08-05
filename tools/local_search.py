@@ -4,7 +4,7 @@ Greedy local search: cluster same-app shortcuts to improve adjacency.
 Strategy: for each app (sorted by importance), try pulling same-app shortcuts
 to adjacent physical positions. Accept any improvement.
 
-Run: .venv/bin/python3 local_search.py
+Run from repo root: .venv/bin/python3 tools/local_search.py
 """
 import sys, numpy as np, yaml, json, time
 sys.path.insert(0, '.')

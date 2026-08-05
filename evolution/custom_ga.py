@@ -17,7 +17,6 @@ import random
 import time
 
 import numpy as np
-import torch
 
 from evolution.acceptance import build_acceptance_report
 from evolution.arrow_cluster import analyze_arrows
@@ -68,10 +67,27 @@ def _scalar(F, cv=None, constraint_penalty=None):
     return s
 
 
-def _tournament_select(scalar_F, n, k=2):
-    """Return (n,) parent indices via binary tournament — vectorized CPU numpy."""
+def _tournament_select(scalar_F, n, k=2, cv=None):
+    """Return (n,) parent indices via binary tournament — vectorized CPU numpy.
+
+    When cv (constraint-violation matrix, already max(., 0) per column) is
+    given, comparisons follow Deb's (2000) feasibility rules: a feasible
+    candidate (total violation <= 0) always beats an infeasible one; two
+    infeasible candidates are compared by total violation; two feasible
+    candidates are compared by scalar score.
+    """
     idx = np.random.randint(0, len(scalar_F), (n, k))
-    return idx[np.arange(n), scalar_F[idx].argmin(axis=1)]
+    if cv is None:
+        return idx[np.arange(n), scalar_F[idx].argmin(axis=1)]
+    cvt = cv.sum(axis=1) if cv.ndim > 1 else np.asarray(cv, dtype=np.float32)
+    cand_cv = cvt[idx]
+    cand_f = scalar_F[idx]
+    feasible = cand_cv <= 0
+    any_feasible = feasible.any(axis=1, keepdims=True)
+    # Within the best present tier, compare feasible by score, infeasible by violation.
+    val = np.where(feasible, cand_f, cand_cv)
+    masked = np.where(feasible == any_feasible, val, np.inf)
+    return idx[np.arange(n), masked.argmin(axis=1)]
 
 
 def _crossover_batch(pop_X, parent_idx, crossover_prob, n_shortcuts):
@@ -120,6 +136,46 @@ def _select_feasibility_first_scalar(scalar, cv, n):
     return np.concatenate([feasible_idx, ranked_infeasible])
 
 
+def _feasibility_log_line(gen, pop_cv):
+    """Compact feasibility instrumentation for one generation.
+
+    Feasible fraction plus mean total violation of infeasible members — the
+    canonical detection signal for the infeasible-optimum failure mode (scalar
+    best improves while the acceptance-gated archive stagnates).
+    """
+    if pop_cv is None or pop_cv.size == 0:
+        return f"    Gen {gen}: feasible=1.000 (no constraints tracked)"
+    totals = pop_cv.sum(axis=1) if pop_cv.ndim > 1 else np.asarray(pop_cv, dtype=np.float64)
+    totals = np.asarray(totals, dtype=np.float64)
+    infeasible = totals > 0
+    feas_frac = 1.0 - float(infeasible.mean())
+    mean_viol = float(totals[infeasible].mean()) if infeasible.any() else 0.0
+    return (
+        f"    Gen {gen}: feasible={feas_frac:.3f}"
+        f" mean_viol_infeasible={mean_viol:.4f}"
+    )
+
+
+def _spearman_rank_corr(a, b):
+    """Spearman rank correlation via numpy only (no scipy dependency).
+
+    argsort-of-argsort ranks + Pearson on ranks. Returns nan for fewer than
+    2 samples or zero-variance input (degenerate batch).
+    """
+    a = np.asarray(a, dtype=np.float64).ravel()
+    b = np.asarray(b, dtype=np.float64).ravel()
+    if a.size < 2 or b.size < 2:
+        return float("nan")
+    ra = np.argsort(np.argsort(a)).astype(np.float64)
+    rb = np.argsort(np.argsort(b)).astype(np.float64)
+    ra -= ra.mean()
+    rb -= rb.mean()
+    denom = float(np.sqrt((ra ** 2).sum() * (rb ** 2).sum()))
+    if denom == 0.0:
+        return float("nan")
+    return float((ra * rb).sum() / denom)
+
+
 def _dynamic_mouse_failed(entry):
     failed = set(entry.get("acceptance_failed_checks", []))
     return "dynamic_mouse_layer_present" in failed
@@ -132,14 +188,12 @@ def _display_gap(entry, target=-49.30):
     return gap
 
 
-# Display-only rebasing (2026-07-13, user request): a healthy layout's
-# total_score has consistently landed around -315 across every checkpoint
-# this session, which reads awkwardly as a large negative number. Adding
-# this constant to total_score for DISPLAY ONLY makes -315 read as ~0 --
-# purely cosmetic, does not touch the actual objective/selection math
-# anywhere (a constant additive shift changes no relative ordering, so it
-# cannot affect evolution/acceptance/archive decisions).
-SCORE_REBASE_OFFSET = 315.0
+# Display-only rebasing: purely cosmetic, does not touch the actual
+# objective/selection math anywhere (a constant additive shift changes no
+# relative ordering, so it cannot affect evolution/acceptance/archive
+# decisions). Anchored so the current live best reads as ~0; rebased is the
+# only score value shown in logs.
+SCORE_REBASE_OFFSET = 350.35
 
 
 def _rebased(total_score):
@@ -174,6 +228,7 @@ class CustomGARunner:
         diversity_archive_stagnant_cycles: int = 2,
         diversity_pop_collapse_threshold: float = 0.08,
         diversity_cooldown_gens: int = 150,
+        feasibility_first_selection: bool = True,
     ):
         self.layout = layout
         self.evaluator = evaluator
@@ -200,6 +255,9 @@ class CustomGARunner:
         self.diversity_pop_collapse_threshold = float(diversity_pop_collapse_threshold)
         self.diversity_cooldown_gens = int(diversity_cooldown_gens)
         self.n_constraints = int(n_constraints)
+        # Deb (2000) feasibility rules in tournament selection; toggle via
+        # evolution.feasibility_first_selection.
+        self.feasibility_first_selection = bool(feasibility_first_selection)
 
         # Background thread pool for concurrent mini exact eval during GPU predict
         self._eval_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -234,7 +292,14 @@ class CustomGARunner:
         }
 
     def _maybe_update_global_from_batch(self, batch_X, batch_F, batch_G, gen):
-        """Check a batch of exact evaluations and update the archive if a better feasible genome exists."""
+        """Check a batch of exact evaluations and update the archive if a better feasible genome exists.
+
+        Archive admission hygiene: every call site passes ground-truth
+        evaluator output (full exact-eval branch or the mini exact-eval
+        batch); surrogate predictions are never admitted into the archive.
+        Keep it that way — the archive is the acceptance-gated source of
+        truth for checkpoints.
+        """
         if batch_X is None or len(batch_X) == 0:
             return
         totals = _scalar(batch_F, batch_G)
@@ -264,8 +329,8 @@ class CustomGARunner:
             self._update_archive(mini_best_genome, mini_entry)
             gap = _display_gap(mini_entry)
             print(
-                f"    Gen {gen}: global best improved to {mini_entry['total_score']:.4f}"
-                f" (rebased={_rebased(mini_entry['total_score']):.2f}, gap={gap:+.2f}, source=exact_eval)",
+                f"    Gen {gen}: global best improved to"
+                f" {_rebased(mini_entry['total_score']):.2f} (gap={gap:+.2f}, source=exact_eval)",
                 flush=True,
             )
 
@@ -604,8 +669,8 @@ class CustomGARunner:
             self.archive_stagnation = 0
             gap = _display_gap(entry)
             print(
-                f"    Gen {gen}: global best improved to {entry['total_score']:.4f}"
-                f" (rebased={_rebased(entry['total_score']):.2f}, gap={gap:+.2f},"
+                f"    Gen {gen}: global best improved to"
+                f" {_rebased(entry['total_score']):.2f} (gap={gap:+.2f},"
                 f" optimizer_side_pass={entry['optimizer_side_pass']})",
                 flush=True,
             )
@@ -615,8 +680,7 @@ class CustomGARunner:
             if stagnant_gens >= 100000 and self.global_best_exact is not None:
                 print(
                     f"    Gen {gen}: early stop — archive stagnant for {stagnant_gens} gens"
-                    f" (best score={self.global_best_exact['total_score']:.4f},"
-                    f" rebased={_rebased(self.global_best_exact['total_score']):.2f})",
+                    f" (best score={_rebased(self.global_best_exact['total_score']):.2f})",
                     flush=True,
                 )
                 self._should_stop = True
@@ -688,6 +752,19 @@ class CustomGARunner:
             if self.perf:
                 self.perf.add("surrogate_teacher_eval", time.perf_counter() - t0)
             sm.add_exact_evaluations(pop_X.astype(np.int32), exact_F, exact_G)
+            # Surrogate health: Spearman rank correlation between surrogate
+            # predictions and exact totals on this exact-evaluated batch.
+            # Rank-based, so it stays meaningful as the score scale drifts.
+            if sm.trainer.mean is not None:
+                pred = sm.trainer.predict(pop_X.astype(np.int32))
+                pred_totals = pred[:, : self.n_factors].sum(axis=1)
+                exact_totals = exact_F.sum(axis=1) if exact_F.ndim > 1 else exact_F
+                rho = _spearman_rank_corr(pred_totals, exact_totals)
+                print(
+                    f"    Gen {gen}: surrogate health spearman_rho={rho:.3f}"
+                    f" (n={len(exact_totals)})",
+                    flush=True,
+                )
         sm.maybe_collect_retrain()
         if sm.should_retrain():
             t0 = time.perf_counter()
@@ -776,7 +853,11 @@ class CustomGARunner:
 
             # --- Tournament selection (GPU) ---
             scalar = _scalar(pop_F, pop_cv)
-            parent_idx = _tournament_select(scalar, self.pop_size)
+            parent_idx = _tournament_select(
+                scalar,
+                self.pop_size,
+                cv=pop_cv if self.feasibility_first_selection else None,
+            )
 
             # --- Crossover ---
             children_X = _crossover_batch(
@@ -867,6 +948,10 @@ class CustomGARunner:
             # --- Adaptive mutation rate ---
             best_quality = float(_scalar(pop_F, pop_cv).min())
             self._adjust_mutation(best_quality, gen)
+
+            # --- Feasibility instrumentation (infeasible-optimum detection) ---
+            if gen % 100 == 0:
+                print(_feasibility_log_line(gen, pop_cv), flush=True)
 
             # --- Periodic: teacher update, retrain, checkpoint ---
             self._maybe_teacher_update(pop_X, pop_F, gen)

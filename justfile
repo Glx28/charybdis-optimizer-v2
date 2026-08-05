@@ -2,7 +2,6 @@
 
 ai-status:
     @bash .agent-tools/ai-status.sh
-
 ai-context:
     @bash .agent-tools/repo-map.sh
 
@@ -20,6 +19,12 @@ ai-research:
 
 ai-install-check:
     @kimi --version 2>&1; claude --version 2>&1; codex --version 2>&1; rg --version 2>&1 | head -1; fd --version 2>&1 | head -1; sg --version 2>&1 | head -1; just --version 2>&1 | head -1; repomix --version 2>&1 | head -1; uv --version 2>&1 | head -1; ruff --version 2>&1 | head -1; pytest --version 2>&1 | head -1; pre-commit --version 2>&1 | head -1; biome --version 2>&1 | head -1; tokei --version 2>&1 | head -1; node --version 2>&1; npm --version 2>&1; python3 --version 2>&1
+
+# Normal training run: ~30000 generations (the 500000 in config_v2.yaml is a
+# ceiling, not the target — see AGENTS.md). Logs to build/run_logs/.
+run GENS="30000":
+    @mkdir -p build/run_logs
+    @.venv/bin/python run_evolution.py --generations {{GENS}} 2>&1 | tee "build/run_logs/run_$(date +%Y%m%d_%H%M%S)_g{{GENS}}.log"
 
 # Generate full run report bundle under build/run_report/
 run-report:

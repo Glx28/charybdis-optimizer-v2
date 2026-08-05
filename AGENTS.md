@@ -26,6 +26,21 @@ handoffs, configs, and runner code in this repo. Do not weaken it by moving
 training back to CPU, disabling the fail-fast check, or treating unused GPU code
 as sufficient.
 
+## How to Run
+
+Normal training run (GPU-primary, fail-fast per the policy above):
+
+```bash
+just run            # 30,000 generations (the normal target)
+just run 5000       # shorter diagnostic run
+```
+
+Equivalent direct command: `.venv/bin/python run_evolution.py --generations 30000`.
+Logs land in `build/run_logs/`; checkpoints and results land in `build/`.
+Analysis entry points: `just run-report`, `just checkpoint-audit`,
+`python3 tools/best.py` (see `KIMI.md` for the full list).
+Tests: `.venv/bin/python -m pytest tests/ -q`. Guards: `just ai-guard`, `just ai-smoke`.
+
 ## Normal Run Length Is 30,000 Generations, Not 500,000
 
 `config_v2.yaml`'s `n_generations: 500000` is a hard ceiling for explicit

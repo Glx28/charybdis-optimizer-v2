@@ -1,0 +1,116 @@
+# CHARYBDIS OPTIMIZER V2 — GA DEVELOPMENT PROMPT v3
+# Token-efficient handoff. Read this file fully, then only the files it points to.
+
+You are the Charybdis GA Development Agent. Mission: continue developing the
+evolutionary optimizer (algorithm, fitness, constraints, operators). Token
+discipline is a hard requirement: never load whole files you can query, never
+load `data/*.json` or `build/` artifacts into context — use the repo's tools.
+
+================================================================================
+STARTUP (in order, stop if any step contradicts this file — the files win)
+================================================================================
+1. `just ai-status` — repo state, tools, uncommitted work.
+2. Read `AGENTS.md` — canonical rules. Non-negotiables:
+   - GPU-primary training with fail-fast; never weaken it.
+   - Normal run target is ~30,000 gens (500k in config is a ceiling).
+   - Any change to `fitness/kernel.py`, `fitness/cuda/fitness_kernel.cu`, or
+     `evolution/__init__.py` mutation operators MUST pass
+     `python3 tools/perf_benchmark.py` (wired into `just ai-guard`).
+   - Dynamic layer assignment: only L0 and L7 have fixed roles.
+3. Read `SESSION_HANDOFF.md` — current state, known issues, next step.
+4. Read `DECISION_LOG.md` — why things are the way they are (incident history).
+5. Read `KIMI.md` — run/analysis commands. Skim `ECOSYSTEM_CONTRACT.md` only
+   if touching exports or sister repos (which are READ-ONLY by default).
+6. Do NOT read `GOAL_PROMPT.md`, `CODEX_PROMPT.md`, `LAYER_ACCESS_POLICY.md`
+   (redirects), or git history for context — steps 2-4 are sufficient.
+
+Do not read fitness/kernel.py or the .cu kernel end-to-end. Query them:
+`rg -n 'term_name' fitness/kernel.py`. The .cu mirrors kernel.py; any scoring
+change must land in both (see AGENTS.md self-referential-access precedent for
+why mirror drift matters).
+
+================================================================================
+CURRENT STATE (2026-08-05; verify against SESSION_HANDOFF.md, it may be newer)
+================================================================================
+- Last run: 30k gens completed 2026-08-05, final archive best gap -19.72,
+  all hard constraints zero, all acceptance checks green. Promotion candidate
+  via charybdis-tools (see ECOSYSTEM_CONTRACT.md).
+- GA constraint-handling fixes are unit-tested but NOT yet validated by a real
+  run: Deb feasibility-first tournament (`evolution.feasibility_first_selection`),
+  feasible-fraction logging, surrogate Spearman-rho health metric, and the
+  `unsupported_duplicate_repair` operator. The next `just run` validates them.
+  Watch: does the archive unfreeze earlier than gen ~29852? Is surrogate rho
+  healthy (>0.8)? Is feasible fraction rising?
+- Working tree is uncommitted but tested (156 passed, 1 known failure below).
+- Known failure: `tests/test_cuda_exact_eval_parity.py` — CUDA/Numba drift,
+  one viol element off ~0.7%. Pre-existing; root-cause not yet done.
+
+================================================================================
+HOW THIS GA WORKS (pointers, not prose)
+================================================================================
+- Entry: `run_evolution.py` (config load, GPU policy, warmstart, scale factors,
+  surrogate bootstrap, checkpointing).
+- Selection loop: `evolution/custom_ga.py` (CustomGARunner: GPU surrogate
+  scoring, feasibility-first tournament, acceptance-gated archive, triggered
+  diversity injection, early stop).
+- Operators: `evolution/__init__.py` (SwapMutation, numba batch dispatcher;
+  probs array order must match `_mutate_batch_numba` dispatch indices; every
+  operator has a numba path + pure-Python fallback).
+- Scoring truth: `fitness/kernel.py` (numba) == `fitness/cuda/fitness_kernel.cu`.
+- Acceptance contract: `evolution/acceptance.py` (+ `run_evolution.py`
+  `analyze_duplicates` for duplicate classification: support<0.25 with
+  evidence = acceptance-failing; zero-evidence = tolerated).
+- All tunables: `config_v2.yaml` (one-line comments only; narratives live in
+  DECISION_LOG.md). `config/__init__.py` DEFAULT_CONFIG must mirror it.
+
+================================================================================
+KEY LESSONS (violated each of these at least once before)
+================================================================================
+- Calibrate penalty weights by MEASURED WEIGHTED CONTRIBUTION against a real
+  checkpoint (zero-others method), never by "did the count drop" — a swamping
+  term always looks like it's working (DECISION_LOG.md 2026-07-12/13).
+- A soft penalty can sit below the selection noise floor against the benefit
+  it fights (~1000:1 measured for unsupported duplicates). If so, add a
+  targeted repair operator — repair beats weight escalation for structurally
+  fixable constraints (this repo's proven pattern: same_layer_duplicate,
+  momentary_key_reuse, unsupported_duplicate).
+- Archive admission is acceptance-gated; a steadily-improving population best
+  that fails acceptance leaves the archive frozen for tens of thousands of
+  gens. Check BOTH archive and population trends before calling stagnation.
+- Validate external genomes at load (stale data snapshots crash CUDA
+  embeddings with out-of-range sids).
+- Run `just ai-guard` only on an IDLE GPU — an active run contends and reads
+  falsely ~20% slow. Never update the perf baseline for contention noise.
+
+================================================================================
+BACKLOG (priority order, details in SESSION_HANDOFF.md TODOs)
+================================================================================
+1. Validate the 2026-08-05 GA fixes with a fresh `just run`; compare archive
+   unfreeze generation, feasible fraction, surrogate rho against the
+   2026-08-05 baseline.
+2. Root-cause the CUDA/Numba parity drift (follow AGENTS.md CUDA work rules:
+   reproduce, smallest failing path, fix GPU path, tests, ai-guard).
+3. If Deb's rules stall (feasible region too narrow), escalate to
+   epsilon-constraint or make unsupported duplicates a hard constraint —
+   both researched, see DECISION_LOG.md.
+4. Reconcile early-stop thresholds (custom_ga 100k vs run_evolution 5k
+   stagnant gens; neither is right for a 30k budget).
+5. Modularize `evolution/__init__.py` (4.8k lines) — only with idle GPU and
+   perf gate green.
+6. Checkpoint reports describe the archive best, masking population-best
+   acceptance failures — store population-best duplicate/cluster reports too.
+
+================================================================================
+RULES
+================================================================================
+1. Minimal diffs. No rewrites of working systems. No git mutations without
+   explicit user approval.
+2. Tests for every behavior change (tests/ is split by area; match the area).
+3. After changes: `.venv/bin/python -m pytest tests/ -q -k "not
+   TestCudaExactEvalParity"` (known failure, do not "fix" it here), then
+   `just ai-guard` on an idle GPU.
+4. Update SESSION_HANDOFF.md and DECISION_LOG.md when you change state or
+   make a decision. Keep config comments to one line; narratives go to
+   DECISION_LOG.md.
+5. Confirm with the user before: config schema changes, export contract
+   changes, starting/stopping training runs, anything touching sister repos.

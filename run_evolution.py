@@ -36,6 +36,41 @@ from pymoo.optimize import minimize
 from pymoo.core.callback import Callback
 
 
+def load_warmstart_genome(path, n_positions, n_shortcuts):
+    """Load a warmstart genome, validated against the current data snapshot.
+
+    Returns (genome, raw_json) or (None, None) if missing/unusable. Shortcut
+    ids outside [-1, n_shortcuts) come from artifacts written against an older
+    data snapshot; they are masked to -1 (empty) rather than crashing the
+    surrogate's embedding on CUDA.
+    """
+    if not os.path.exists(path):
+        return None, None
+    try:
+        with open(path) as f:
+            ws = json.load(f)
+        genome = np.array(ws['genome'], dtype=np.int32)
+    except Exception as e:
+        print(f"  Warmstart load failed: {e}", flush=True)
+        return None, None
+    if genome.shape[0] != n_positions:
+        print(
+            f"  Warmstart genome length {genome.shape[0]} != n_positions {n_positions}; ignoring.",
+            flush=True,
+        )
+        return None, None
+    oob = (genome >= n_shortcuts) | (genome < -1)
+    if oob.any():
+        print(
+            f"  Warmstart genome has {int(oob.sum())} out-of-range shortcut ids "
+            "(saved against an older data snapshot); masking them to empty.",
+            flush=True,
+        )
+        genome = genome.copy()
+        genome[oob] = -1
+    return genome, ws
+
+
 def generate_random_layouts(layout, n, warmstart_genome=None):
     from evolution import build_group_placements
 
@@ -541,9 +576,9 @@ class ExactEvalCallback(Callback):
         if improved_archive:
             self.archive_stagnation = 0
             print(
-                f"    Gen {gen}: global best improved to {population_exact_entry['total_score']:.4f} "
-                f"(rebased={population_exact_entry['total_score'] + 315.0:.2f}, "
-                f"optimizer_side_pass={population_exact_entry['optimizer_side_pass']})",
+                f"    Gen {gen}: global best improved to "
+                f"{population_exact_entry['total_score'] + 350.35:.2f} "
+                f"(optimizer_side_pass={population_exact_entry['optimizer_side_pass']})",
                 flush=True,
             )
         else:
@@ -558,7 +593,7 @@ class ExactEvalCallback(Callback):
             ):
                 print(
                     f"    Gen {gen}: early stop — archive stagnant for {stagnant_gens} gens "
-                    f"with optimizer_side_pass=True (best score={self.global_best_exact['total_score']:.4f})",
+                    f"with optimizer_side_pass=True (best score={self.global_best_exact['total_score'] + 350.35:.2f})",
                     flush=True,
                 )
                 algorithm.termination.force_termination = True
@@ -719,26 +754,22 @@ def main(argv=None):
     hard_constraints = config.get("fitness.hard_constraints", [])
 
     # Try to warmstart from local search result
-    warmstart_genome = None
     warmstart_path = os.path.join(args.output_dir, 'v2_local_search_result.json')
-    if os.path.exists(warmstart_path):
-        try:
-            with open(warmstart_path) as f:
-                ws = json.load(f)
-            # Use top-level 'genome' which is updated by each run's best find;
-            # 'best_exact' was set during local search with different scale factors.
-            warmstart_genome = np.array(ws['genome'], dtype=np.int32)
-            ws_score = ws.get('best_score', None)
-            if ws_score is not None:
-                ws_exact = dict(ws.get("best_exact", {}))
-                ws_exact.setdefault("total_score", float(ws_score))
-                ws_gap = ExactEvalCallback._display_gap(ws_exact)
-                score_str = f"score={ws_score:.4f}, gap={ws_gap:+.2f}"
-            else:
-                score_str = "score=N/A"
-            print(f"  Warmstart genome loaded from {warmstart_path} ({score_str})", flush=True)
-        except Exception as e:
-            print(f"  Warmstart load failed: {e}", flush=True)
+    warmstart_genome, ws = load_warmstart_genome(
+        warmstart_path, layout.n_positions, layout.n_shortcuts
+    )
+    if warmstart_genome is not None:
+        # Use top-level 'genome' which is updated by each run's best find;
+        # 'best_exact' was set during local search with different scale factors.
+        ws_score = ws.get('best_score', None)
+        if ws_score is not None:
+            ws_exact = dict(ws.get("best_exact", {}))
+            ws_exact.setdefault("total_score", float(ws_score))
+            ws_gap = ExactEvalCallback._display_gap(ws_exact)
+            score_str = f"score={ws_score:.4f}, gap={ws_gap:+.2f}"
+        else:
+            score_str = "score=N/A"
+        print(f"  Warmstart genome loaded from {warmstart_path} ({score_str})", flush=True)
 
     surrogate_enabled = bool(config.get("surrogate.enabled", False))
     evaluator = build_evaluator(config, layout)
@@ -749,19 +780,34 @@ def main(argv=None):
     print(f"  Seed fitness (raw): effort={seed_result.objectives[0]*1:.0f}, adj={seed_result.objectives[1]*1:.0f}, viol={seed_result.objectives[2]*1:.0f}", flush=True)
 
     # Compute or load stable IQR-based scale factors.
-    # Scale factors must be stable across runs so that scores are comparable and the
+    # Scale factors must be stable across runs so scores stay comparable and the
     # optimizer doesn't over-weight objectives when the warmstart is already good.
-    # Problem: generate_random_layouts perturbs the warmstart, so as the warmstart
-    # improves the IQR shrinks, biasing the scale factors.
-    # Fix: compute once from a fresh (unbiased) random sample and cache to disk.
+    # generate_random_layouts perturbs the warmstart, which would shrink the IQR
+    # as the warmstart improves, so compute once from a fresh random sample and
+    # cache to disk. The cache is keyed on a hash of the weight config so any
+    # weight change forces a recompute (stale-cache incident: DECISION_LOG.md).
+    import hashlib
+    _weight_key = json.dumps(
+        {
+            "weights": config.get("fitness.weights", {}),
+            "violation_sub_weights": config.get("fitness.violation_sub_weights", {}),
+        },
+        sort_keys=True,
+    )
+    _weight_hash = hashlib.sha256(_weight_key.encode()).hexdigest()
+
     _scale_cache = "build/v2_scale_factors.json"
     scale_factors = None
     if os.path.exists(_scale_cache):
         try:
             with open(_scale_cache) as _f:
                 _cached = json.load(_f)
-            scale_factors = np.array(_cached["scale_factors"], dtype=np.float64)
-            print(f"  IQR scale factors (cached): effort={scale_factors[0]:.2f}, adj={scale_factors[1]:.2f}, viol={scale_factors[2]:.2f}", flush=True)
+            if _cached.get("weight_hash") != _weight_hash:
+                print("  Scale cache stale (weight config changed since cache was written); recomputing.", flush=True)
+                scale_factors = None
+            else:
+                scale_factors = np.array(_cached["scale_factors"], dtype=np.float64)
+                print(f"  IQR scale factors (cached): effort={scale_factors[0]:.2f}, adj={scale_factors[1]:.2f}, viol={scale_factors[2]:.2f}", flush=True)
         except Exception as _e:
             print(f"  Scale cache load failed: {_e}; recomputing.", flush=True)
             scale_factors = None
@@ -782,10 +828,17 @@ def main(argv=None):
         iqr = q75 - q25
         seed_scores = np.abs(seed_result.objectives)
         scale_factors = np.maximum(iqr, seed_scores * 0.1)
+        # viol (axis 2) is anchored to the seed genome's own magnitude, not the
+        # random-layout IQR: fully random genomes carry astronomically larger
+        # duplicate counts (cross_dup/duplicate_value_gap use extra^2/extra^3
+        # saturation terms) than anything the GA produces, so the random IQR
+        # always wins the max() above and deadens the viol axis (incident
+        # detail: DECISION_LOG.md).
+        scale_factors[2] = max(float(seed_scores[2]), 1.0)
         scale_factors = np.maximum(scale_factors, 1.0)
         os.makedirs("build", exist_ok=True)
         with open(_scale_cache, "w") as _f:
-            json.dump({"scale_factors": scale_factors.tolist()}, _f)
+            json.dump({"scale_factors": scale_factors.tolist(), "weight_hash": _weight_hash}, _f)
         print(f"  IQR scale factors (computed, cached): effort={scale_factors[0]:.2f}, adj={scale_factors[1]:.2f}, viol={scale_factors[2]:.2f}", flush=True)
     evaluator = build_evaluator(config, layout, scale_factors=scale_factors)
     maybe_validate_exact_evaluator(config, layout, evaluator)
@@ -870,6 +923,17 @@ def main(argv=None):
         cluster_app_prob=config.get("evolution.cluster_app_prob", 0.20),
         effort_swap_prob=config.get("evolution.effort_swap_prob", 0.06),
         smart_duplicate_prob=config.get("evolution.smart_duplicate_prob", 0.20),
+        access_thumb_bias_prob=config.get("evolution.access_thumb_bias_prob", 0.15),
+        return_toggle_repair_prob=config.get("evolution.return_toggle_repair_prob", 0.10),
+        toggle_own_layer_bias_prob=config.get("evolution.toggle_own_layer_bias_prob", 0.12),
+        momentary_reuse_repair_prob=config.get("evolution.momentary_reuse_repair_prob", 0.10),
+        arrow_cluster_prob=config.get("evolution.arrow_cluster_prob", 0.06),
+        raw_completion_cluster_prob=config.get("evolution.raw_completion_cluster_prob", 0.06),
+        mouse_hold_conflict_repair_prob=config.get("evolution.mouse_hold_conflict_repair_prob", 0.05),
+        thumb_occupancy_repair_prob=config.get("evolution.thumb_occupancy_repair_prob", 0.05),
+        same_layer_duplicate_repair_prob=config.get("evolution.same_layer_duplicate_repair_prob", 0.05),
+        l0_hold_completion_prob=config.get("evolution.l0_hold_completion_prob", 0.08),
+        unsupported_duplicate_repair_prob=config.get("evolution.unsupported_duplicate_repair_prob", 0.05),
     )
     sanitizer = StructuralGenomeSanitizer(
         n_shortcuts=layout.n_shortcuts,
@@ -906,6 +970,7 @@ def main(argv=None):
         hard_constraints=hard_constraints,
         mini_eval_count=mini_eval_count,
         n_constraints=n_constraints,
+        feasibility_first_selection=bool(config.get("evolution.feasibility_first_selection", True)),
     )
     ga_result = runner.run(n_gen, initial_pop_X=initial_pop_X)
 

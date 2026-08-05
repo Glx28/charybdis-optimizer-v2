@@ -1690,9 +1690,9 @@ __device__ void evaluate_single(
             // points is statistically invisible next to tens-of-thousands
             // terms, no matter how many generations run.
             candidate_penalty += dist12 * 25000.0f;
-            // Same-row requirement for MB1/MB2 (confirmed 2026-07-13),
-            // weighted well above the other per-button terms so it reliably
-            // wins instead of occasionally losing to workflow placement.
+            // Same-row requirement for MB1/MB2, weighted well above the
+            // other per-button terms so it reliably wins instead of
+            // occasionally losing to workflow placement.
             candidate_penalty += dy * 60000.0f;
         }
         if (s->mouse_button_right[layer][4] > 0 && s->mouse_button_right[layer][5] > 0) {
@@ -1704,10 +1704,9 @@ __device__ void evaluate_single(
             // Same-row requirement for MB4/MB5, weighted well above the
             // other per-button terms (see MB1/MB2 above).
             candidate_penalty += dy * 60000.0f;
-            // MB4/MB5 adjacency requirement (confirmed 2026-07-13): once same
-            // row and correctly ordered, MB4 must sit exactly one slot left
-            // of MB5 (dx==1), not just "somewhere to the left". Mirrors
-            // fitness/kernel.py.
+            // MB4/MB5 adjacency requirement: once same row and correctly
+            // ordered, MB4 must sit exactly one slot left of MB5 (dx==1),
+            // not just "somewhere to the left". Mirrors fitness/kernel.py.
             if (dy == 0.0f && dx > 0.0f) {
                 float adjacency_gap = fabsf(dx - 1.0f);
                 if (adjacency_gap > 0.0f) {
@@ -1759,13 +1758,12 @@ __device__ void evaluate_single(
         } else {
             candidate_penalty += 25000.0f;
         }
-        // MB1-Scroll-MB2 arrangement bonus (confirmed 2026-07-13 as a
-        // user-liked pattern worth rewarding more): MB1, a right-hand
-        // non-thumb momentary Scroll, and MB2 on the same row in that
-        // left-to-right x order mirrors a physical mouse (left button /
-        // wheel / right button). Does not require MB1/MB2 to be immediately
-        // adjacent -- a scroll key between them is exactly the rewarded
-        // shape. Mirrors fitness/kernel.py.
+        // MB1-Scroll-MB2 arrangement bonus: MB1, a right-hand non-thumb
+        // momentary Scroll, and MB2 on the same row in that left-to-right x
+        // order mirrors a physical mouse (left button / wheel / right
+        // button). Does not require MB1/MB2 to be immediately adjacent -- a
+        // scroll key between them is exactly the rewarded shape. Mirrors
+        // fitness/kernel.py.
         if (
             s->mouse_button_right[layer][1] > 0
             && s->mouse_button_right[layer][2] > 0
@@ -1963,10 +1961,10 @@ __device__ void evaluate_single(
         float lc = s->layer_access_cost[layer];
         float layer_factor = 3.0f / (1.0f + lc * 0.15f);
         if (layer_factor > 4.0f) layer_factor = 4.0f;
-        // Floor confirmed necessary 2026-07-13 (see fitness/kernel.py for the
-        // full reasoning): without it, prime (effort==0) empty slots on
-        // expensive-to-reach layers can have their pressure crushed to
-        // near-zero and sit empty indefinitely.
+        // Floor (see fitness/kernel.py for the full reasoning): without it,
+        // prime (effort==0) empty slots on expensive-to-reach layers can
+        // have their pressure crushed to near-zero and sit empty
+        // indefinitely.
         if (layer_factor < 0.5f) layer_factor = 0.5f;
         float ld = s->layer_demand[layer];
         float demand_scale = 1.0f + ld / (1.0f + ld * 2.0f) * 0.6f;
