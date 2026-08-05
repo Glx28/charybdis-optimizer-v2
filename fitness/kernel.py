@@ -563,6 +563,8 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         vw.get("mouse_layer_depth_penalty", DEFAULT_VIOLATION_WEIGHTS.get("mouse_layer_depth_penalty", 150000000000.0)),
         vw.get("same_layer_duplicate", DEFAULT_VIOLATION_WEIGHTS.get("same_layer_duplicate", 200000.0)),
         vw.get("momentary_key_reuse", DEFAULT_VIOLATION_WEIGHTS.get("momentary_key_reuse", 500000000.0)),
+        vw.get("unsupported_duplicate", DEFAULT_VIOLATION_WEIGHTS.get("unsupported_duplicate", 200000.0)),
+        vw.get("thumb_occupancy_restricted", DEFAULT_VIOLATION_WEIGHTS.get("thumb_occupancy_restricted", 50000.0)),
     ], dtype=np.float32)
 
     VIOLATION_NAMES = (
@@ -578,6 +580,8 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         "mouse_layer_depth_penalty",
         "same_layer_duplicate",
         "momentary_key_reuse",
+        "unsupported_duplicate",
+        "thumb_occupancy_restricted",
     )
     hard_constraints = hard_constraints or []
     hard_constraint_indices = np.asarray(
@@ -885,6 +889,34 @@ if NUMBA_AVAILABLE:
                 reachable_toggle_access[target] = True
             if shortcut_access_momentary[sid] and layer_access_cost[source] < 999999.0:
                 reachable_momentary_access[target] = True
+
+        # Reachability-gated momentary thumb edges. Acceptance
+        # (momentary_only_thumb_side_clear) only restricts a thumb side when
+        # the momentary thumb access comes from a reachable, non-self-
+        # referential source layer. direct_*_thumb_momentary above stays
+        # ungated for the soft thumb_occupancy term; the hard-constraint
+        # component (thumb_occupancy_restricted below) uses these gated flags.
+        gated_left_thumb_mo = np.zeros(32, dtype=np.bool_)
+        gated_right_thumb_mo = np.zeros(32, dtype=np.bool_)
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_short:
+                continue
+            if not shortcut_access_momentary[sid]:
+                continue
+            target = shortcut_access_target[sid]
+            if target < 0 or target >= 32:
+                continue
+            source = pos_layer[i]
+            if source < 0 or source >= 32 or source == target:
+                continue
+            if layer_access_cost[source] >= 999999.0:
+                continue
+            if pos_is_thumb[i]:
+                if pos_hand[i] == 0:
+                    gated_left_thumb_mo[target] = True
+                elif pos_hand[i] == 1:
+                    gated_right_thumb_mo[target] = True
 
         group_count = np.zeros(n_key_groups, dtype=np.float32)
         group_sum_x = np.zeros(n_key_groups, dtype=np.float32)
@@ -1414,6 +1446,37 @@ if NUMBA_AVAILABLE:
                             thumb_occ += effort_gap * (1.0 + shortcut_importance[sid] * 0.5)
                     else:
                         thumb_occ += 1.0 + shortcut_importance[sid] * 0.5
+
+        # thumb_occupancy_restricted: the genuinely-restricted component of
+        # thumb_occupancy, matching acceptance's momentary_only_thumb_side_clear
+        # semantics -- reachable-gated, self-referential-excluded momentary
+        # thumb access; toggle-freed layers pass (their effort-floor component
+        # stays soft in thumb_occ above); momentary thumb access from both
+        # sides frees both sides. L0/L7 are excluded, as in acceptance. Kept
+        # separate from thumb_occ so it can be a hard constraint without
+        # making the toggle-freed effort-floor pressure hard too.
+        thumb_occ_restricted = 0.0
+        for target_layer in range(32):
+            if target_layer == 0 or target_layer == 7:
+                continue
+            restrict_left = gated_left_thumb_mo[target_layer]
+            restrict_right = gated_right_thumb_mo[target_layer]
+            if restrict_left and restrict_right:
+                continue
+            if not restrict_left and not restrict_right:
+                continue
+            if reachable_toggle_access[target_layer]:
+                continue
+            for i in range(n_pos):
+                sid = genome[i]
+                if sid < 0 or sid >= n_short:
+                    continue
+                if pos_layer[i] != target_layer or not pos_is_thumb[i]:
+                    continue
+                if (pos_hand[i] == 0 and restrict_left) or (
+                    pos_hand[i] == 1 and restrict_right
+                ):
+                    thumb_occ_restricted += 1.0
 
         for layer in range(1, 32):
             demand = layer_demand[layer]
@@ -2097,6 +2160,42 @@ if NUMBA_AVAILABLE:
                 if c > cap:
                     same_layer_duplicate += float(c - cap)
 
+        # unsupported_duplicate: mirrors acceptance's
+        # unsupported_duplicates_near_zero class (run_evolution.analyze_duplicates)
+        # -- a cross-layer duplicate (same sid on 2+ distinct generated layers,
+        # L7 excluded) that has some usage evidence (support > 0; zero-evidence
+        # duplicates are tolerated) but duplicate support < 0.25. Mouse buttons,
+        # protected-group members, and _base_/is_l0_only shortcuts are excluded
+        # (their duplicate rules live elsewhere). Magnitude is the number of
+        # extra copies beyond the first placement.
+        unsupported_duplicate = 0.0
+        for sid in range(n_short):
+            if shortcut_l0_only[sid]:
+                continue
+            if shortcut_is_mouse[sid] and shortcut_mouse_button[sid] > 0:
+                continue
+            in_group = False
+            for g in range(group_matrix.shape[0]):
+                if group_matrix[g, sid]:
+                    in_group = True
+                    break
+            if in_group:
+                continue
+            support = duplicate_support[sid]
+            if support <= 0.0 or support >= 0.25:
+                continue
+            dup_layers = 0
+            dup_copies = 0
+            for layer in range(32):
+                if layer == 7:
+                    continue
+                c = layer_sid_counts[layer, sid]
+                if c > 0:
+                    dup_layers += 1
+                    dup_copies += c
+            if dup_layers >= 2:
+                unsupported_duplicate += float(dup_copies - 1)
+
         if natural_mouse_layer >= 0:
             # Once a natural generated mouse layer exists, it should dominate
             # mouse interaction. Mouse buttons elsewhere are still possible,
@@ -2372,7 +2471,7 @@ if NUMBA_AVAILABLE:
                 else:
                     empty_pos_waste += pos_effort_waste[i]
 
-        raw_scores = np.empty(25, dtype=np.float32)
+        raw_scores = np.empty(27, dtype=np.float32)
         raw_scores[0] = duplicate
         raw_scores[1] = l0_displacement
         raw_scores[2] = missing
@@ -2409,6 +2508,8 @@ if NUMBA_AVAILABLE:
             raw_scores[22] = 0.0
         raw_scores[23] = same_layer_duplicate
         raw_scores[24] = momentary_key_reuse
+        raw_scores[25] = unsupported_duplicate
+        raw_scores[26] = thumb_occ_restricted
 
         # Hard constraints (g(x) <= 0 convention; raw_scores are >= 0).
         n_constr = hard_constraint_indices.shape[0]
@@ -2418,7 +2519,7 @@ if NUMBA_AVAILABLE:
 
         # Soft penalties weighted and summed into the violations objective.
         violations_raw = 0.0
-        for j in range(25):
+        for j in range(27):
             violations_raw += raw_scores[j] * violation_weights[j]
 
         workflow = 0.0

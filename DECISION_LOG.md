@@ -6,6 +6,25 @@ source comments carry the design rationale, this file carries the archaeology.
 
 ## Decisions
 
+- 2026-08-05 | made unsupported duplicates and restricted thumb occupancy hard
+  constraints: new kernel terms `unsupported_duplicate` (weight 200000) and
+  `thumb_occupancy_restricted` (weight 50000, split out of soft
+  `thumb_occupancy` so toggle-freed effort-floor pressure stays soft and
+  acceptance-PASS layers can never hard-fail), both added to
+  `hard_constraints`; `_numba_repair_thumb_occupancy` aligned to acceptance
+  semantics (reachable-source gating, self-referential exclusion, toggle-freed
+  skip, clears the whole restricted side per call); repair gained the
+  `is_l0_only` exclusion | the 30k validation run's archive froze at gen ~386
+  because Deb feasibility-first selection is blind to both checks (soft
+  violations ~1000x below the noise floor, cv=0 everywhere, `feasible=1.000`),
+  so repaired offspring always lost tournaments to violation carriers; the
+  repair operators produced correct genomes that selection discarded —
+  root-caused against checkpoints gen9000-14000 (pop best stuck at
+  unsup_dup 1-2 = Win+E support 0.164 / Ctrl+Shift+Up support 0.10, thumb_viol
+  4 layers, oscillating) | hard-constraint option pre-approved 2026-08-05;
+  direction confirmed by user ("keep running + fix in parallel"). Perf gate
+  pending idle GPU; new terms add same-complexity-class per-eval work —
+  if perf_benchmark flags it, update baseline with an explicit reason.
 - 2026-08-05 | validate warmstart genomes at load (`load_warmstart_genome` in
   `run_evolution.py`), masking out-of-range shortcut ids to -1 | a stale
   `build/v2_local_search_result.json` (2026-07-05, `source:

@@ -267,6 +267,7 @@ class TestSwapMutationNumba(unittest.TestCase):
             mutation._is_mouse_button_lut,
             mutation._pos_is_frozen_arr,
             mutation._hold_sid_for_target,
+            mutation._is_l0_only_lut,
             mutation._dup_support_arr,
             np.int32(mutation.n_shortcuts),
         )
@@ -303,6 +304,7 @@ class TestSwapMutationNumba(unittest.TestCase):
             mutation._is_mouse_button_lut,
             mutation._pos_is_frozen_arr,
             mutation._hold_sid_for_target,
+            mutation._is_l0_only_lut,
             mutation._dup_support_arr,
             np.int32(mutation.n_shortcuts),
         )
@@ -898,6 +900,20 @@ class TestUnsupportedDuplicateRepair(unittest.TestCase):
         self.assertFalse(m._repair_unsupported_duplicate(genome))
         self.assertEqual(int((genome == 5).sum()), 2)
 
+    def test_l0_only_shortcuts_excluded(self):
+        # _base_*/is_l0_only shortcuts are outside the unsupported-duplicate
+        # class (mirrors run_evolution.analyze_duplicates) -- the repair must
+        # leave their duplicates alone even with low support.
+        layout = self._build_layout()
+        m = self._mutation(layout)
+        m._is_l0_only_lut[5] = True
+        m._dup_support_arr[5] = 0.1
+        genome = np.full(8, -1, dtype=np.int32)
+        genome[0] = 5
+        genome[1] = 5
+        self.assertFalse(m._repair_unsupported_duplicate(genome))
+        self.assertEqual(int((genome == 5).sum()), 2)
+
     def test_numba_path_matches_fallback(self):
         from evolution import NUMBA_AVAILABLE
         if not NUMBA_AVAILABLE:
@@ -916,12 +932,119 @@ class TestUnsupportedDuplicateRepair(unittest.TestCase):
             m._pos_effort_arr,
             m._is_mouse_button_lut,
             m._is_group_sid_lut,
+            m._is_l0_only_lut,
             m._dup_support_arr,
             np.int32(m.n_shortcuts),
         )
         self.assertTrue(ok)
         self.assertEqual(int(genome[1]), 5)
         self.assertEqual(int(genome[3]), -1)
+
+
+class TestThumbOccupancyRepairAlignment(unittest.TestCase):
+    """_repair_thumb_occupancy must mirror acceptance's
+    momentary_only_thumb_side_clear semantics: skip toggle-freed layers,
+    ignore unreachable and self-referential access sources, and clear ALL
+    occupants of a restricted side in one call."""
+
+    def _hold(self, sid, target):
+        return Shortcut(sid, f"@access:L{target}:hold", "h", "Layer Access", 5.0,
+                        is_layer_access=True, access_target_layer=target,
+                        access_is_momentary=True)
+
+    def _toggle(self, sid, target):
+        return Shortcut(sid, f"@access:L{target}:toggle", "t", "Layer Access", 5.0,
+                        is_layer_access=True, access_target_layer=target,
+                        access_is_momentary=False)
+
+    def _mutation(self, positions, shortcuts, genome):
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        layout = Layout(np.array(genome, dtype=np.int32).copy(), positions, shortcuts, frozen)
+        return SwapMutation(prob=0.0, frozen_mask=layout.frozen_mask, layout=layout)
+
+    def test_clears_all_occupants_of_restricted_side_in_one_call(self):
+        positions = (
+            Position(0, 0, 0.0, 0.0, "right", 0, 0.1, is_thumb=True),  # hold -> L1
+            Position(1, 1, 5.0, 2.0, "right", 0, 0.1, is_thumb=True),  # occupant 1
+            Position(2, 1, 6.0, 2.0, "right", 0, 0.2, is_thumb=True),  # occupant 2
+            Position(3, 1, 9.0, 9.0, "left", 1, 1.0),                  # empty non-thumb
+            Position(4, 1, 10.0, 9.0, "right", 1, 1.0),                # empty non-thumb
+        )
+        shortcuts = (self._hold(0, 1), Shortcut(1, "Ctrl+A", "a", "App", 3.0),
+                     Shortcut(2, "Ctrl+B", "a", "App", 3.0))
+        m = self._mutation(positions, shortcuts, [0, 1, 2, -1, -1])
+        genome = np.array([0, 1, 2, -1, -1], dtype=np.int32)
+        self.assertTrue(m._repair_thumb_occupancy(genome))
+        self.assertEqual(int(genome[1]), -1, "occupant 1 must be cleared off the restricted side")
+        self.assertEqual(int(genome[2]), -1, "occupant 2 must be cleared in the same call")
+        self.assertEqual(sorted(int(v) for v in genome[3:]), [1, 2],
+                         "both occupants must survive on non-thumb slots")
+
+    def test_skips_toggle_freed_layer(self):
+        positions = (
+            Position(0, 0, 0.0, 0.0, "right", 0, 0.1, is_thumb=True),  # hold -> L1
+            Position(1, 0, 1.0, 0.0, "left", 1, 1.0),                  # toggle -> L1
+            Position(2, 1, 5.0, 2.0, "right", 0, 0.1, is_thumb=True),  # occupant
+            Position(3, 1, 9.0, 9.0, "left", 1, 1.0),
+        )
+        shortcuts = (self._hold(0, 1), self._toggle(1, 1), Shortcut(2, "Ctrl+A", "a", "App", 3.0))
+        m = self._mutation(positions, shortcuts, [0, 1, 2, -1])
+        genome = np.array([0, 1, 2, -1], dtype=np.int32)
+        self.assertFalse(m._repair_thumb_occupancy(genome))
+        self.assertEqual(int(genome[2]), 2, "toggle-freed layer's thumb occupant must be left alone")
+
+    def test_self_referential_source_does_not_trigger(self):
+        positions = (
+            Position(0, 1, 0.0, 0.0, "right", 0, 0.1, is_thumb=True),  # self-ref hold ON L1
+            Position(1, 1, 5.0, 2.0, "right", 0, 0.1, is_thumb=True),  # occupant
+            Position(2, 1, 9.0, 9.0, "left", 1, 1.0),
+        )
+        shortcuts = (self._hold(0, 1), Shortcut(1, "Ctrl+A", "a", "App", 3.0))
+        m = self._mutation(positions, shortcuts, [0, 1, -1])
+        genome = np.array([0, 1, -1], dtype=np.int32)
+        self.assertFalse(m._repair_thumb_occupancy(genome))
+        self.assertEqual(int(genome[1]), 1)
+
+    def test_unreachable_source_does_not_trigger(self):
+        positions = (
+            Position(0, 2, 0.0, 0.0, "right", 0, 0.1, is_thumb=True),  # hold -> L1 from unreachable L2
+            Position(1, 1, 5.0, 2.0, "right", 0, 0.1, is_thumb=True),  # occupant
+            Position(2, 1, 9.0, 9.0, "left", 1, 1.0),
+        )
+        shortcuts = (self._hold(0, 1), Shortcut(1, "Ctrl+A", "a", "App", 3.0))
+        m = self._mutation(positions, shortcuts, [0, 1, -1])
+        genome = np.array([0, 1, -1], dtype=np.int32)
+        self.assertFalse(m._repair_thumb_occupancy(genome))
+        self.assertEqual(int(genome[1]), 1)
+
+    def test_numba_path_matches_fallback(self):
+        from evolution import NUMBA_AVAILABLE
+        if not NUMBA_AVAILABLE:
+            self.skipTest("Numba unavailable")
+        from evolution import _numba_repair_thumb_occupancy
+        positions = (
+            Position(0, 0, 0.0, 0.0, "right", 0, 0.1, is_thumb=True),
+            Position(1, 1, 5.0, 2.0, "right", 0, 0.1, is_thumb=True),
+            Position(2, 1, 6.0, 2.0, "right", 0, 0.2, is_thumb=True),
+            Position(3, 1, 9.0, 9.0, "left", 1, 1.0),
+            Position(4, 1, 10.0, 9.0, "right", 1, 1.0),
+        )
+        shortcuts = (self._hold(0, 1), Shortcut(1, "Ctrl+A", "a", "App", 3.0),
+                     Shortcut(2, "Ctrl+B", "a", "App", 3.0))
+        m = self._mutation(positions, shortcuts, [0, 1, 2, -1, -1])
+        genome = np.array([0, 1, 2, -1, -1], dtype=np.int32)
+        state = np.array([42], dtype=np.uint64)
+        ok = _numba_repair_thumb_occupancy(
+            genome, state,
+            m._pos_layer_arr, m._pos_hand_arr, m._pos_is_thumb_arr,
+            m._access_target_lut, m._access_is_mo_lut,
+            m._layer_mutable_flat, m._layer_mutable_start,
+            np.int32(m.n_shortcuts),
+        )
+        self.assertTrue(ok)
+        self.assertEqual(int(genome[1]), -1)
+        self.assertEqual(int(genome[2]), -1)
+        self.assertEqual(sorted(int(v) for v in genome[3:]), [1, 2])
 
 
 if __name__ == "__main__":

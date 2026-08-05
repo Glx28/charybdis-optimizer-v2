@@ -1353,53 +1353,94 @@ if NUMBA_AVAILABLE:
                                       layer_mutable_flat, layer_mutable_start, n_shortcuts):
         """Repair for thumb_occupancy: AGENTS.md's dynamic thumb-clearance rule
         restricts one side's thumb area on a target layer when that layer is
-        reached by a momentary thumb key from that side only. Detects an
-        occupied position on a genuinely restricted side and relocates it to
-        a non-thumb slot on the same layer.
+        reached by a momentary thumb key from that side only. Mirrors
+        acceptance's momentary_only_thumb_side_clear semantics: only momentary
+        thumb access from a reachable, non-self-referential source layer
+        restricts a side, a layer with reachable toggle access is freed, and
+        momentary thumb access from both sides frees both sides. Relocates
+        every occupant of the restricted side to a non-thumb slot on the same
+        layer in one call (bounded by the layer's thumb-slot count).
         """
         n_pos = len(genome)
-        direct_left_thumb_mo = np.zeros(32, dtype=np.bool_)
-        direct_right_thumb_mo = np.zeros(32, dtype=np.bool_)
+        edge_any = np.zeros((32, 32), dtype=np.bool_)
+        edge_toggle = np.zeros((32, 32), dtype=np.bool_)
+        mo_thumb_left = np.zeros((32, 32), dtype=np.bool_)
+        mo_thumb_right = np.zeros((32, 32), dtype=np.bool_)
         for i in range(n_pos):
             sid = genome[i]
             if sid < 0 or sid >= n_shortcuts:
                 continue
-            if not access_is_mo_lut[sid]:
-                continue
             tgt = access_target_lut[sid]
             if tgt < 0 or tgt >= 32:
                 continue
-            if pos_is_thumb_arr[i]:
-                if pos_hand_arr[i] == 0:
-                    direct_left_thumb_mo[tgt] = True
-                elif pos_hand_arr[i] == 1:
-                    direct_right_thumb_mo[tgt] = True
-
-        conflict_pos = -1
-        for L in range(32):
-            rl = direct_left_thumb_mo[L]
-            rr = direct_right_thumb_mo[L]
-            if rl and rr:
+            src = pos_layer_arr[i]
+            if src < 0 or src >= 32 or src == tgt:
+                # Self-referential access (source layer == target layer) is
+                # never a real external entry path -- same exclusion as
+                # acceptance and the fitness kernel.
                 continue
-            if not rl and not rr:
+            edge_any[src, tgt] = True
+            if access_is_mo_lut[sid]:
+                if pos_is_thumb_arr[i]:
+                    if pos_hand_arr[i] == 0:
+                        mo_thumb_left[src, tgt] = True
+                    elif pos_hand_arr[i] == 1:
+                        mo_thumb_right[src, tgt] = True
+            else:
+                edge_toggle[src, tgt] = True
+
+        reachable = np.zeros(32, dtype=np.bool_)
+        reachable[0] = True
+        for _ in range(32):
+            changed_reach = False
+            for s in range(32):
+                if not reachable[s]:
+                    continue
+                for t in range(32):
+                    if edge_any[s, t] and not reachable[t]:
+                        reachable[t] = True
+                        changed_reach = True
+            if not changed_reach:
+                break
+
+        target_layer = -1
+        restrict_left_side = False
+        for L in range(1, 32):
+            if L == 7:
+                continue
+            tog = False
+            ml = False
+            mr = False
+            for s in range(32):
+                if not reachable[s] or s == L:
+                    continue
+                if edge_toggle[s, L]:
+                    tog = True
+                if mo_thumb_left[s, L]:
+                    ml = True
+                if mo_thumb_right[s, L]:
+                    mr = True
+            if tog:
+                # Reachable toggle access frees both thumb areas.
+                continue
+            if (ml and mr) or (not ml and not mr):
                 continue
             for i in range(n_pos):
-                sid = genome[i]
-                if sid < 0 or sid >= n_shortcuts:
+                if genome[i] < 0:
                     continue
                 if pos_layer_arr[i] != L or not pos_is_thumb_arr[i]:
                     continue
-                if (pos_hand_arr[i] == 0 and rl) or (pos_hand_arr[i] == 1 and rr):
-                    conflict_pos = i
+                if (pos_hand_arr[i] == 0 and ml) or (pos_hand_arr[i] == 1 and mr):
+                    target_layer = L
+                    restrict_left_side = ml
                     break
-            if conflict_pos >= 0:
+            if target_layer >= 0:
                 break
-        if conflict_pos < 0:
+        if target_layer < 0:
             return False
 
-        src_layer = pos_layer_arr[conflict_pos]
-        start = layer_mutable_start[src_layer]
-        end = layer_mutable_start[src_layer + 1] if src_layer + 1 < len(layer_mutable_start) else len(layer_mutable_flat)
+        start = layer_mutable_start[target_layer]
+        end = layer_mutable_start[target_layer + 1] if target_layer + 1 < len(layer_mutable_start) else len(layer_mutable_flat)
         if start >= end:
             return False
 
@@ -1409,7 +1450,7 @@ if NUMBA_AVAILABLE:
         non_thumb_any = np.empty(end - start, dtype=np.int32)
         for p in range(start, end):
             pos = layer_mutable_flat[p]
-            if pos == conflict_pos or pos_is_thumb_arr[pos]:
+            if pos_is_thumb_arr[pos]:
                 continue
             non_thumb_any[n_na] = pos
             n_na += 1
@@ -1417,21 +1458,42 @@ if NUMBA_AVAILABLE:
                 non_thumb_empty[n_ne] = pos
                 n_ne += 1
 
-        if n_ne > 0:
-            pool = non_thumb_empty
-            n_pool = n_ne
-        elif n_na > 0:
-            pool = non_thumb_any
-            n_pool = n_na
-        else:
-            return False
-
-        dest = pool[_rand_int(state, n_pool)]
-        move_sid = genome[conflict_pos]
-        displaced = genome[dest]
-        genome[dest] = move_sid
-        genome[conflict_pos] = displaced
-        return True
+        changed = False
+        for i in range(n_pos):
+            if genome[i] < 0:
+                continue
+            if pos_layer_arr[i] != target_layer or not pos_is_thumb_arr[i]:
+                continue
+            hand = pos_hand_arr[i]
+            if not ((hand == 0 and restrict_left_side) or (hand == 1 and not restrict_left_side)):
+                continue
+            dest = -1
+            if n_ne > 0:
+                k = _rand_int(state, n_ne)
+                dest = non_thumb_empty[k]
+                non_thumb_empty[k] = non_thumb_empty[n_ne - 1]
+                n_ne -= 1
+                # Keep the any-pool in sync so a later fallback pick in this
+                # same call cannot reuse a destination already taken. Pool
+                # size is the layer's non-thumb slot count, so this stays
+                # bounded per call.
+                for q in range(n_na):
+                    if non_thumb_any[q] == dest:
+                        non_thumb_any[q] = non_thumb_any[n_na - 1]
+                        n_na -= 1
+                        break
+            elif n_na > 0:
+                k = _rand_int(state, n_na)
+                dest = non_thumb_any[k]
+                non_thumb_any[k] = non_thumb_any[n_na - 1]
+                n_na -= 1
+            if dest < 0:
+                break
+            move_sid = genome[i]
+            genome[i] = genome[dest]
+            genome[dest] = move_sid
+            changed = True
+        return changed
 
     @njit(cache=True)
     def _numba_repair_same_layer_duplicate(genome, state, pos_layer_arr, pos_is_frozen_arr, is_mouse_button_lut, n_shortcuts):
@@ -1492,15 +1554,17 @@ if NUMBA_AVAILABLE:
     @njit(cache=True)
     def _numba_repair_unsupported_duplicate(genome, pos_layer_arr, pos_is_frozen_arr,
                                             pos_effort_arr, is_mouse_button_lut, is_group_sid_lut,
-                                            dup_support_arr, n_shortcuts):
+                                            is_l0_only_lut, dup_support_arr, n_shortcuts):
         """Repair for unsupported_duplicates_near_zero (acceptance check):
         a duplicated shortcut fails acceptance when it has some usage
         evidence but duplicate support < 0.25. Zero-evidence duplicates
         (support == 0) are tolerated by acceptance and left alone; mouse
-        buttons and protected-group sids are skipped (their duplicate rules
-        live elsewhere). Keeps the frozen copy if one exists, otherwise the
-        lowest-effort copy, and blanks the other mutable copies in one
-        coordinated move. Scoring still decides whether the repair survives.
+        buttons, protected-group sids, and _base_/is_l0_only shortcuts are
+        skipped (their duplicate rules live elsewhere -- the is_l0_only
+        exclusion mirrors run_evolution.analyze_duplicates). Keeps the frozen
+        copy if one exists, otherwise the lowest-effort copy, and blanks the
+        other mutable copies in one coordinated move. Scoring still decides
+        whether the repair survives.
         """
         n_pos = len(genome)
         sid_count = np.zeros(n_shortcuts, dtype=np.int32)
@@ -1516,7 +1580,7 @@ if NUMBA_AVAILABLE:
         for sid in range(n_shortcuts):
             if sid_count[sid] < 2:
                 continue
-            if is_mouse_button_lut[sid] or is_group_sid_lut[sid]:
+            if is_mouse_button_lut[sid] or is_group_sid_lut[sid] or is_l0_only_lut[sid]:
                 continue
             support = dup_support_arr[sid]
             if support <= 0.0 or support >= 0.25:
@@ -1570,6 +1634,7 @@ if NUMBA_AVAILABLE:
                             is_mouse_button_lut,
                             pos_is_frozen_arr,
                             hold_sid_for_target,
+                            is_l0_only_lut,
                             dup_support_arr,
                             n_shortcuts):
         n = X.shape[0]
@@ -1670,7 +1735,8 @@ if NUMBA_AVAILABLE:
             if _rand_float(state) < probs[13]:
                 if _numba_repair_unsupported_duplicate(X[i], pos_layer_arr, pos_is_frozen_arr,
                                                        pos_effort_arr, is_mouse_button_lut,
-                                                       is_group_sid_lut, dup_support_arr, n_shortcuts):
+                                                       is_group_sid_lut, is_l0_only_lut,
+                                                       dup_support_arr, n_shortcuts):
                     handled[i] = True
                     continue
 
@@ -3044,6 +3110,15 @@ class SwapMutation(Mutation):
                 _shortcut_duplicate_support(layout), dtype=np.float32
             )
 
+        # L0-only shortcuts (_base_* raw completions etc.) are excluded from
+        # the unsupported-duplicate class, mirroring the is_l0_only / _base_
+        # exclusion in run_evolution.analyze_duplicates.
+        self._is_l0_only_lut = np.zeros(n_sc, dtype=np.bool_) if n_sc > 0 else np.array([], dtype=np.bool_)
+        if layout is not None and n_sc > 0:
+            for s in layout.shortcuts:
+                if 0 <= s.sid < n_sc and s.is_l0_only:
+                    self._is_l0_only_lut[s.sid] = True
+
     def _build_protected_group_moves(self, layout):
         """Precompute whole-group mutation targets via build_group_placements."""
         for sid_tuple, anchor_list in build_group_placements(layout):
@@ -4315,66 +4390,119 @@ class SwapMutation(Mutation):
 
     def _repair_thumb_occupancy(self, genome):
         """Pure-Python fallback for _numba_repair_thumb_occupancy (used only
-        when Numba is unavailable). Relocates an occupied thumb position off
-        a side that AGENTS.md's dynamic thumb-clearance rule momentarily
-        restricts on that layer.
+        when Numba is unavailable). Relocates every occupied thumb position
+        off a side that AGENTS.md's dynamic thumb-clearance rule momentarily
+        restricts on that layer. Mirrors acceptance's
+        momentary_only_thumb_side_clear semantics: only momentary thumb
+        access from a reachable, non-self-referential source layer restricts
+        a side, reachable toggle access frees the layer, and both-side
+        momentary thumb access frees both sides.
         """
         genome_arr = np.asarray(genome, dtype=np.int32)
         n_pos = len(genome_arr)
-        restrict_left = np.zeros(32, dtype=np.bool_)
-        restrict_right = np.zeros(32, dtype=np.bool_)
+        edge_any = np.zeros((32, 32), dtype=np.bool_)
+        edge_toggle = np.zeros((32, 32), dtype=np.bool_)
+        mo_thumb_left = np.zeros((32, 32), dtype=np.bool_)
+        mo_thumb_right = np.zeros((32, 32), dtype=np.bool_)
         for i in range(n_pos):
             sid = int(genome_arr[i])
             if sid < 0 or sid >= self.n_shortcuts:
                 continue
-            if not self._access_is_mo_lut[sid]:
-                continue
             tgt = int(self._access_target_lut[sid])
             if tgt < 0 or tgt >= 32:
                 continue
-            if self._pos_is_thumb_arr[i]:
-                hand = int(self._pos_hand_arr[i])
-                if hand == 0:
-                    restrict_left[tgt] = True
-                elif hand == 1:
-                    restrict_right[tgt] = True
+            src = int(self._pos_layer_arr[i])
+            if src < 0 or src >= 32 or src == tgt:
+                # Self-referential access is never a real external entry path.
+                continue
+            edge_any[src, tgt] = True
+            if self._access_is_mo_lut[sid]:
+                if self._pos_is_thumb_arr[i]:
+                    hand = int(self._pos_hand_arr[i])
+                    if hand == 0:
+                        mo_thumb_left[src, tgt] = True
+                    elif hand == 1:
+                        mo_thumb_right[src, tgt] = True
+            else:
+                edge_toggle[src, tgt] = True
 
-        conflict_pos = -1
-        for L in range(32):
-            rl, rr = restrict_left[L], restrict_right[L]
-            if (rl and rr) or (not rl and not rr):
+        reachable = np.zeros(32, dtype=np.bool_)
+        reachable[0] = True
+        for _ in range(32):
+            changed_reach = False
+            for s in range(32):
+                if not reachable[s]:
+                    continue
+                for t in range(32):
+                    if edge_any[s, t] and not reachable[t]:
+                        reachable[t] = True
+                        changed_reach = True
+            if not changed_reach:
+                break
+
+        target_layer = -1
+        restrict_left_side = False
+        for L in range(1, 32):
+            if L == 7:
+                continue
+            tog = False
+            ml = False
+            mr = False
+            for s in range(32):
+                if not reachable[s] or s == L:
+                    continue
+                if edge_toggle[s, L]:
+                    tog = True
+                if mo_thumb_left[s, L]:
+                    ml = True
+                if mo_thumb_right[s, L]:
+                    mr = True
+            if tog:
+                continue
+            if (ml and mr) or (not ml and not mr):
                 continue
             for i in range(n_pos):
-                sid = int(genome_arr[i])
-                if sid < 0 or sid >= self.n_shortcuts:
+                if int(genome_arr[i]) < 0:
                     continue
                 if int(self._pos_layer_arr[i]) != L or not self._pos_is_thumb_arr[i]:
                     continue
                 hand = int(self._pos_hand_arr[i])
-                if (hand == 0 and rl) or (hand == 1 and rr):
-                    conflict_pos = i
+                if (hand == 0 and ml) or (hand == 1 and mr):
+                    target_layer = L
+                    restrict_left_side = ml
                     break
-            if conflict_pos >= 0:
+            if target_layer >= 0:
                 break
-        if conflict_pos < 0:
+        if target_layer < 0:
             return False
 
-        src_layer = int(self._pos_layer_arr[conflict_pos])
-        layer_positions = self._layer_mutable_positions.get(src_layer)
+        layer_positions = self._layer_mutable_positions.get(target_layer)
         if not layer_positions:
             return False
-        non_thumb = [p for p in layer_positions if p != conflict_pos and not self._pos_is_thumb_arr[p]]
-        if not non_thumb:
-            return False
+        non_thumb = [p for p in layer_positions if not self._pos_is_thumb_arr[p]]
         empty = [p for p in non_thumb if genome[p] < 0]
-        pool = empty if empty else non_thumb
 
-        dest = int(random.choice(pool))
-        move_sid = genome[conflict_pos]
-        displaced = genome[dest]
-        genome[dest] = move_sid
-        genome[conflict_pos] = displaced
-        return True
+        changed = False
+        for i in range(n_pos):
+            if int(genome_arr[i]) < 0:
+                continue
+            if int(self._pos_layer_arr[i]) != target_layer or not self._pos_is_thumb_arr[i]:
+                continue
+            hand = int(self._pos_hand_arr[i])
+            if not ((hand == 0 and restrict_left_side) or (hand == 1 and not restrict_left_side)):
+                continue
+            if empty:
+                dest = empty.pop(random.randrange(len(empty)))
+                non_thumb.remove(dest)
+            elif non_thumb:
+                dest = non_thumb.pop(random.randrange(len(non_thumb)))
+            else:
+                break
+            move_sid = genome[i]
+            genome[i] = genome[dest]
+            genome[dest] = move_sid
+            changed = True
+        return changed
 
     def _repair_same_layer_duplicate(self, genome):
         """Pure-Python fallback for _numba_repair_same_layer_duplicate (used
@@ -4427,7 +4555,8 @@ class SwapMutation(Mutation):
         only when Numba is unavailable). Blanks extra copies of a duplicated
         shortcut that has some usage evidence but duplicate support < 0.25
         (the unsupported_duplicates_near_zero acceptance criterion), keeping
-        the frozen or lowest-effort copy.
+        the frozen or lowest-effort copy. _base_/is_l0_only shortcuts are
+        excluded, mirroring run_evolution.analyze_duplicates.
         """
         genome_arr = np.asarray(genome, dtype=np.int32)
         n_pos = len(genome_arr)
@@ -4444,7 +4573,8 @@ class SwapMutation(Mutation):
         for sid, count in sid_count.items():
             if count < 2:
                 continue
-            if self._is_mouse_button_lut[sid] or self._is_group_sid_lut[sid]:
+            if (self._is_mouse_button_lut[sid] or self._is_group_sid_lut[sid]
+                    or self._is_l0_only_lut[sid]):
                 continue
             support = float(self._dup_support_arr[sid])
             if support <= 0.0 or support >= 0.25:
@@ -4618,6 +4748,7 @@ class SwapMutation(Mutation):
                 self._is_mouse_button_lut,
                 self._pos_is_frozen_arr,
                 self._hold_sid_for_target,
+                self._is_l0_only_lut,
                 self._dup_support_arr,
                 np.int32(self.n_shortcuts),
             )

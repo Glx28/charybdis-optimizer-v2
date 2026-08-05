@@ -122,6 +122,10 @@ fitness:
     # momentary-hold source for different target layers depending on the
     # active layer (see AGENTS.md momentary_key_reuse; history: DECISION_LOG.md).
     momentary_key_reuse: 50000.0
+    # Hard-constraint tier: acceptance's unsupported_duplicates_near_zero class (history: DECISION_LOG.md).
+    unsupported_duplicate: 200000.0
+    # Hard-constraint tier: genuinely-restricted thumb occupancy only; toggle-freed effort-floor stays soft (history: DECISION_LOG.md).
+    thumb_occupancy_restricted: 50000.0
   hard_constraints:
     - missing_important
     - layer7_access
@@ -129,6 +133,9 @@ fitness:
     - layer_reachability
     - toggle_back_to_l0
     - same_layer_duplicate
+    # Archive froze: these failed acceptance while staying invisible to Deb selection (history: DECISION_LOG.md).
+    - unsupported_duplicate
+    - thumb_occupancy_restricted
 output:
   checkpoint_interval: 500
   verbose: true

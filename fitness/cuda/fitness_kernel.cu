@@ -498,6 +498,36 @@ __device__ void evaluate_single(
         }
     }
 
+    // Reachability-gated momentary thumb edges. Mirrors fitness/kernel.py:
+    // acceptance (momentary_only_thumb_side_clear) only restricts a thumb side
+    // when the momentary thumb access comes from a reachable, non-self-
+    // referential source layer. direct_*_thumb_momentary stays ungated for the
+    // soft thumb_occupancy term; the hard-constraint component
+    // (thumb_occupancy_restricted below) uses these gated flags.
+    bool gated_left_thumb_mo[MAX_LAYERS];
+    bool gated_right_thumb_mo[MAX_LAYERS];
+    for (int l = 0; l < MAX_LAYERS; l++) {
+        gated_left_thumb_mo[l] = false;
+        gated_right_thumb_mo[l] = false;
+    }
+    for (int i = 0; i < n_pos; i++) {
+        int sid = genome[i];
+        if (sid < 0 || sid >= n_short) continue;
+        if (!shortcut_access_momentary[sid]) continue;
+        int target = shortcut_access_target[sid];
+        if (target < 0 || target >= MAX_LAYERS) continue;
+        int source = pos_layer[i];
+        if (source < 0 || source >= MAX_LAYERS || source == target) continue;
+        if (s->layer_access_cost[source] >= 999999.0f) continue;
+        if (pos_is_thumb[i]) {
+            if (pos_hand[i] == 0) {
+                gated_left_thumb_mo[target] = true;
+            } else if (pos_hand[i] == 1) {
+                gated_right_thumb_mo[target] = true;
+            }
+        }
+    }
+
     // Candidate mouse layer pre-scan
     int mouse_right_count[MAX_LAYERS];
     for (int l = 0; l < MAX_LAYERS; l++) mouse_right_count[l] = 0;
@@ -1084,6 +1114,32 @@ __device__ void evaluate_single(
                 } else {
                     thumb_occ += 1.0f + shortcut_importance[sid] * 0.5f;
                 }
+            }
+        }
+    }
+
+    // thumb_occupancy_restricted: the genuinely-restricted component of
+    // thumb_occupancy, matching acceptance's momentary_only_thumb_side_clear
+    // semantics -- reachable-gated, self-referential-excluded momentary thumb
+    // access; toggle-freed layers pass (their effort-floor component stays
+    // soft in thumb_occ above); momentary thumb access from both sides frees
+    // both sides. L0/L7 excluded, as in acceptance. Kept separate from
+    // thumb_occ so it can be a hard constraint without making the
+    // toggle-freed effort-floor pressure hard too. Mirrors fitness/kernel.py.
+    float thumb_occ_restricted = 0.0f;
+    for (int target_layer = 0; target_layer < MAX_LAYERS; target_layer++) {
+        if (target_layer == 0 || target_layer == 7) continue;
+        bool restrict_left = gated_left_thumb_mo[target_layer];
+        bool restrict_right = gated_right_thumb_mo[target_layer];
+        if (restrict_left && restrict_right) continue;
+        if (!restrict_left && !restrict_right) continue;
+        if (s->reachable_toggle_access[target_layer]) continue;
+        for (int i = 0; i < n_pos; i++) {
+            int sid = genome[i];
+            if (sid < 0 || sid >= n_short) continue;
+            if (pos_layer[i] != target_layer || !pos_is_thumb[i]) continue;
+            if ((pos_hand[i] == 0 && restrict_left) || (pos_hand[i] == 1 && restrict_right)) {
+                thumb_occ_restricted += 1.0f;
             }
         }
     }
@@ -1839,6 +1895,43 @@ __device__ void evaluate_single(
         }
     }
 
+    // unsupported_duplicate: mirrors acceptance's
+    // unsupported_duplicates_near_zero class (run_evolution.analyze_duplicates)
+    // -- a cross-layer duplicate (same sid on 2+ distinct generated layers, L7
+    // excluded) that has some usage evidence (support > 0; zero-evidence
+    // duplicates are tolerated) but duplicate support < 0.25. Mouse buttons,
+    // protected-group members, and _base_/is_l0_only shortcuts are excluded.
+    // Magnitude is the number of extra copies beyond the first placement.
+    // Mirrors fitness/kernel.py.
+    float unsupported_duplicate = 0.0f;
+    for (int sid = 0; sid < n_short; sid++) {
+        if (shortcut_l0_only[sid]) continue;
+        if (shortcut_is_mouse[sid] && shortcut_mouse_button[sid] > 0) continue;
+        bool in_group = false;
+        for (int g = 0; g < n_groups; g++) {
+            if (group_matrix[g * n_short + sid]) {
+                in_group = true;
+                break;
+            }
+        }
+        if (in_group) continue;
+        float support = duplicate_support[sid];
+        if (support <= 0.0f || support >= 0.25f) continue;
+        int dup_layers = 0;
+        int dup_copies = 0;
+        for (int layer = 0; layer < MAX_LAYERS; layer++) {
+            if (layer == 7) continue;
+            int c = s->layer_sid_counts[layer][sid];
+            if (c > 0) {
+                dup_layers++;
+                dup_copies += c;
+            }
+        }
+        if (dup_layers >= 2) {
+            unsupported_duplicate += (float)(dup_copies - 1);
+        }
+    }
+
     // Cleanup mouse duplicates after natural mouse layer exists
     if (natural_mouse_layer >= 0) {
         for (int i = 0; i < n_pos; i++) {
@@ -2100,7 +2193,7 @@ __device__ void evaluate_single(
     // -------------------------------------------------------------------------
     // Assemble raw scores
     // -------------------------------------------------------------------------
-    float raw_scores[25];
+    float raw_scores[27];
     raw_scores[0] = duplicate;
     raw_scores[1] = l0_displacement;
     raw_scores[2] = missing;
@@ -2136,6 +2229,8 @@ __device__ void evaluate_single(
     }
     raw_scores[23] = same_layer_duplicate;
     raw_scores[24] = momentary_key_reuse;
+    raw_scores[25] = unsupported_duplicate;
+    raw_scores[26] = thumb_occ_restricted;
 
     // -------------------------------------------------------------------------
     // Constraints
@@ -2148,7 +2243,7 @@ __device__ void evaluate_single(
     // Soft violations sum
     // -------------------------------------------------------------------------
     float violations_raw = 0.0f;
-    for (int j = 0; j < 25; j++) {
+    for (int j = 0; j < 27; j++) {
         violations_raw += raw_scores[j] * violation_weights[j];
     }
 
@@ -2246,7 +2341,7 @@ __device__ void evaluate_single(
     out[2] = objective_viol / scale_factors[2];
 
     if (raw_scores_out != nullptr) {
-        for (int j = 0; j < 25; j++) {
+        for (int j = 0; j < 27; j++) {
             raw_scores_out[j] = raw_scores[j];
         }
     }

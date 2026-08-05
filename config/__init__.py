@@ -114,6 +114,8 @@ DEFAULT_CONFIG = {
             "mouse_layer_depth_penalty": 50000.0,
             "same_layer_duplicate": 200000.0,
             "momentary_key_reuse": 50000.0,
+            "unsupported_duplicate": 200000.0,
+            "thumb_occupancy_restricted": 50000.0,
         },
         "hard_constraints": [
             "missing_important",
@@ -122,6 +124,8 @@ DEFAULT_CONFIG = {
             "layer_reachability",
             "toggle_back_to_l0",
             "same_layer_duplicate",
+            "unsupported_duplicate",
+            "thumb_occupancy_restricted",
         ],
     },
     "output": {
