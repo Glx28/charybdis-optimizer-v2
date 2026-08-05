@@ -120,6 +120,9 @@ struct PerThreadScratch {
     int raw_base_seen_anywhere[6];
     int raw_modified_seen_anywhere[6];
     int raw_base_assigned_count[MAX_SHORT];
+    // norwegian_completion_cluster scratch: first-index-per-distinct-sid
+    // tracking, mirroring kernel.py's comp_base_seen.
+    bool comp_base_seen[MAX_SHORT];
     float mb_xs[16];
     float mb_ys[16];
 };
@@ -189,7 +192,8 @@ __device__ void evaluate_single(
     const float* log1p_lut,
     int lut_size,
     const float* pos_effort_waste,
-    const int* pos_physical_id
+    const int* pos_physical_id,
+    const int* shortcut_completion_base_order
 ) {
     // -------------------------------------------------------------------------
     // Initialize scratch
@@ -200,6 +204,7 @@ __device__ void evaluate_single(
         s->sid_counts[i] = 0;
         s->sid_mutable_counts[i] = 0;
         s->raw_base_assigned_count[i] = 0;
+        s->comp_base_seen[i] = false;
         for (int l = 0; l < MAX_LAYERS; l++) {
             s->sid_layer_seen[i][l] = false;
         }
@@ -1577,6 +1582,98 @@ __device__ void evaluate_single(
         }
     }
 
+    // norwegian_completion_cluster: hard-constraint mirror of acceptance's
+    // norwegian_completion_cluster check
+    // (evolution/completion_cluster.analyze_completion_cluster ->
+    // acceptance_pass). cv == 0 exactly when acceptance would pass: (1) all 5
+    // unmodified raw base members sit on the anchor layer (the non-L7 layer
+    // with the most unique base members), (2) unmodified raw base members
+    // appear on exactly one non-L7 layer (frozen and L7 placements excluded),
+    // and (3) every member sits at its exact NORWEGIAN_CLUSTER_OFFSETS offset
+    // from the order-2 key (tolerance 0.5 in x and y). Magnitude counts
+    // violating members: members missing from the anchor layer, extra non-L7
+    // layers beyond the first, and members off their exact-shape offset. Each
+    // distinct base sid contributes its first genome index only, with later
+    // distinct sids of the same order overwriting the recorded position --
+    // the same iteration semantics as acceptance. Mirrors fitness/kernel.py.
+    float comp_dx[6];
+    float comp_dy[6];
+    comp_dx[1] = -1.0f; comp_dy[1] = 0.0f;
+    comp_dx[2] =  0.0f; comp_dy[2] = 0.0f;
+    comp_dx[3] = -2.0f; comp_dy[3] = 0.0f;
+    comp_dx[4] = -2.0f; comp_dy[4] = 1.0f;
+    comp_dx[5] = -2.0f; comp_dy[5] = 3.0f;
+    bool comp_present[6];
+    float comp_pos_x[6];
+    float comp_pos_y[6];
+    bool comp_layer_hit[6][MAX_LAYERS];
+    for (int o = 0; o < 6; o++) {
+        comp_present[o] = false;
+        comp_pos_x[o] = 0.0f;
+        comp_pos_y[o] = 0.0f;
+        for (int l = 0; l < MAX_LAYERS; l++) comp_layer_hit[o][l] = false;
+    }
+    for (int i = 0; i < n_pos; i++) {
+        int sid = genome[i];
+        if (sid < 0 || sid >= n_short) continue;
+        int corder = shortcut_completion_base_order[sid];
+        if (corder <= 0 || s->comp_base_seen[sid]) continue;
+        s->comp_base_seen[sid] = true;
+        comp_present[corder] = true;
+        comp_pos_x[corder] = pos_x[i];
+        comp_pos_y[corder] = pos_y[i];
+        int clayer = pos_layer[i];
+        if (!pos_is_frozen[i] && clayer >= 0 && clayer < MAX_LAYERS && clayer != 7) {
+            comp_layer_hit[corder][clayer] = true;
+        }
+    }
+    int comp_layer_unique[MAX_LAYERS];
+    for (int l = 0; l < MAX_LAYERS; l++) comp_layer_unique[l] = 0;
+    for (int o = 1; o < 6; o++) {
+        for (int l = 0; l < MAX_LAYERS; l++) {
+            if (comp_layer_hit[o][l]) comp_layer_unique[l]++;
+        }
+    }
+    int comp_anchor = -1;
+    int comp_best = -1;
+    for (int o = 1; o < 6; o++) {
+        for (int l = 0; l < MAX_LAYERS; l++) {
+            if (comp_layer_hit[o][l] && comp_layer_unique[l] > comp_best) {
+                comp_best = comp_layer_unique[l];
+                comp_anchor = l;
+            }
+        }
+    }
+    float norwegian_completion_cluster = 0.0f;
+    for (int o = 1; o < 6; o++) {
+        if (comp_anchor < 0 || !comp_layer_hit[o][comp_anchor]) {
+            norwegian_completion_cluster += 1.0f;
+        }
+    }
+    int comp_n_layers = 0;
+    for (int l = 0; l < MAX_LAYERS; l++) {
+        for (int o = 1; o < 6; o++) {
+            if (comp_layer_hit[o][l]) {
+                comp_n_layers++;
+                break;
+            }
+        }
+    }
+    if (comp_n_layers > 1) {
+        norwegian_completion_cluster += (float)(comp_n_layers - 1);
+    }
+    if (comp_anchor >= 0 && comp_present[2]) {
+        float comp_ax = comp_pos_x[2];
+        float comp_ay = comp_pos_y[2];
+        for (int o = 1; o < 6; o++) {
+            if (!comp_present[o]
+                || fabsf(comp_pos_x[o] - (comp_ax + comp_dx[o])) > 0.5f
+                || fabsf(comp_pos_y[o] - (comp_ay + comp_dy[o])) > 0.5f) {
+                norwegian_completion_cluster += 1.0f;
+            }
+        }
+    }
+
 
     // -------------------------------------------------------------------------
     // Mouse scattered
@@ -2193,7 +2290,7 @@ __device__ void evaluate_single(
     // -------------------------------------------------------------------------
     // Assemble raw scores
     // -------------------------------------------------------------------------
-    float raw_scores[27];
+    float raw_scores[28];
     raw_scores[0] = duplicate;
     raw_scores[1] = l0_displacement;
     raw_scores[2] = missing;
@@ -2231,6 +2328,7 @@ __device__ void evaluate_single(
     raw_scores[24] = momentary_key_reuse;
     raw_scores[25] = unsupported_duplicate;
     raw_scores[26] = thumb_occ_restricted;
+    raw_scores[27] = norwegian_completion_cluster;
 
     // -------------------------------------------------------------------------
     // Constraints
@@ -2243,7 +2341,7 @@ __device__ void evaluate_single(
     // Soft violations sum
     // -------------------------------------------------------------------------
     float violations_raw = 0.0f;
-    for (int j = 0; j < 27; j++) {
+    for (int j = 0; j < 28; j++) {
         violations_raw += raw_scores[j] * violation_weights[j];
     }
 
@@ -2341,7 +2439,7 @@ __device__ void evaluate_single(
     out[2] = objective_viol / scale_factors[2];
 
     if (raw_scores_out != nullptr) {
-        for (int j = 0; j < 27; j++) {
+        for (int j = 0; j < 28; j++) {
             raw_scores_out[j] = raw_scores[j];
         }
     }
@@ -2412,6 +2510,7 @@ __global__ void evaluate_batch_kernel(
     int lut_size,
     const float* pos_effort_waste,
     const int* pos_physical_id,
+    const int* shortcut_completion_base_order,
     int8_t* scratch_buffer
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -2443,7 +2542,7 @@ __global__ void evaluate_batch_kernel(
         reference_genome, objective_weights, violation_weights, scale_factors,
         threshold, hard_constraint_indices, shortcut_key_group,
         toggle_effort_multiplier, log1p_lut, lut_size, pos_effort_waste,
-        pos_physical_id
+        pos_physical_id, shortcut_completion_base_order
     );
 }
 
@@ -2499,7 +2598,8 @@ torch::Tensor evaluate_batch(
     torch::Tensor toggle_effort_multiplier_tensor,
     torch::Tensor log1p_lut,
     torch::Tensor pos_effort_waste,
-    torch::Tensor pos_physical_id
+    torch::Tensor pos_physical_id,
+    torch::Tensor shortcut_completion_base_order
 ) {
     int batch = genomes.size(0);
     int n_pos = genomes.size(1);
@@ -2572,6 +2672,7 @@ torch::Tensor evaluate_batch(
         lut_size,
         pos_effort_waste.data_ptr<float>(),
         pos_physical_id.data_ptr<int>(),
+        shortcut_completion_base_order.data_ptr<int>(),
         scratch.data_ptr<int8_t>()
     );
 

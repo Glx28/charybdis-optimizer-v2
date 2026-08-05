@@ -126,6 +126,8 @@ fitness:
     unsupported_duplicate: 200000.0
     # Hard-constraint tier: genuinely-restricted thumb occupancy only; toggle-freed effort-floor stays soft (history: DECISION_LOG.md).
     thumb_occupancy_restricted: 50000.0
+    # Hard-constraint tier: acceptance's norwegian_completion_cluster check (history: DECISION_LOG.md).
+    norwegian_completion_cluster: 200000.0
   hard_constraints:
     - missing_important
     - layer7_access
@@ -136,6 +138,7 @@ fitness:
     # Archive froze: these failed acceptance while staying invisible to Deb selection (history: DECISION_LOG.md).
     - unsupported_duplicate
     - thumb_occupancy_restricted
+    - norwegian_completion_cluster
 output:
   checkpoint_interval: 500
   verbose: true

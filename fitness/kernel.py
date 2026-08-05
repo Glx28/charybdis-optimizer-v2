@@ -513,6 +513,15 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
             if len(s.modifiers) == 0:
                 shortcut_raw_completion_base[s.sid] = 1
 
+    # Acceptance (evolution/completion_cluster.analyze_completion_cluster) has
+    # no is_l0_only exclusion, so the norwegian_completion_cluster hard
+    # constraint gets its own per-sid order lookup mirroring it exactly.
+    shortcut_completion_base_order = np.zeros(layout.n_shortcuts, dtype=np.int32)
+    for s in layout.shortcuts:
+        key = (s.base_key or "").upper().strip()
+        if key in raw_completion_order and len(s.modifiers) == 0:
+            shortcut_completion_base_order[s.sid] = raw_completion_order[key]
+
     app_usage_weight = np.ones(len(app_map), dtype=np.float32)
     try:
         from fitness.factors.app_coherence import AppCoherenceFactor
@@ -565,6 +574,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         vw.get("momentary_key_reuse", DEFAULT_VIOLATION_WEIGHTS.get("momentary_key_reuse", 500000000.0)),
         vw.get("unsupported_duplicate", DEFAULT_VIOLATION_WEIGHTS.get("unsupported_duplicate", 200000.0)),
         vw.get("thumb_occupancy_restricted", DEFAULT_VIOLATION_WEIGHTS.get("thumb_occupancy_restricted", 50000.0)),
+        vw.get("norwegian_completion_cluster", DEFAULT_VIOLATION_WEIGHTS.get("norwegian_completion_cluster", 200000.0)),
     ], dtype=np.float32)
 
     VIOLATION_NAMES = (
@@ -582,6 +592,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         "momentary_key_reuse",
         "unsupported_duplicate",
         "thumb_occupancy_restricted",
+        "norwegian_completion_cluster",
     )
     hard_constraints = hard_constraints or []
     hard_constraint_indices = np.asarray(
@@ -616,6 +627,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         np.float32(toggle_effort_multiplier),
         log1p_lut, pos_effort_waste,
         pos_physical_id,
+        shortcut_completion_base_order,
     )
 
 
@@ -634,6 +646,7 @@ if NUMBA_AVAILABLE:
         toggle_effort_multiplier,
         log1p_lut, pos_effort_waste,
         pos_physical_id,
+        shortcut_completion_base_order,
     ):
         n_pos = genome.shape[0]
         lut_size = log1p_lut.shape[0]
@@ -1882,6 +1895,81 @@ if NUMBA_AVAILABLE:
                 ):
                     raw_keyboard_completion_norwegian += 1200.0
 
+        # norwegian_completion_cluster: hard-constraint mirror of acceptance's
+        # norwegian_completion_cluster check
+        # (evolution/completion_cluster.analyze_completion_cluster ->
+        # acceptance_pass). cv == 0 exactly when acceptance would pass:
+        # (1) all 5 unmodified raw base members sit on the anchor layer (the
+        # non-L7 layer with the most unique base members), (2) unmodified raw
+        # base members appear on exactly one non-L7 layer (frozen and L7
+        # placements excluded), and (3) every member sits at its exact
+        # evolution/group_shapes.NORWEGIAN_CLUSTER_OFFSETS offset from the
+        # order-2 key (tolerance 0.5 in x and y). Magnitude counts violating
+        # members: members missing from the anchor layer, extra non-L7 layers
+        # beyond the first, and members off their exact-shape offset. Each
+        # distinct base sid contributes its first genome index only, with
+        # later distinct sids of the same order overwriting the recorded
+        # position -- the same iteration semantics as acceptance (which uses
+        # np.where first-index per sid, last sid in the list winning).
+        comp_dx = np.empty(6, dtype=np.float32)
+        comp_dy = np.empty(6, dtype=np.float32)
+        comp_dx[1] = -1.0; comp_dy[1] = 0.0
+        comp_dx[2] =  0.0; comp_dy[2] = 0.0
+        comp_dx[3] = -2.0; comp_dy[3] = 0.0
+        comp_dx[4] = -2.0; comp_dy[4] = 1.0
+        comp_dx[5] = -2.0; comp_dy[5] = 3.0
+        comp_base_seen = np.zeros(n_short, dtype=np.bool_)
+        comp_present = np.zeros(6, dtype=np.bool_)
+        comp_pos_x = np.zeros(6, dtype=np.float32)
+        comp_pos_y = np.zeros(6, dtype=np.float32)
+        comp_layer_hit = np.zeros((6, 32), dtype=np.bool_)
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_short:
+                continue
+            corder = shortcut_completion_base_order[sid]
+            if corder <= 0 or comp_base_seen[sid]:
+                continue
+            comp_base_seen[sid] = True
+            comp_present[corder] = True
+            comp_pos_x[corder] = pos_x[i]
+            comp_pos_y[corder] = pos_y[i]
+            clayer = pos_layer[i]
+            if not pos_is_frozen[i] and 0 <= clayer < 32 and clayer != 7:
+                comp_layer_hit[corder, clayer] = True
+        comp_layer_unique = np.zeros(32, dtype=np.int32)
+        for o in range(1, 6):
+            for layer in range(32):
+                if comp_layer_hit[o, layer]:
+                    comp_layer_unique[layer] += 1
+        comp_anchor = -1
+        comp_best = -1
+        for o in range(1, 6):
+            for layer in range(32):
+                if comp_layer_hit[o, layer] and comp_layer_unique[layer] > comp_best:
+                    comp_best = comp_layer_unique[layer]
+                    comp_anchor = layer
+        norwegian_completion_cluster = 0.0
+        for o in range(1, 6):
+            if comp_anchor < 0 or not comp_layer_hit[o, comp_anchor]:
+                norwegian_completion_cluster += 1.0
+        comp_n_layers = 0
+        for layer in range(32):
+            for o in range(1, 6):
+                if comp_layer_hit[o, layer]:
+                    comp_n_layers += 1
+                    break
+        if comp_n_layers > 1:
+            norwegian_completion_cluster += float(comp_n_layers - 1)
+        if comp_anchor >= 0 and comp_present[2]:
+            comp_ax = comp_pos_x[2]
+            comp_ay = comp_pos_y[2]
+            for o in range(1, 6):
+                if (not comp_present[o]
+                        or abs(comp_pos_x[o] - (comp_ax + comp_dx[o])) > 0.5
+                        or abs(comp_pos_y[o] - (comp_ay + comp_dy[o])) > 0.5):
+                    norwegian_completion_cluster += 1.0
+
         mouse_scattered = 0.0
         mouse_layers = np.zeros(32, dtype=np.int32)
         for i in range(n_pos):
@@ -2471,7 +2559,7 @@ if NUMBA_AVAILABLE:
                 else:
                     empty_pos_waste += pos_effort_waste[i]
 
-        raw_scores = np.empty(27, dtype=np.float32)
+        raw_scores = np.empty(28, dtype=np.float32)
         raw_scores[0] = duplicate
         raw_scores[1] = l0_displacement
         raw_scores[2] = missing
@@ -2510,6 +2598,7 @@ if NUMBA_AVAILABLE:
         raw_scores[24] = momentary_key_reuse
         raw_scores[25] = unsupported_duplicate
         raw_scores[26] = thumb_occ_restricted
+        raw_scores[27] = norwegian_completion_cluster
 
         # Hard constraints (g(x) <= 0 convention; raw_scores are >= 0).
         n_constr = hard_constraint_indices.shape[0]
@@ -2519,7 +2608,7 @@ if NUMBA_AVAILABLE:
 
         # Soft penalties weighted and summed into the violations objective.
         violations_raw = 0.0
-        for j in range(27):
+        for j in range(28):
             violations_raw += raw_scores[j] * violation_weights[j]
 
         workflow = 0.0
@@ -2613,6 +2702,7 @@ if NUMBA_AVAILABLE:
         toggle_effort_multiplier,
         log1p_lut, pos_effort_waste,
         pos_physical_id,
+        shortcut_completion_base_order,
     ):
         batch = genomes.shape[0]
         n_constr = hard_constraint_indices.shape[0]
@@ -2633,6 +2723,7 @@ if NUMBA_AVAILABLE:
                 toggle_effort_multiplier,
                 log1p_lut, pos_effort_waste,
                 pos_physical_id,
+                shortcut_completion_base_order,
             )
             out[b] = obj
             constraints[b] = constr

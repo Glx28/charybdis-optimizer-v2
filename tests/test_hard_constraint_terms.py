@@ -250,26 +250,159 @@ class TestThumbOccupancyRestrictedConstraint(unittest.TestCase):
         self.assertFalse(_momentary_only_thumb_clearance_report(layout)["acceptance_pass"])
 
 
+class TestNorwegianCompletionClusterConstraint(unittest.TestCase):
+    """norwegian_completion_cluster: hard-constraint mirror of acceptance's
+    norwegian_completion_cluster check (analyze_completion_cluster
+    acceptance_pass). cv == 0 exactly when acceptance would pass: all 5
+    unmodified raw base members on the anchor layer, on exactly one non-L7
+    layer, at their exact NORWEGIAN_CLUSTER_OFFSETS offsets from the order-2
+    anchor (tolerance 0.5). Frozen and L7 placements are excluded."""
+
+    HC = ["norwegian_completion_cluster"]
+
+    def _shortcuts(self):
+        names = (
+            "DASH AND UNDERSCORE",
+            "EQUALS AND PLUS",
+            "GRAVE ACCENT AND TILDE",
+            "RIGHT BRACE",
+            "BACKSLASH AND PIPE",
+        )
+        return tuple(
+            Shortcut(sid, f"raw{sid + 1}", "a", "Base", 5.0, base_key=names[sid])
+            for sid in range(5)
+        )
+
+    def _cluster(self, layer=1, ax=10.0, ay=1.0):
+        # Exact shape around the order-2 anchor: (sid, layer, x, y, frozen).
+        return [
+            (0, layer, ax - 1, ay, False),      # order 1 at (-1, 0)
+            (1, layer, ax, ay, False),          # order 2 anchor (0, 0)
+            (2, layer, ax - 2, ay, False),      # order 3 at (-2, 0)
+            (3, layer, ax - 2, ay + 1, False),  # order 4 at (-2, 1)
+            (4, layer, ax - 2, ay + 3, False),  # order 5 at (-2, 3)
+        ]
+
+    def _eval(self, entries, shortcuts=None):
+        positions = tuple(
+            Position(i, layer, x, y, "left", 1, 1.0, is_frozen=fr)
+            for i, (_, layer, x, y, fr) in enumerate(entries)
+        )
+        frozen = np.array([fr for (_, _, _, _, fr) in entries], dtype=np.bool_)
+        genome = np.array([sid for (sid, _, _, _, _) in entries], dtype=np.int32)
+        layout = Layout(genome, positions, shortcuts or self._shortcuts(), frozen)
+        arrays = _precompute(layout, self.HC)
+        value = float(_single_genome(layout.genome, *arrays)[1][0])
+        return value, layout
+
+    def test_exact_cluster_passes(self):
+        value, layout = self._eval(self._cluster())
+        self.assertEqual(value, 0.0)
+        from evolution.completion_cluster import analyze_completion_cluster
+        self.assertTrue(analyze_completion_cluster(layout)["acceptance_pass"])
+
+    def test_scattered_to_two_layers_fails(self):
+        entries = self._cluster()
+        entries[4] = (4, 2, 8.0, 4.0, False)  # order 5 alone on layer 2
+        value, layout = self._eval(entries)
+        # +1 missing from anchor layer 1, +1 extra non-L7 layer; shape intact.
+        self.assertEqual(value, 2.0)
+        from evolution.completion_cluster import analyze_completion_cluster
+        self.assertFalse(analyze_completion_cluster(layout)["acceptance_pass"])
+
+    def test_missing_member_from_anchor_fails(self):
+        entries = self._cluster()
+        entries[4] = (-1, 1, 8.0, 4.0, False)  # order 5 unassigned
+        value, layout = self._eval(entries)
+        # +1 missing from anchor, +1 shape check cannot find order 5.
+        self.assertEqual(value, 2.0)
+        from evolution.completion_cluster import analyze_completion_cluster
+        self.assertFalse(analyze_completion_cluster(layout)["acceptance_pass"])
+
+    def test_off_offset_member_fails(self):
+        entries = self._cluster()
+        entries[4] = (4, 1, 8.0, 3.0, False)  # order 5 one row off its offset
+        value, layout = self._eval(entries)
+        self.assertEqual(value, 1.0)
+        from evolution.completion_cluster import analyze_completion_cluster
+        self.assertFalse(analyze_completion_cluster(layout)["acceptance_pass"])
+
+    def test_layer7_and_frozen_placements_ignored(self):
+        # Same-sid duplicate copies on frozen L7 / frozen other-layer slots:
+        # only the first genome index of each distinct sid counts, so the
+        # cluster still passes exactly as acceptance does.
+        entries = self._cluster() + [
+            (4, 7, 0.0, 0.0, True),   # frozen L7 copy of order 5
+            (0, 3, 0.0, 0.0, True),   # frozen layer-3 copy of order 1
+        ]
+        value, layout = self._eval(entries)
+        self.assertEqual(value, 0.0)
+        from evolution.completion_cluster import analyze_completion_cluster
+        self.assertTrue(analyze_completion_cluster(layout)["acceptance_pass"])
+
+    def test_modified_variant_does_not_count_as_base(self):
+        # A modified (Ctrl+) family variant on another layer is not an
+        # unmodified raw base member; it must not scatter the cluster.
+        shortcuts = self._shortcuts() + (
+            Shortcut(5, "Ctrl+raw1", "a", "App", 5.0,
+                     modifiers=("Ctrl",), base_key="DASH AND UNDERSCORE"),
+        )
+        entries = self._cluster() + [(5, 2, 4.0, 4.0, False)]
+        value, layout = self._eval(entries, shortcuts)
+        self.assertEqual(value, 0.0)
+        from evolution.completion_cluster import analyze_completion_cluster
+        self.assertTrue(analyze_completion_cluster(layout)["acceptance_pass"])
+
+    def test_numba_single_and_batch_paths_agree(self):
+        # Positions are static per model, so the scattered variant is a pure
+        # genome change: order 5 moved onto a spare layer-2 slot.
+        entries = self._cluster() + [(-1, 2, 8.0, 4.0, False)]
+        positions = tuple(
+            Position(i, layer, x, y, "left", 1, 1.0, is_frozen=fr)
+            for i, (_, layer, x, y, fr) in enumerate(entries)
+        )
+        layout = Layout(
+            np.array([sid for (sid, _, _, _, _) in entries], dtype=np.int32),
+            positions,
+            self._shortcuts(),
+            np.zeros(len(entries), dtype=np.bool_),
+        )
+        bad_genome = layout.genome.copy()
+        bad_genome[4], bad_genome[5] = bad_genome[5], bad_genome[4]
+        arrays = _precompute(layout, self.HC)
+        _, c_single_good = _single_genome(layout.genome, *arrays)
+        _, c_single_bad = _single_genome(bad_genome, *arrays)
+        _, c_batch = _evaluate_batch(np.stack([layout.genome, bad_genome]), *arrays)
+        np.testing.assert_array_equal(c_batch[0], c_single_good)
+        np.testing.assert_array_equal(c_batch[1], c_single_bad)
+        self.assertEqual(float(c_batch[0][0]), 0.0)
+        self.assertGreater(c_batch[1][0], 0.0)
+
+
 class TestHardConstraintConfigShape(unittest.TestCase):
     def test_default_config_contains_new_hard_constraints(self):
         hard = DEFAULT_CONFIG["fitness"]["hard_constraints"]
         self.assertIn("unsupported_duplicate", hard)
         self.assertIn("thumb_occupancy_restricted", hard)
+        self.assertIn("norwegian_completion_cluster", hard)
 
     def test_config_v2_yaml_contains_new_hard_constraints(self):
         cfg = Config.load(os.path.join(os.path.dirname(__file__), "..", "config_v2.yaml"))
         hard = cfg.get("fitness.hard_constraints")
         self.assertIn("unsupported_duplicate", hard)
         self.assertIn("thumb_occupancy_restricted", hard)
+        self.assertIn("norwegian_completion_cluster", hard)
 
     def test_violation_sub_weights_contain_new_terms(self):
         vw = DEFAULT_CONFIG["fitness"]["violation_sub_weights"]
         self.assertIn("unsupported_duplicate", vw)
         self.assertIn("thumb_occupancy_restricted", vw)
+        self.assertIn("norwegian_completion_cluster", vw)
         cfg = Config.load(os.path.join(os.path.dirname(__file__), "..", "config_v2.yaml"))
         yaml_vw = cfg.get("fitness.violation_sub_weights")
         self.assertEqual(vw["unsupported_duplicate"], yaml_vw["unsupported_duplicate"])
         self.assertEqual(vw["thumb_occupancy_restricted"], yaml_vw["thumb_occupancy_restricted"])
+        self.assertEqual(vw["norwegian_completion_cluster"], yaml_vw["norwegian_completion_cluster"])
 
 
 if __name__ == "__main__":

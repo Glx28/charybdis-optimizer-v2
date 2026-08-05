@@ -6,6 +6,32 @@ source comments carry the design rationale, this file carries the archaeology.
 
 ## Decisions
 
+- 2026-08-05 | gave `norwegian_completion_cluster` the hard-constraint
+  treatment: new kernel term (raw_scores slot 27, weight 200000) mirroring
+  `analyze_completion_cluster`'s three acceptance conditions exactly
+  (all 5 raw base members on anchor layer; raw base on exactly one non-L7
+  layer; exact `NORWEGIAN_CLUSTER_OFFSETS` shape, tolerance 0.5), in
+  kernel.py + .cu mirror, added to `hard_constraints`; NO new repair
+  operator — `_overwrite_group_as_unit` (group_overwrite_prob 0.15) already
+  moves the cluster as a unit at exact offsets, and Deb selection now
+  favors its output | the validation run's population best (gap −19.0+)
+  spent its last ~7.5k gens failing this check while the archive stayed
+  gated at −18.02 — third instance of the selection-invisibility class |
+  confirmed by user ("Fix cluster check + run"). 188 passed, 0 failed;
+  perf gate result pending at writing time
+- 2026-08-05 | validation verdict on fcc6c07 (hard constraints for
+  unsupported duplicates + restricted thumb occupancy): CONFIRMED WORKING —
+  30k run finished with archive tracking population best for 18.5k gens,
+  final archive gap −18.02 with all acceptance checks green (previous run:
+  frozen at gen 386, final +10.77). Run finished 1.7 points short of the
+  morning baseline (−19.72) because `norwegian_completion_cluster` became
+  the next selection-invisible blocker from ~gen 22500 (population best
+  −19.0+ failing it, archive gated). Generalized lesson, now policy-level:
+  ANY acceptance check that is only soft pressure can become the archive
+  blocker — acceptance checks must be selection-visible (hard constraint or
+  dedicated operator), not left to sub-noise-floor soft penalties |
+  measured across checkpoints gen 22500-30000 of run_20260805_201043 |
+  fix committed fcc6c07; cluster-check treatment pending user decision
 - 2026-08-05 | made unsupported duplicates and restricted thumb occupancy hard
   constraints: new kernel terms `unsupported_duplicate` (weight 200000) and
   `thumb_occupancy_restricted` (weight 50000, split out of soft

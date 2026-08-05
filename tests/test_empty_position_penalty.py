@@ -40,6 +40,7 @@ class TestEmptyPositionPenalty(unittest.TestCase):
             "dynamic_mouse_layer", "natural_mouse_layer_exists",
             "layer_reachability", "layer_depth_penalty", "toggle_back_to_l0",
             "mouse_hold_position_conflict", "mouse_layer_depth_penalty",
+            "norwegian_completion_cluster",
         ]}
         vweights["empty_position"] = empty_position_weight
         from fitness.evaluator import FitnessEvaluator
