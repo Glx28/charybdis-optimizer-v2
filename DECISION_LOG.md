@@ -6,6 +6,18 @@ source comments carry the design rationale, this file carries the archaeology.
 
 ## Decisions
 
+- 2026-08-06 | validation verdict on ef85678 (norwegian_completion_cluster
+  hard constraint): FULL SUCCESS — 30k run finished with the archive
+  improving through the final 50 gens (gen 29950, gap −19.70, all
+  acceptance checks green), never freezing; passed gen 22500 (run 2's
+  freeze point) with zero failures. Nominally 0.02 short of the morning
+  baseline (−19.72), which was scored under pre-fcc6c07 weights — treated
+  as a tie. The three-fix selection-invisibility campaign (fcc6c07 +
+  ef85678) is complete and validated; the archive-freeze failure mode is
+  closed. Remaining soft-only acceptance checks queued for audit (handoff
+  TODO #3) before the next long run | measured across the full log
+  run_20260806_001228_g30000.log + gen30000 checkpoint audit | fix
+  committed ef85678
 - 2026-08-05 | gave `norwegian_completion_cluster` the hard-constraint
   treatment: new kernel term (raw_scores slot 27, weight 200000) mirroring
   `analyze_completion_cluster`'s three acceptance conditions exactly

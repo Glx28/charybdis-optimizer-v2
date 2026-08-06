@@ -24,6 +24,29 @@ NUMBA_AVAILABLE = njit is not None
 DEFAULT_FITNESS_WEIGHTS = DEFAULT_CONFIG["fitness"]["weights"]
 DEFAULT_VIOLATION_WEIGHTS = DEFAULT_CONFIG["fitness"]["violation_sub_weights"]
 
+# Kernel violation-term names in raw_scores slot order. run_evolution.py
+# validates config hard_constraints against this list at startup so a typo
+# fails fast instead of silently no-oping (precompute drops unknown names).
+VIOLATION_NAMES = (
+    "duplicate", "l0_displacement", "missing_important", "cross_layer_duplicate",
+    "group_split", "thumb_occupancy", "arrow_order", "hand_bias",
+    "mouse_layer_access", "arrow_scattered", "mouse_scattered", "layer7_access",
+    "duplicate_value_gap", "access_layout", "raw_keyboard_completion_norwegian",
+    "dynamic_mouse_layer", "empty_position",
+    "layer_reachability", "layer_depth_penalty",
+    "natural_mouse_layer_exists",
+    "toggle_back_to_l0",
+    "mouse_hold_position_conflict",
+    "mouse_layer_depth_penalty",
+    "same_layer_duplicate",
+    "momentary_key_reuse",
+    "unsupported_duplicate",
+    "thumb_occupancy_restricted",
+    "norwegian_completion_cluster",
+    "mouse_right_thumb_global",
+    "mutable_raw_arrows",
+)
+
 
 def _id_map(values: Iterable[object]) -> Tuple[np.ndarray, Dict[object, int]]:
     mapping: Dict[object, int] = {}
@@ -575,25 +598,10 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         vw.get("unsupported_duplicate", DEFAULT_VIOLATION_WEIGHTS.get("unsupported_duplicate", 200000.0)),
         vw.get("thumb_occupancy_restricted", DEFAULT_VIOLATION_WEIGHTS.get("thumb_occupancy_restricted", 50000.0)),
         vw.get("norwegian_completion_cluster", DEFAULT_VIOLATION_WEIGHTS.get("norwegian_completion_cluster", 200000.0)),
+        vw.get("mouse_right_thumb_global", DEFAULT_VIOLATION_WEIGHTS.get("mouse_right_thumb_global", 200000.0)),
+        vw.get("mutable_raw_arrows", DEFAULT_VIOLATION_WEIGHTS.get("mutable_raw_arrows", 200000.0)),
     ], dtype=np.float32)
 
-    VIOLATION_NAMES = (
-        "duplicate", "l0_displacement", "missing_important", "cross_layer_duplicate",
-        "group_split", "thumb_occupancy", "arrow_order", "hand_bias",
-        "mouse_layer_access", "arrow_scattered", "mouse_scattered", "layer7_access",
-        "duplicate_value_gap", "access_layout", "raw_keyboard_completion_norwegian",
-        "dynamic_mouse_layer", "empty_position",
-        "layer_reachability", "layer_depth_penalty",
-        "natural_mouse_layer_exists",
-        "toggle_back_to_l0",
-        "mouse_hold_position_conflict",
-        "mouse_layer_depth_penalty",
-        "same_layer_duplicate",
-        "momentary_key_reuse",
-        "unsupported_duplicate",
-        "thumb_occupancy_restricted",
-        "norwegian_completion_cluster",
-    )
     hard_constraints = hard_constraints or []
     hard_constraint_indices = np.asarray(
         [VIOLATION_NAMES.index(name) for name in hard_constraints if name in VIOLATION_NAMES],
@@ -1697,6 +1705,82 @@ if NUMBA_AVAILABLE:
             if duplicate_count > 0:
                 arrow_scattered += float(duplicate_count) * 5000.0
 
+        # mutable_raw_arrows: hard-constraint mirror of acceptance's
+        # mutable_raw_arrows_ok check (evolution/arrow_cluster.analyze_arrows
+        # -> acceptance_pass). cv == 0 exactly when acceptance would pass: no
+        # non-frozen non-L7 raw arrow placements at all, or exactly one
+        # placement per arrow type, all on a single layer, in one of the two
+        # allowed shapes (same tolerances as acceptance). Unlike the soft
+        # arrow_scattered block above, frozen placements are excluded here
+        # because acceptance excludes them. Magnitude counts violating
+        # aspects: types not placed exactly once, extra layers beyond the
+        # first, and a disallowed cluster shape.
+        acc_arrow_type_count = np.zeros(5, dtype=np.int32)
+        acc_arrow_type_x = np.zeros(5, dtype=np.float32)
+        acc_arrow_type_y = np.zeros(5, dtype=np.float32)
+        acc_arrow_layer_seen = np.zeros(32, dtype=np.bool_)
+        acc_arrow_total = 0
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_short:
+                continue
+            atype = shortcut_arrow_type[sid]
+            if atype == 0:
+                continue
+            layer = pos_layer[i]
+            if layer == 7 or pos_is_frozen[i]:
+                continue
+            acc_arrow_total += 1
+            if 0 <= layer < 32:
+                acc_arrow_layer_seen[layer] = True
+            if acc_arrow_type_count[atype] == 0:
+                acc_arrow_type_x[atype] = pos_x[i]
+                acc_arrow_type_y[atype] = pos_y[i]
+            acc_arrow_type_count[atype] += 1
+        mutable_raw_arrows = 0.0
+        if acc_arrow_total > 0:
+            acc_arrow_n_layers = 0
+            for layer in range(32):
+                if acc_arrow_layer_seen[layer]:
+                    acc_arrow_n_layers += 1
+            acc_all_types_once = True
+            for atype in range(1, 5):
+                if acc_arrow_type_count[atype] != 1:
+                    mutable_raw_arrows += 1.0
+                    acc_all_types_once = False
+            if acc_arrow_n_layers > 1:
+                mutable_raw_arrows += float(acc_arrow_n_layers - 1)
+            if acc_all_types_once and acc_arrow_n_layers == 1:
+                acc_left_x = acc_arrow_type_x[1]
+                acc_right_x = acc_arrow_type_x[2]
+                acc_up_x = acc_arrow_type_x[3]
+                acc_down_x = acc_arrow_type_x[4]
+                acc_left_y = acc_arrow_type_y[1]
+                acc_right_y = acc_arrow_type_y[2]
+                acc_up_y = acc_arrow_type_y[3]
+                acc_down_y = acc_arrow_type_y[4]
+                acc_same_line = (
+                    abs(acc_left_y - acc_up_y) <= 0.25
+                    and abs(acc_up_y - acc_down_y) <= 0.25
+                    and abs(acc_down_y - acc_right_y) <= 0.25
+                    and acc_left_x < acc_up_x
+                    and acc_up_x < acc_down_x
+                    and acc_down_x < acc_right_x
+                    and (acc_right_x - acc_left_x) <= 4.5
+                )
+                acc_split_cluster = (
+                    abs(acc_left_y - acc_down_y) <= 0.25
+                    and abs(acc_down_y - acc_right_y) <= 0.25
+                    and acc_left_x < acc_down_x
+                    and acc_down_x < acc_right_x
+                    and acc_up_y < acc_down_y
+                    and abs(acc_up_x - acc_down_x) <= 0.25
+                    and (acc_down_y - acc_up_y) <= 2.0
+                    and (acc_right_x - acc_left_x) <= 3.5
+                )
+                if not acc_same_line and not acc_split_cluster:
+                    mutable_raw_arrows += 1.0
+
         raw_keyboard_completion_norwegian = 0.0
         raw_layer_counts = np.zeros(32, dtype=np.int32)
         raw_layer_order_counts = np.zeros((32, 6), dtype=np.int32)
@@ -2559,7 +2643,7 @@ if NUMBA_AVAILABLE:
                 else:
                     empty_pos_waste += pos_effort_waste[i]
 
-        raw_scores = np.empty(28, dtype=np.float32)
+        raw_scores = np.empty(30, dtype=np.float32)
         raw_scores[0] = duplicate
         raw_scores[1] = l0_displacement
         raw_scores[2] = missing
@@ -2599,6 +2683,8 @@ if NUMBA_AVAILABLE:
         raw_scores[25] = unsupported_duplicate
         raw_scores[26] = thumb_occ_restricted
         raw_scores[27] = norwegian_completion_cluster
+        raw_scores[28] = float(mouse_global_right_thumb_count)
+        raw_scores[29] = mutable_raw_arrows
 
         # Hard constraints (g(x) <= 0 convention; raw_scores are >= 0).
         n_constr = hard_constraint_indices.shape[0]
@@ -2608,7 +2694,7 @@ if NUMBA_AVAILABLE:
 
         # Soft penalties weighted and summed into the violations objective.
         violations_raw = 0.0
-        for j in range(28):
+        for j in range(30):
             violations_raw += raw_scores[j] * violation_weights[j]
 
         workflow = 0.0

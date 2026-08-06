@@ -117,6 +117,8 @@ DEFAULT_CONFIG = {
             "unsupported_duplicate": 200000.0,
             "thumb_occupancy_restricted": 50000.0,
             "norwegian_completion_cluster": 200000.0,
+            "mouse_right_thumb_global": 200000.0,
+            "mutable_raw_arrows": 200000.0,
         },
         "hard_constraints": [
             "missing_important",
@@ -128,6 +130,8 @@ DEFAULT_CONFIG = {
             "unsupported_duplicate",
             "thumb_occupancy_restricted",
             "norwegian_completion_cluster",
+            "mouse_right_thumb_global",
+            "mutable_raw_arrows",
         ],
     },
     "output": {

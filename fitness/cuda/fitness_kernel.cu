@@ -1366,6 +1366,94 @@ __device__ void evaluate_single(
         }
     }
 
+    // mutable_raw_arrows: hard-constraint mirror of acceptance's
+    // mutable_raw_arrows_ok check (evolution/arrow_cluster.analyze_arrows
+    // -> acceptance_pass). cv == 0 exactly when acceptance would pass: no
+    // non-frozen non-L7 raw arrow placements at all, or exactly one
+    // placement per arrow type, all on a single layer, in one of the two
+    // allowed shapes (same tolerances as acceptance). Unlike the soft
+    // arrow_scattered block above, frozen placements are excluded here
+    // because acceptance excludes them. Magnitude counts violating aspects:
+    // types not placed exactly once, extra layers beyond the first, and a
+    // disallowed cluster shape.
+    int acc_arrow_type_count[5];
+    float acc_arrow_type_x[5];
+    float acc_arrow_type_y[5];
+    bool acc_arrow_layer_seen[MAX_LAYERS];
+    for (int at = 0; at < 5; at++) {
+        acc_arrow_type_count[at] = 0;
+        acc_arrow_type_x[at] = 0.0f;
+        acc_arrow_type_y[at] = 0.0f;
+    }
+    for (int l = 0; l < MAX_LAYERS; l++) acc_arrow_layer_seen[l] = false;
+    int acc_arrow_total = 0;
+    for (int i = 0; i < n_pos; i++) {
+        int sid = genome[i];
+        if (sid < 0 || sid >= n_short) continue;
+        int atype = shortcut_arrow_type[sid];
+        if (atype == 0) continue;
+        int layer = pos_layer[i];
+        if (layer == 7 || pos_is_frozen[i]) continue;
+        acc_arrow_total++;
+        if (layer >= 0 && layer < MAX_LAYERS) {
+            acc_arrow_layer_seen[layer] = true;
+        }
+        if (acc_arrow_type_count[atype] == 0) {
+            acc_arrow_type_x[atype] = pos_x[i];
+            acc_arrow_type_y[atype] = pos_y[i];
+        }
+        acc_arrow_type_count[atype]++;
+    }
+    float mutable_raw_arrows = 0.0f;
+    if (acc_arrow_total > 0) {
+        int acc_arrow_n_layers = 0;
+        for (int layer = 0; layer < MAX_LAYERS; layer++) {
+            if (acc_arrow_layer_seen[layer]) acc_arrow_n_layers++;
+        }
+        bool acc_all_types_once = true;
+        for (int atype = 1; atype < 5; atype++) {
+            if (acc_arrow_type_count[atype] != 1) {
+                mutable_raw_arrows += 1.0f;
+                acc_all_types_once = false;
+            }
+        }
+        if (acc_arrow_n_layers > 1) {
+            mutable_raw_arrows += (float)(acc_arrow_n_layers - 1);
+        }
+        if (acc_all_types_once && acc_arrow_n_layers == 1) {
+            float acc_left_x = acc_arrow_type_x[1];
+            float acc_right_x = acc_arrow_type_x[2];
+            float acc_up_x = acc_arrow_type_x[3];
+            float acc_down_x = acc_arrow_type_x[4];
+            float acc_left_y = acc_arrow_type_y[1];
+            float acc_right_y = acc_arrow_type_y[2];
+            float acc_up_y = acc_arrow_type_y[3];
+            float acc_down_y = acc_arrow_type_y[4];
+            bool acc_same_line = (
+                fabsf(acc_left_y - acc_up_y) <= 0.25f
+                && fabsf(acc_up_y - acc_down_y) <= 0.25f
+                && fabsf(acc_down_y - acc_right_y) <= 0.25f
+                && acc_left_x < acc_up_x
+                && acc_up_x < acc_down_x
+                && acc_down_x < acc_right_x
+                && (acc_right_x - acc_left_x) <= 4.5f
+            );
+            bool acc_split_cluster = (
+                fabsf(acc_left_y - acc_down_y) <= 0.25f
+                && fabsf(acc_down_y - acc_right_y) <= 0.25f
+                && acc_left_x < acc_down_x
+                && acc_down_x < acc_right_x
+                && acc_up_y < acc_down_y
+                && fabsf(acc_up_x - acc_down_x) <= 0.25f
+                && (acc_down_y - acc_up_y) <= 2.0f
+                && (acc_right_x - acc_left_x) <= 3.5f
+            );
+            if (!acc_same_line && !acc_split_cluster) {
+                mutable_raw_arrows += 1.0f;
+            }
+        }
+    }
+
 
     // -------------------------------------------------------------------------
     // Raw keyboard completion (Norwegian extra keys)
@@ -2290,7 +2378,7 @@ __device__ void evaluate_single(
     // -------------------------------------------------------------------------
     // Assemble raw scores
     // -------------------------------------------------------------------------
-    float raw_scores[28];
+    float raw_scores[30];
     raw_scores[0] = duplicate;
     raw_scores[1] = l0_displacement;
     raw_scores[2] = missing;
@@ -2329,6 +2417,8 @@ __device__ void evaluate_single(
     raw_scores[25] = unsupported_duplicate;
     raw_scores[26] = thumb_occ_restricted;
     raw_scores[27] = norwegian_completion_cluster;
+    raw_scores[28] = (float)mouse_global_right_thumb_count;
+    raw_scores[29] = mutable_raw_arrows;
 
     // -------------------------------------------------------------------------
     // Constraints
@@ -2341,7 +2431,7 @@ __device__ void evaluate_single(
     // Soft violations sum
     // -------------------------------------------------------------------------
     float violations_raw = 0.0f;
-    for (int j = 0; j < 28; j++) {
+    for (int j = 0; j < 30; j++) {
         violations_raw += raw_scores[j] * violation_weights[j];
     }
 
@@ -2439,7 +2529,7 @@ __device__ void evaluate_single(
     out[2] = objective_viol / scale_factors[2];
 
     if (raw_scores_out != nullptr) {
-        for (int j = 0; j < 28; j++) {
+        for (int j = 0; j < 30; j++) {
             raw_scores_out[j] = raw_scores[j];
         }
     }

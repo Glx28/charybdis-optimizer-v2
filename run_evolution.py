@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 from core.loader import build_layout
 from fitness.evaluator import FitnessEvaluator
 from fitness.kernel import NUMBA_AVAILABLE
+from fitness.kernel import VIOLATION_NAMES
 from fitness.kernel import _app_matches, _shortcut_duplicate_support
 from evolution import create_algorithm, LayoutProblem
 from evolution.surrogate import LayoutSurrogate, SurrogateTrainer, SurrogateManager
@@ -752,6 +753,14 @@ def main(argv=None):
     print(f"  Frozen genome positions filled: {frozen_filled} (L0 only — L7 is frozen outside training)", flush=True)
 
     hard_constraints = config.get("fitness.hard_constraints", [])
+    unknown_hard_constraints = [name for name in hard_constraints if name not in VIOLATION_NAMES]
+    if unknown_hard_constraints:
+        # precompute() silently drops unknown names; a typo would no-op the
+        # constraint and re-create the selection-invisibility blocker class.
+        raise ValueError(
+            f"Unknown fitness.hard_constraints entries: {unknown_hard_constraints}. "
+            f"Known kernel violation terms: {sorted(VIOLATION_NAMES)}"
+        )
 
     # Try to warmstart from local search result
     warmstart_path = os.path.join(args.output_dir, 'v2_local_search_result.json')
