@@ -104,6 +104,11 @@ class SurrogateTrainer:
         self._retrain_lock = threading.Lock()
         self._pending_mean = None
         self._pending_std = None
+        # CUDA streams are intentionally serialized on older GPUs. The exact
+        # evaluator and surrogate use different CUDA extensions/streams; on
+        # Pascal, overlapping them can surface as an asynchronous "unknown
+        # error" in a later prediction call.
+        self.cuda_serial = str(self.device).startswith("cuda")
         # Separate CUDA streams so background retraining does not block inference.
         if torch.cuda.is_available():
             self._inference_stream = torch.cuda.Stream()
@@ -167,6 +172,8 @@ class SurrogateTrainer:
                 self.history.append(avg_loss)
                 if epoch % 10 == 0:
                     print(f"  Surrogate epoch {epoch}: loss={avg_loss:.6f}")
+        if self._training_stream is not None:
+            self._training_stream.synchronize()
         # Keep model in eval mode between retrains — predict() does not flip it
         self.surrogate.eval()
 
@@ -213,6 +220,8 @@ class SurrogateTrainer:
                 avg_loss = float(total_loss_t.item()) / n
                 if epoch % 10 == 0:
                     print(f"  Surrogate epoch {epoch}: loss={avg_loss:.6f}", flush=True)
+        if self._training_stream is not None:
+            self._training_stream.synchronize()
         train_model.eval()
 
         with self._retrain_lock:
@@ -225,6 +234,8 @@ class SurrogateTrainer:
         with self._retrain_lock:
             if self._train_model is None:
                 return False
+            if self._inference_stream is not None:
+                self._inference_stream.synchronize()
             self.surrogate.load_state_dict(self._train_model.state_dict())
             self.mean = self._pending_mean
             self.std = self._pending_std
@@ -407,6 +418,19 @@ class SurrogateManager:
             f"  Async surrogate retrain submitted ({len(layouts)} of {n_cache} samples)...",
             flush=True,
         )
+        if self.trainer.cuda_serial:
+            # Do not overlap CUDA exact evaluation, inference, and training on
+            # Pascal. This costs wall time but prevents the driver/context race
+            # that otherwise kills long runs with an asynchronous CUDA error.
+            self.trainer.train_on_copy(
+                layouts, scores, self.retrain_epochs, self.retrain_batch_size,
+            )
+            # Reuse the normal collection path so the synchronized model is
+            # swapped and its health is reported immediately.
+            self._retrain_future = concurrent.futures.Future()
+            self._retrain_future.set_result(None)
+            self.maybe_collect_retrain()
+            return
         self._retrain_future = self._retrain_executor.submit(
             self.trainer.train_on_copy,
             layouts, scores, self.retrain_epochs, self.retrain_batch_size,

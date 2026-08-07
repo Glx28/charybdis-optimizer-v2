@@ -892,9 +892,16 @@ class CustomGARunner:
                     n_mini = min(self.mini_eval_count, n_children)
                     mini_idx = np.random.choice(n_children, n_mini, replace=False)
                     mini_batch = children_X[mini_idx].copy()
-                    mini_future = self._eval_executor.submit(
-                        self.evaluator.evaluate_batch, mini_batch
-                    )
+                    cuda_exact = bool(getattr(getattr(self.evaluator, "model", None), "_use_cuda", False))
+                    mini_future = None
+                    if not cuda_exact:
+                        mini_future = self._eval_executor.submit(
+                            self.evaluator.evaluate_batch, mini_batch
+                        )
+                    else:
+                        # CUDA exact evaluation must not overlap surrogate
+                        # inference on the GTX 1070/Pascal device.
+                        mini_F, mini_G = self.evaluator.evaluate_batch(mini_batch)
                     t0 = time.perf_counter()
                     pred = sm.trainer.predict(children_X)
                     if self.perf:
@@ -906,7 +913,8 @@ class CustomGARunner:
                         children_cv = np.zeros((n_children, n_cv_cols), dtype=np.float32)
                     # Collect exact results and splice back — overrides surrogate predictions
                     # for these children with ground-truth fitness and constraints.
-                    mini_F, mini_G = mini_future.result()
+                    if mini_future is not None:
+                        mini_F, mini_G = mini_future.result()
                     children_F[mini_idx] = mini_F
                     children_cv[mini_idx] = np.maximum(mini_G, 0)
                     sm.add_exact_evaluations(mini_batch, mini_F, mini_G)
