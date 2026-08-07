@@ -217,6 +217,9 @@ __device__ void evaluate_single(
     float hand_bias = 0.0f;
     float mouse_layer_access = 0.0f;
     float access_layout = 0.0f;
+    float mouse_button_order = 0.0f;
+    float mouse_layer_l0_hold = 0.0f;
+    float mouse_l0_access_quality = 0.0f;
 
     for (int f = 0; f < 8; f++) {
         s->finger_load[f] = 0.0f;
@@ -1156,7 +1159,7 @@ __device__ void evaluate_single(
         if (s->layer_access_cost[layer] >= 999999.0f) {
             access_layout += demand * 5.0f;
         } else if (demand >= 30.0f && !s->direct_l0_thumb_access[layer]) {
-            access_layout += log1pf(demand) * 12.0f;
+            access_layout += log1pf(demand) * 80.0f;
         }
         if (s->layer_access_cost[layer] > 3.0f) {
             access_layout += log1pf(demand) * (s->layer_access_cost[layer] - 3.0f);
@@ -1848,6 +1851,62 @@ __device__ void evaluate_single(
     // the empty candidate's flat "missing 5 buttons" baseline. This silently
     // made the effort-ordering pressure on the accepted mouse layer inert.
     float natural_mouse_layer_penalty = dynamic_mouse_layer;
+    if (natural_mouse_layer >= 0) {
+        if (
+            s->mouse_button_right[natural_mouse_layer][1] > 0
+            && s->mouse_button_right[natural_mouse_layer][2] > 0
+            && s->mouse_button_x[natural_mouse_layer][1] >= s->mouse_button_x[natural_mouse_layer][2]
+        ) {
+            mouse_button_order = 1.0f;
+        }
+
+        bool has_direct_l0_mouse_hold = false;
+        for (int i = 0; i < n_pos; i++) {
+            int sid = genome[i];
+            if (
+                sid >= 0 && sid < n_short
+                && pos_layer[i] == 0
+                && !pos_is_frozen[i]
+                && shortcut_access_target[sid] == natural_mouse_layer
+                && shortcut_access_momentary[sid]
+            ) {
+                has_direct_l0_mouse_hold = true;
+                break;
+            }
+        }
+        if (!has_direct_l0_mouse_hold) {
+            mouse_layer_l0_hold = 1.0f;
+        }
+
+        float best_l0_thumb_effort = 1000000.0f;
+        for (int i = 0; i < n_pos; i++) {
+            if (
+                pos_layer[i] == 0
+                && pos_is_thumb[i]
+                && !pos_is_frozen[i]
+                && pos_effort[i] < best_l0_thumb_effort
+            ) {
+                best_l0_thumb_effort = pos_effort[i];
+            }
+        }
+        if (best_l0_thumb_effort < 1000000.0f) {
+            for (int i = 0; i < n_pos; i++) {
+                int sid = genome[i];
+                if (sid < 0 || sid >= n_short) continue;
+                if (
+                    pos_layer[i] == 0
+                    && pos_is_thumb[i]
+                    && !pos_is_frozen[i]
+                    && shortcut_access_target[sid] == natural_mouse_layer
+                ) {
+                    float effort_gap = pos_effort[i] - best_l0_thumb_effort;
+                    if (effort_gap > 0.0f) {
+                        mouse_l0_access_quality += effort_gap * 180000.0f;
+                    }
+                }
+            }
+        }
+    }
     for (int layer = 0; layer < MAX_LAYERS; layer++) {
         if (layer == 0 || layer == 7) continue;
         int button_count = 0;
@@ -2036,6 +2095,9 @@ __device__ void evaluate_single(
         }
         if (button_count == 0 && !s->scroll_right_momentary[layer]) {
             candidate_penalty += 30000.0f;
+        }
+        if (layer == natural_mouse_layer) {
+            candidate_penalty += mouse_l0_access_quality;
         }
         if (candidate_penalty < dynamic_mouse_layer) {
             dynamic_mouse_layer = candidate_penalty;
@@ -2378,7 +2440,7 @@ __device__ void evaluate_single(
     // -------------------------------------------------------------------------
     // Assemble raw scores
     // -------------------------------------------------------------------------
-    float raw_scores[30];
+    float raw_scores[32];
     raw_scores[0] = duplicate;
     raw_scores[1] = l0_displacement;
     raw_scores[2] = missing;
@@ -2419,6 +2481,8 @@ __device__ void evaluate_single(
     raw_scores[27] = norwegian_completion_cluster;
     raw_scores[28] = (float)mouse_global_right_thumb_count;
     raw_scores[29] = mutable_raw_arrows;
+    raw_scores[30] = mouse_button_order;
+    raw_scores[31] = mouse_layer_l0_hold;
 
     // -------------------------------------------------------------------------
     // Constraints
@@ -2431,7 +2495,7 @@ __device__ void evaluate_single(
     // Soft violations sum
     // -------------------------------------------------------------------------
     float violations_raw = 0.0f;
-    for (int j = 0; j < 30; j++) {
+    for (int j = 0; j < 32; j++) {
         violations_raw += raw_scores[j] * violation_weights[j];
     }
 
@@ -2529,7 +2593,7 @@ __device__ void evaluate_single(
     out[2] = objective_viol / scale_factors[2];
 
     if (raw_scores_out != nullptr) {
-        for (int j = 0; j < 30; j++) {
+        for (int j = 0; j < 32; j++) {
             raw_scores_out[j] = raw_scores[j];
         }
     }

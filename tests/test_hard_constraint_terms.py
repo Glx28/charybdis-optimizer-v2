@@ -385,6 +385,8 @@ class TestHardConstraintConfigShape(unittest.TestCase):
         self.assertIn("unsupported_duplicate", hard)
         self.assertIn("thumb_occupancy_restricted", hard)
         self.assertIn("norwegian_completion_cluster", hard)
+        self.assertIn("mouse_button_order", hard)
+        self.assertIn("mouse_layer_l0_hold", hard)
 
     def test_config_v2_yaml_contains_new_hard_constraints(self):
         cfg = Config.load(os.path.join(os.path.dirname(__file__), "..", "config_v2.yaml"))
@@ -392,17 +394,23 @@ class TestHardConstraintConfigShape(unittest.TestCase):
         self.assertIn("unsupported_duplicate", hard)
         self.assertIn("thumb_occupancy_restricted", hard)
         self.assertIn("norwegian_completion_cluster", hard)
+        self.assertIn("mouse_button_order", hard)
+        self.assertIn("mouse_layer_l0_hold", hard)
 
     def test_violation_sub_weights_contain_new_terms(self):
         vw = DEFAULT_CONFIG["fitness"]["violation_sub_weights"]
         self.assertIn("unsupported_duplicate", vw)
         self.assertIn("thumb_occupancy_restricted", vw)
         self.assertIn("norwegian_completion_cluster", vw)
+        self.assertIn("mouse_button_order", vw)
+        self.assertIn("mouse_layer_l0_hold", vw)
         cfg = Config.load(os.path.join(os.path.dirname(__file__), "..", "config_v2.yaml"))
         yaml_vw = cfg.get("fitness.violation_sub_weights")
         self.assertEqual(vw["unsupported_duplicate"], yaml_vw["unsupported_duplicate"])
         self.assertEqual(vw["thumb_occupancy_restricted"], yaml_vw["thumb_occupancy_restricted"])
         self.assertEqual(vw["norwegian_completion_cluster"], yaml_vw["norwegian_completion_cluster"])
+        self.assertEqual(vw["mouse_button_order"], yaml_vw["mouse_button_order"])
+        self.assertEqual(vw["mouse_layer_l0_hold"], yaml_vw["mouse_layer_l0_hold"])
 
 
 if __name__ == "__main__":

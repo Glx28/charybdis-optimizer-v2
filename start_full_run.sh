@@ -14,10 +14,25 @@ OUT_DIR="build/runs/${RUN}"
 
 mkdir -p "$OUT_DIR" build/run_logs
 
-if tmux has-session -t "$SESSION" 2>/dev/null; then
-  echo "tmux session already exists: $SESSION"
-  echo "Attach with: tmux attach -t $SESSION"
-  exit 1
+# This launcher owns sessions with the charybdis_v2_ prefix. Rerunning it is
+# intentionally a restart: stop the previous optimizer before starting the
+# corrected code, instead of leaving two GPU runs competing for the device.
+OLD_SESSIONS="$(tmux list-sessions -F '#S' 2>/dev/null | awk '/^charybdis_v2_/ {print}')"
+if [[ -n "$OLD_SESSIONS" ]]; then
+  while IFS= read -r old_session; do
+    [[ -z "$old_session" ]] && continue
+    tmux kill-session -t "$old_session" 2>/dev/null || true
+    echo "Stopped previous optimizer session: $old_session"
+  done <<< "$OLD_SESSIONS"
+fi
+
+OLD_PIDS="$(pgrep -f -- "$ROOT/run_evolution.py" || true)"
+if [[ -n "$OLD_PIDS" ]]; then
+  while IFS= read -r old_pid; do
+    [[ -z "$old_pid" ]] && continue
+    kill "$old_pid" 2>/dev/null || true
+    echo "Stopped previous optimizer process: $old_pid"
+  done <<< "$OLD_PIDS"
 fi
 
 tmux new-session -d -s "$SESSION" \

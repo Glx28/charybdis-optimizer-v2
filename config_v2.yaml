@@ -6,7 +6,7 @@ evolution:
   crossover_prob: 0.7
   mutation_prob: 0.2
   group_overwrite_prob: 0.15
-  mouse_workflow_prob: 0.06
+  mouse_workflow_prob: 0.20
   l7_access_prob: 0.03
   random_assign_prob: 0.08
   bulk_assign_prob: 0.04
@@ -14,7 +14,7 @@ evolution:
   cluster_app_prob: 0.20
   effort_swap_prob: 0.06
   smart_duplicate_prob: 0.20
-  access_thumb_bias_prob: 0.15       # bias layer-access keys toward thumb positions
+  access_thumb_bias_prob: 0.30       # bias layer-access keys toward thumb positions
   return_toggle_repair_prob: 0.10    # repair missing return-to-L0 toggles
   toggle_own_layer_bias_prob: 0.12   # bias a layer's toggle onto that layer itself
   momentary_reuse_repair_prob: 0.10  # repair momentary_key_reuse conflicts
@@ -132,6 +132,10 @@ fitness:
     mouse_right_thumb_global: 200000.0
     # Hard-constraint tier: acceptance's mutable_raw_arrows_ok check (history: DECISION_LOG.md).
     mutable_raw_arrows: 200000.0
+    # MB1 must remain physically left of MB2 on the generated mouse layer.
+    mouse_button_order: 200000.0
+    # A generated mouse layer must have a direct L0 momentary hold path.
+    mouse_layer_l0_hold: 300000.0
   hard_constraints:
     - missing_important
     - layer7_access
@@ -146,6 +150,8 @@ fitness:
     # Systemic audit: remaining soft-only acceptance checks promoted before they could freeze the archive.
     - mouse_right_thumb_global
     - mutable_raw_arrows
+    - mouse_button_order
+    - mouse_layer_l0_hold
 output:
   checkpoint_interval: 500
   verbose: true

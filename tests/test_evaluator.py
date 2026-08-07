@@ -585,7 +585,10 @@ class TestEvaluator(unittest.TestCase):
             shortcuts,
             frozen,
         )
-        self.assertTrue(_dynamic_mouse_layer_report(no_momentary_access)["acceptance_pass"])
+        self.assertFalse(_dynamic_mouse_layer_report(no_momentary_access)["acceptance_pass"])
+        self.assertFalse(
+            _dynamic_mouse_layer_report(no_momentary_access)["best_candidate"]["direct_l0_momentary_access"]
+        )
 
         # A momentary-hold shortcut placed ON the mouse layer itself (source
         # layer == target layer, e.g. sid=10's own "L0->L3" label but placed
@@ -1217,10 +1220,12 @@ class TestEvaluator(unittest.TestCase):
         vweights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
         vweights["dynamic_mouse_layer"] = 1.0
         evaluator = FitnessEvaluator(weights=weights, reference_layout=correct_pair12, violation_weights=vweights,
-                                     hard_constraints=[], missing_important_threshold=99.0)
+                                     hard_constraints=["mouse_button_order"], missing_important_threshold=99.0)
         correct_score = evaluator.evaluate(correct_pair12).objectives[2]
         reversed_score = evaluator.evaluate(reversed_pair12).objectives[2]
         self.assertGreater(reversed_score, correct_score + 100000.0)
+        self.assertEqual(float(evaluator.evaluate(correct_pair12).constraints[0]), 0.0)
+        self.assertGreater(float(evaluator.evaluate(reversed_pair12).constraints[0]), 0.0)
 
         # MB4 left of MB5 (correct) vs MB5 left of MB4 (reversed), holding
         # MB1/MB2 order fixed and identical across both variants.

@@ -25,7 +25,7 @@ class TestMouseLayerAcceptanceTier(unittest.TestCase):
 
     def _build_mouse_layout(self, include_mouse=True):
         """Build a minimal layout with or without a complete mouse layer on L1."""
-        # pos 0: L0 left thumb — toggle to L1
+        # pos 0: L0 left thumb — direct momentary hold to L1
         # pos 1: L1 right index  — MB1
         # pos 2: L1 right middle — MB2
         # pos 3: L1 right ring   — MB3
@@ -44,12 +44,13 @@ class TestMouseLayerAcceptanceTier(unittest.TestCase):
             Position(6, 1, 2.0, 2.0, "right", 2, 0.7),   # non-thumb scroll access
             Position(7, 7, 1.0, 4.0, "left", 0, 0.4, is_thumb=True, is_frozen=True),
             Position(8, 7, 0.5, 4.0, "left", 0, 0.4, is_thumb=True, is_frozen=True),
+            Position(9, 0, 2.0, 4.0, "left", 0, 0.5, is_thumb=True),
         )
         shortcuts = (
-            # sid 0: L0->L1 toggle (access)
+            # sid 0: L0->L1 direct momentary hold (required mouse entry path)
             Shortcut(0, "@toggle:L0->L1:toggle", "Toggle", "Layer Access", 10.0,
                      "layer_access", is_layer_access=True, access_target_layer=1,
-                     access_is_momentary=False),
+                     access_is_momentary=True),
             # sid 1-5: MB1-MB5
             Shortcut(1, "MB1", "Mouse Button 1", "mouse", 8.0),
             Shortcut(2, "MB2", "Mouse Button 2", "mouse", 7.0),
@@ -68,13 +69,17 @@ class TestMouseLayerAcceptanceTier(unittest.TestCase):
             Shortcut(8, "@toggle:L0->L7:toggle", "L7 toggle", "Layer Access", 5.0,
                      "layer_access", is_layer_access=True, access_target_layer=7,
                      access_is_momentary=False),
+            # sid 9: separate L0 toggle keeps the external toggle requirement
+            Shortcut(9, "@toggle:L0->L1:toggle", "Toggle", "Layer Access", 10.0,
+                     "layer_access", is_layer_access=True, access_target_layer=1,
+                     access_is_momentary=False),
         )
-        frozen = np.array([False, False, False, False, False, False, False, True, True], dtype=np.bool_)
+        frozen = np.array([False, False, False, False, False, False, False, True, True, False], dtype=np.bool_)
         if include_mouse:
-            genome = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8], dtype=np.int32)
+            genome = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9], dtype=np.int32)
         else:
             # No mouse buttons placed — positions 1-5 empty
-            genome = np.array([0, -1, -1, -1, -1, -1, -1, 7, 8], dtype=np.int32)
+            genome = np.array([0, -1, -1, -1, -1, -1, -1, 7, 8, 9], dtype=np.int32)
         return Layout(genome, positions, shortcuts, frozen)
 
     def test_mouse_layer_check_is_in_optimizer_side(self):
@@ -95,6 +100,11 @@ class TestMouseLayerAcceptanceTier(unittest.TestCase):
         mouse_detail = report["details"]["dynamic_mouse_layer"]
         self.assertNotIn("final_acceptance_only", mouse_detail,
                          "final_acceptance_only was removed — it was misleading since the check runs at training time")
+
+    def test_primary_mouse_button_order_is_checked(self):
+        from evolution.acceptance import _mouse_button_order_report
+        report = _mouse_button_order_report(self._build_mouse_layout(include_mouse=True))
+        self.assertFalse(report["acceptance_pass"], "The fixture intentionally places MB1 right of MB2")
 
     def test_missing_mouse_layer_fails_optimizer_side(self):
         """Layout without valid mouse layer must have optimizer_side_pass=False."""

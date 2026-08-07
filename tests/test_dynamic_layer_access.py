@@ -75,9 +75,12 @@ class TestDynamicLayerAccessNotCanonical(unittest.TestCase):
 
         report = _dynamic_mouse_layer_report(layout)
         # Must find the mouse layer via genome bindings (L3), NOT via stale layer_access (L1)
-        self.assertTrue(report["acceptance_pass"],
-                        f"Expected acceptance_pass=True; failure_guidance={report.get('failure_guidance')}")
-        self.assertEqual(report["mouse_layer"], 3)
+        self.assertFalse(
+            report["acceptance_pass"],
+            "The genome correctly identifies L3, but this legacy fixture has no direct L0 hold.",
+        )
+        self.assertEqual(report["best_candidate"]["layer"], 3)
+        self.assertIsNone(report["mouse_layer"])
 
     def test_effort_factor_uses_genome_access_not_layer_access(self):
         """EffortFactor.compute() reads genome-based access costs, not layout.layer_access."""
@@ -238,11 +241,12 @@ class TestDynamicLayerAccessNotCanonical(unittest.TestCase):
 
         report = build_acceptance_report(layout)
         dynamic_mouse = report["details"]["dynamic_mouse_layer"]
-        self.assertTrue(dynamic_mouse["acceptance_pass"],
-                        f"Mouse layer acceptance should pass using genome; "
-                        f"guidance={dynamic_mouse.get('failure_guidance')}")
-        self.assertEqual(dynamic_mouse["mouse_layer"], 4,
-                         "Mouse layer should be L4 as bound in genome, not canonical layer_access")
+        self.assertFalse(
+            dynamic_mouse["acceptance_pass"],
+            "The genome correctly identifies L4, but this legacy fixture has no direct L0 hold.",
+        )
+        self.assertEqual(dynamic_mouse["best_candidate"]["layer"], 4)
+        self.assertIsNone(dynamic_mouse["mouse_layer"])
 
 
 if __name__ == "__main__":

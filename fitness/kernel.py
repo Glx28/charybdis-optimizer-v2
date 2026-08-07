@@ -45,6 +45,8 @@ VIOLATION_NAMES = (
     "norwegian_completion_cluster",
     "mouse_right_thumb_global",
     "mutable_raw_arrows",
+    "mouse_button_order",
+    "mouse_layer_l0_hold",
 )
 
 
@@ -600,6 +602,8 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         vw.get("norwegian_completion_cluster", DEFAULT_VIOLATION_WEIGHTS.get("norwegian_completion_cluster", 200000.0)),
         vw.get("mouse_right_thumb_global", DEFAULT_VIOLATION_WEIGHTS.get("mouse_right_thumb_global", 200000.0)),
         vw.get("mutable_raw_arrows", DEFAULT_VIOLATION_WEIGHTS.get("mutable_raw_arrows", 200000.0)),
+        vw.get("mouse_button_order", DEFAULT_VIOLATION_WEIGHTS.get("mouse_button_order", 200000.0)),
+        vw.get("mouse_layer_l0_hold", DEFAULT_VIOLATION_WEIGHTS.get("mouse_layer_l0_hold", 300000.0)),
     ], dtype=np.float32)
 
     hard_constraints = hard_constraints or []
@@ -1506,7 +1510,7 @@ if NUMBA_AVAILABLE:
             if layer_access_cost[layer] >= 999999.0:
                 access_layout += demand * 5.0
             elif demand >= 30.0 and not direct_l0_thumb_access[layer]:
-                access_layout += math.log1p(demand) * 12.0
+                access_layout += math.log1p(demand) * 80.0
             if layer_access_cost[layer] > 3.0:
                 access_layout += math.log1p(demand) * (layer_access_cost[layer] - 3.0)
             direct_l0_accesses = l0_direct_hold_count[layer] + l0_direct_toggle_count[layer]
@@ -2126,6 +2130,56 @@ if NUMBA_AVAILABLE:
         # refinement once a mouse layer is established; the layer-wide min is
         # kept only to guide search toward completeness before one exists.
         natural_mouse_layer_penalty = dynamic_mouse_layer
+        mouse_button_order = 0.0
+        mouse_layer_l0_hold = 0.0
+        mouse_l0_access_quality = 0.0
+        if natural_mouse_layer >= 0:
+            if (
+                mouse_button_right[natural_mouse_layer, 1] > 0
+                and mouse_button_right[natural_mouse_layer, 2] > 0
+                and mouse_button_x[natural_mouse_layer, 1] >= mouse_button_x[natural_mouse_layer, 2]
+            ):
+                mouse_button_order = 1.0
+
+            has_direct_l0_mouse_hold = False
+            for i in range(n_pos):
+                sid = genome[i]
+                if sid < 0 or sid >= n_short:
+                    continue
+                if (
+                    pos_layer[i] == 0
+                    and not pos_is_frozen[i]
+                    and shortcut_access_target[sid] == natural_mouse_layer
+                    and shortcut_access_momentary[sid]
+                ):
+                    has_direct_l0_mouse_hold = True
+                    break
+            if not has_direct_l0_mouse_hold:
+                mouse_layer_l0_hold = 1.0
+
+            best_l0_thumb_effort = 1000000.0
+            for i in range(n_pos):
+                if (
+                    pos_layer[i] == 0
+                    and pos_is_thumb[i]
+                    and not pos_is_frozen[i]
+                    and pos_effort[i] < best_l0_thumb_effort
+                ):
+                    best_l0_thumb_effort = pos_effort[i]
+            if best_l0_thumb_effort < 1000000.0:
+                for i in range(n_pos):
+                    sid = genome[i]
+                    if sid < 0 or sid >= n_short:
+                        continue
+                    if (
+                        pos_layer[i] == 0
+                        and pos_is_thumb[i]
+                        and not pos_is_frozen[i]
+                        and shortcut_access_target[sid] == natural_mouse_layer
+                    ):
+                        effort_gap = pos_effort[i] - best_l0_thumb_effort
+                        if effort_gap > 0.0:
+                            mouse_l0_access_quality += effort_gap * 180000.0
         for layer in range(32):
             if layer == 0 or layer == 7:
                 continue
@@ -2295,6 +2349,8 @@ if NUMBA_AVAILABLE:
                 candidate_penalty += 25000.0
             if button_count == 0 and not scroll_right_momentary[layer]:
                 candidate_penalty += 30000.0
+            if layer == natural_mouse_layer:
+                candidate_penalty += mouse_l0_access_quality
             if candidate_penalty < dynamic_mouse_layer:
                 dynamic_mouse_layer = candidate_penalty
             if layer == natural_mouse_layer:
@@ -2643,7 +2699,7 @@ if NUMBA_AVAILABLE:
                 else:
                     empty_pos_waste += pos_effort_waste[i]
 
-        raw_scores = np.empty(30, dtype=np.float32)
+        raw_scores = np.empty(32, dtype=np.float32)
         raw_scores[0] = duplicate
         raw_scores[1] = l0_displacement
         raw_scores[2] = missing
@@ -2685,6 +2741,8 @@ if NUMBA_AVAILABLE:
         raw_scores[27] = norwegian_completion_cluster
         raw_scores[28] = float(mouse_global_right_thumb_count)
         raw_scores[29] = mutable_raw_arrows
+        raw_scores[30] = mouse_button_order
+        raw_scores[31] = mouse_layer_l0_hold
 
         # Hard constraints (g(x) <= 0 convention; raw_scores are >= 0).
         n_constr = hard_constraint_indices.shape[0]
@@ -2694,7 +2752,7 @@ if NUMBA_AVAILABLE:
 
         # Soft penalties weighted and summed into the violations objective.
         violations_raw = 0.0
-        for j in range(30):
+        for j in range(32):
             violations_raw += raw_scores[j] * violation_weights[j]
 
         workflow = 0.0

@@ -255,6 +255,15 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
                 and not row["frozen"]
             )
         ]
+        direct_l0_momentary_access = [
+            row for row in access_rows
+            if (
+                row["source_layer"] == 0
+                and row["target_layer"] == layer
+                and row["momentary"]
+                and not row["frozen"]
+            )
+        ]
         passed = (
             not missing
             and not duplicate_same_side
@@ -263,6 +272,7 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
             and not right_thumb_momentary_access
             and bool(right_scroll_momentary)
             and bool(reachable_toggle_access)
+            and bool(direct_l0_momentary_access)
         )
         candidates.append({
             "layer": layer,
@@ -278,6 +288,7 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
             "momentary_access": momentary_access,
             "right_thumb_momentary_access": right_thumb_momentary_access,
             "reachable_toggle_access": reachable_toggle_access,
+            "direct_l0_momentary_access": direct_l0_momentary_access,
             "acceptance_pass": passed,
         })
 
@@ -333,6 +344,10 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
                 failure_guidance.append("Move momentary mouse-layer access off the right-thumb side.")
             if not best_candidate["reachable_toggle_access"]:
                 failure_guidance.append("Add or preserve a reachable toggle access path to the candidate mouse layer.")
+            if not best_candidate["direct_l0_momentary_access"]:
+                failure_guidance.append(
+                    "Place a direct L0 momentary hold for the generated mouse layer on a prime thumb position."
+                )
     return {
         "acceptance_pass": bool(passing),
         "mouse_layer": passing[0]["layer"] if passing else None,
@@ -346,7 +361,45 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
             "right_hand_non_thumb_momentary_scroll_on_mouse_layer": True,
             "no_right_thumb_momentary_mouse_layer_access": True,
             "reachable_toggle_access": True,
+            "direct_l0_momentary_mouse_layer_access": True,
         },
+    }
+
+
+def _mouse_button_order_report(layout: Layout) -> Dict:
+    """Require the primary mouse-button shape to read left-click then right-click."""
+    dynamic = _dynamic_mouse_layer_report(layout)
+    layer = dynamic.get("mouse_layer")
+    if layer is None:
+        return {
+            "acceptance_pass": True,
+            "reason": "no_accepted_mouse_layer",
+            "mouse_layer": None,
+        }
+
+    positions = {}
+    for _, pos, shortcut in _assigned_shortcuts(layout):
+        if int(pos.layer) != int(layer) or shortcut.keys not in {"MB1", "MB2"}:
+            continue
+        if pos.hand == "right" and not pos.is_thumb:
+            positions[shortcut.keys] = {"x": float(pos.x), "y": float(pos.y)}
+
+    missing = sorted({"MB1", "MB2"} - set(positions))
+    if missing:
+        return {
+            "acceptance_pass": True,
+            "reason": "primary_buttons_not_both_present",
+            "mouse_layer": int(layer),
+            "positions": positions,
+            "missing": missing,
+        }
+
+    valid = positions["MB1"]["x"] < positions["MB2"]["x"]
+    return {
+        "acceptance_pass": valid,
+        "reason": "mb1_left_of_mb2" if valid else "mb1_not_left_of_mb2",
+        "mouse_layer": int(layer),
+        "positions": positions,
     }
 
 
@@ -734,6 +787,7 @@ def build_acceptance_report(
     fake_scroll = _fake_scroll_assignments(layout)
     scroll_access = _scroll_mode_access(layout)
     dynamic_mouse = _dynamic_mouse_layer_report(layout)
+    mouse_button_order = _mouse_button_order_report(layout)
     right_thumb_mouse = _global_right_thumb_mouse_button_report(layout)
     thumb_clearance = _momentary_only_thumb_clearance_report(layout)
     win_s = _find_assigned_keys(layout, "Win+S")
@@ -755,6 +809,7 @@ def build_acceptance_report(
         "win_s_present": len(win_s) > 0,
         "mutable_raw_arrows_ok": bool(arrow_report.get("acceptance_pass")),
         "no_same_layer_duplicates": bool(no_same_layer_dup.get("acceptance_pass")),
+        "mouse_button_order": bool(mouse_button_order.get("acceptance_pass")),
     }
     # Export check is always False during training; set externally after export.
     export_checks = {
@@ -780,6 +835,9 @@ def build_acceptance_report(
             numeric_distances["mouse_right_thumb_placements"] = len(best.get("right_thumb_button_placements", []))
             numeric_distances["mouse_right_scroll_ok"] = bool(best.get("right_momentary_scroll_access"))
             numeric_distances["mouse_toggle_access_ok"] = bool(best.get("reachable_toggle_access"))
+            numeric_distances["mouse_direct_l0_momentary_access_ok"] = bool(
+                best.get("direct_l0_momentary_access")
+            )
         else:
             numeric_distances["mouse_no_candidate_layer"] = True
     if not optimizer_side_checks["no_mouse_buttons_on_right_thumb_area_global"]:
@@ -804,6 +862,8 @@ def build_acceptance_report(
             "Remove same-layer duplicate shortcuts (only the dynamic mouse layer's "
             f"MB1-MB5 may have one left+one right copy): {preview}"
         )
+    if not optimizer_side_checks["mouse_button_order"]:
+        failure_guidance.append("Place MB1 to the left of MB2 on the generated mouse layer.")
 
     return {
         "checks": checks,
@@ -829,5 +889,6 @@ def build_acceptance_report(
             "mutable_bluetooth_or_output_assignments": mutable_bt,
             "transparent_keys": transparent,
             "no_same_layer_duplicates": no_same_layer_dup,
+            "mouse_button_order": mouse_button_order,
         },
     }
