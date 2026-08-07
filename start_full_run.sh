@@ -17,7 +17,9 @@ mkdir -p "$OUT_DIR" build/run_logs
 # This launcher owns sessions with the charybdis_v2_ prefix. Rerunning it is
 # intentionally a restart: stop the previous optimizer before starting the
 # corrected code, instead of leaving two GPU runs competing for the device.
-OLD_SESSIONS="$(tmux list-sessions -F '#S' 2>/dev/null | awk '/^charybdis_v2_/ {print}')"
+# tmux exits 1 when no server exists; that is the normal first-run state.
+OLD_SESSIONS="$(tmux list-sessions -F '#S' 2>/dev/null || true)"
+OLD_SESSIONS="$(printf '%s\n' "$OLD_SESSIONS" | awk '/^charybdis_v2_/ {print}')"
 if [[ -n "$OLD_SESSIONS" ]]; then
   while IFS= read -r old_session; do
     [[ -z "$old_session" ]] && continue
