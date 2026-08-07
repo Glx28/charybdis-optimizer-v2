@@ -23,7 +23,7 @@ evolution:
   mouse_hold_conflict_repair_prob: 0.05    # repair mouse_hold_position_conflict
   thumb_occupancy_repair_prob: 0.05        # repair restricted-thumb occupancy
   same_layer_duplicate_repair_prob: 0.05   # repair same-layer duplicates (hard constraint)
-  l0_hold_completion_prob: 0.08            # repair L0 toggle-without-hold penalty
+  l0_hold_completion_prob: 0.60            # strong hold-first repair for L0 access
   unsupported_duplicate_repair_prob: 0.05  # blank extra copies of evidence-backed support<0.25 duplicates
   feasibility_first_selection: true        # Deb (2000) feasibility rules in tournament selection
   seed: 42

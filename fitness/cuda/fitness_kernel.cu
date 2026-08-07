@@ -1168,15 +1168,15 @@ __device__ void evaluate_single(
         if (s->l0_direct_toggle_count[layer] > 0 && s->l0_direct_hold_count[layer] == 0) {
             // L0 should prefer quick momentary holds. A direct toggle is still
             // allowed, but if it is the only direct L0 path to a demanded layer
-            // it must lose to an equivalent hold unless toggle-mode usage earns it.
+            // it must lose decisively to an equivalent hold.
             access_layout += (float)s->l0_direct_toggle_count[layer] *
-                (35.0f + log1pf(demand) * 18.0f + s->l0_direct_access_cost[layer] * 0.8f);
+                (250.0f + log1pf(demand) * 80.0f + s->l0_direct_access_cost[layer] * 3.0f);
         }
         if (direct_l0_accesses > 1) {
             float redundant = (float)(direct_l0_accesses - 1);
             float mixed_mode = (s->l0_direct_hold_count[layer] > 0 && s->l0_direct_toggle_count[layer] > 0) ? 1.0f : 0.0f;
             access_layout += redundant * (60.0f + log1pf(demand) * 22.0f);
-            access_layout += mixed_mode * (90.0f + s->l0_direct_access_cost[layer] * 0.6f);
+            access_layout += mixed_mode * (400.0f + s->l0_direct_access_cost[layer] * 2.0f);
         }
     }
 

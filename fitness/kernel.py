@@ -1517,20 +1517,18 @@ if NUMBA_AVAILABLE:
             if l0_direct_toggle_count[layer] > 0 and l0_direct_hold_count[layer] == 0:
                 # L0 should prefer quick momentary holds. A direct toggle is
                 # still allowed, but if it is the only direct L0 path to a
-                # demanded layer it must pay enough to lose to an equivalent
-                # hold unless toggle-mode usage genuinely compensates elsewhere.
+                # demanded layer it must pay heavily to lose to an equivalent
+                # hold. This is intentionally a strong preference.
                 access_layout += l0_direct_toggle_count[layer] * (
-                    35.0 + math.log1p(demand) * 18.0 + l0_direct_access_cost[layer] * 0.8
+                    250.0 + math.log1p(demand) * 80.0 + l0_direct_access_cost[layer] * 3.0
                 )
             if direct_l0_accesses > 1:
-                # Both direct hold and direct toggle to the same target on L0 can
-                # be useful, but it consumes scarce thumb real estate. Prefer one
-                # excellent direct access plus cheaper secondary paths unless the
-                # layer demand truly justifies both.
+                # Mixed hold+toggle access consumes scarce thumb real estate and
+                # should lose decisively to hold-only access.
                 redundant = float(direct_l0_accesses - 1)
                 mixed_mode = 1.0 if (l0_direct_hold_count[layer] > 0 and l0_direct_toggle_count[layer] > 0) else 0.0
                 access_layout += redundant * (60.0 + math.log1p(demand) * 22.0)
-                access_layout += mixed_mode * (90.0 + l0_direct_access_cost[layer] * 0.6)
+                access_layout += mixed_mode * (400.0 + l0_direct_access_cost[layer] * 2.0)
 
         layer7_access = 0.0
         if not reachable_momentary_access[7]:

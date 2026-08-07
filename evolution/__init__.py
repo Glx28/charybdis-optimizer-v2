@@ -1644,6 +1644,16 @@ if NUMBA_AVAILABLE:
             state = np.empty(1, dtype=np.uint64)
             state[0] = seeds[i]
 
+            # Complete toggle-only L0 access before generic mutation can
+            # consume the available mutable position.
+            if _rand_float(state) < probs[12]:
+                if _numba_repair_l0_hold_completion(X[i], state, pos_layer_arr, pos_physical_id_arr,
+                                                    access_target_lut, access_is_mo_lut,
+                                                    layer_mutable_flat, layer_mutable_start,
+                                                    pos_is_thumb_arr, hold_sid_for_target, n_shortcuts):
+                    handled[i] = True
+                    continue
+
             if _rand_float(state) < probs[0]:
                 if _numba_random_reassign_one(X[i], state, mutable_arr, pos_layer_arr, assignable_arr,
                                               is_group_sid_lut, is_important_sid_lut, access_target_lut,
@@ -1721,14 +1731,6 @@ if NUMBA_AVAILABLE:
             if _rand_float(state) < probs[11]:
                 if _numba_repair_same_layer_duplicate(X[i], state, pos_layer_arr, pos_is_frozen_arr,
                                                       is_mouse_button_lut, n_shortcuts):
-                    handled[i] = True
-                    continue
-
-            if _rand_float(state) < probs[12]:
-                if _numba_repair_l0_hold_completion(X[i], state, pos_layer_arr, pos_physical_id_arr,
-                                                    access_target_lut, access_is_mo_lut,
-                                                    layer_mutable_flat, layer_mutable_start,
-                                                    pos_is_thumb_arr, hold_sid_for_target, n_shortcuts):
                     handled[i] = True
                     continue
 
@@ -4757,6 +4759,10 @@ class SwapMutation(Mutation):
             for i in range(n):
                 if handled[i]:
                     continue
+                if (random.random() < self.l0_hold_completion_prob
+                        and self._repair_l0_hold_completion(X[i])):
+                    handled[i] = True
+                    continue
                 if random.random() < self.random_assign_prob and self._random_reassign_one(X[i]):
                     handled[i] = True
                     continue
@@ -4791,9 +4797,6 @@ class SwapMutation(Mutation):
                     handled[i] = True
                     continue
                 if random.random() < self.same_layer_duplicate_repair_prob and self._repair_same_layer_duplicate(X[i]):
-                    handled[i] = True
-                    continue
-                if random.random() < self.l0_hold_completion_prob and self._repair_l0_hold_completion(X[i]):
                     handled[i] = True
                     continue
                 if (random.random() < self.unsupported_duplicate_repair_prob

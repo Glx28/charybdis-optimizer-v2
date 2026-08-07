@@ -27,7 +27,7 @@ DEFAULT_CONFIG = {
         "mouse_hold_conflict_repair_prob": 0.05,
         "thumb_occupancy_repair_prob": 0.05,
         "same_layer_duplicate_repair_prob": 0.05,
-        "l0_hold_completion_prob": 0.08,
+        "l0_hold_completion_prob": 0.60,
         "unsupported_duplicate_repair_prob": 0.05,
         "eliminate_duplicates": False,
         "feasibility_first_selection": True,
