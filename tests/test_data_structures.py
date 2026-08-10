@@ -398,6 +398,47 @@ class TestDataStructures(unittest.TestCase):
         for keys, expected in cases.items():
             self.assertEqual(parse_shortcut_keys_norwegian(keys), expected)
 
+    def test_pointer_mode_capabilities_are_appended_last(self):
+        layout_data = {"n_layers": 3, "l0_frozen": {}}
+        app_scores = {
+            "apps": [{
+                "name": "Browser",
+                "shortcuts": [
+                    {"keys": "Ctrl+J", "action": "Downloads", "importance": 5.0},
+                ],
+            }]
+        }
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json", encoding="utf-8") as f:
+            json.dump(app_scores, f)
+            path = f.name
+        try:
+            shortcuts = load_shortcuts(path, layout_data)
+        finally:
+            os.unlink(path)
+
+        expected = {
+            "@ptr:snipe_hold": "SnipeHold",
+            "@ptr:fast_hold": "FastHold",
+            "@ptr:snipe_mode": "SnipeMode",
+            "@ptr:normal_mode": "NormalMode",
+            "@ptr:fast_mode": "FastMode",
+        }
+        by_key = {s.keys: s for s in shortcuts}
+        for keys, base_key in expected.items():
+            self.assertIn(keys, by_key)
+            sc = by_key[keys]
+            self.assertEqual(sc.base_key, base_key)
+            self.assertEqual(sc.category, "pointer_mode")
+            self.assertEqual(sc.preferred_hand, "right")
+            self.assertEqual(sc.importance, 3.0)
+            self.assertTrue(sc.is_capability)
+            self.assertFalse(sc.is_layer_access)
+            self.assertNotIn("scroll", (sc.keys + sc.action + sc.base_key).lower())
+        # Appended at the very end, in declaration order, so every pre-existing
+        # sid keeps its index (warmstart safety).
+        self.assertEqual([s.keys for s in shortcuts[-5:]], list(expected.keys()))
+        self.assertEqual([s.sid for s in shortcuts], list(range(len(shortcuts))))
+
 
 if __name__ == "__main__":
     unittest.main()

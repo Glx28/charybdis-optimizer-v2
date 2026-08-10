@@ -465,7 +465,49 @@ def load_shortcuts(path: str, layout_data: Optional[dict] = None) -> List[Shortc
     # completion cluster cannot form because there is nothing to cluster.
     _ensure_raw_completion_shortcuts(shortcuts)
 
+    # Pointer speed-mode capabilities (firmware key behaviors, ZMK Studio
+    # display-names "Snipe Hold"/"Fast Hold"/"Snipe Mode"/"Normal Mode"/"Fast
+    # Mode"). Synthesized here — never from JSON — so the keypress parsers stay
+    # bypassed and all existing sids keep their indices (warmstart safety).
+    # No "scroll" in any text field (would trigger scroll-mode detection).
+    # importance 3.0 keeps them optional (< missing_important_threshold 6.0);
+    # category "pointer_mode" keeps them out of all mouse/scroll/kernel
+    # special-casing while still pulling them toward the trackball via the
+    # trackball_proximity factor ("pointer" match). preferred_hand "right"
+    # because the firmware behaviors only work from right-half positions
+    # (the trackball listener lives on the right/central half).
+    _ensure_pointer_mode_shortcuts(shortcuts)
+
     return shortcuts
+
+
+def _ensure_pointer_mode_shortcuts(shortcuts: List[Shortcut]):
+    """Append the five pointer speed-mode capabilities to the gene pool."""
+    specs = [
+        ("@ptr:snipe_hold", "SnipeHold", "Pointer snipe hold: 0.25x speed while held."),
+        ("@ptr:fast_hold", "FastHold", "Pointer fast hold: 3x speed while held."),
+        ("@ptr:snipe_mode", "SnipeMode", "Pointer snipe mode: persistent 0.25x speed."),
+        ("@ptr:normal_mode", "NormalMode", "Pointer normal mode: persistent 1x speed."),
+        ("@ptr:fast_mode", "FastMode", "Pointer fast mode: persistent 3x speed."),
+    ]
+    seen_keys = {sc.keys.upper() for sc in shortcuts}
+    for keys, base_key, action in specs:
+        if keys.upper() in seen_keys:
+            continue
+        seen_keys.add(keys.upper())
+        shortcuts.append(Shortcut(
+            sid=len(shortcuts),
+            keys=keys,
+            action=action,
+            app="Mouse",
+            importance=3.0,
+            category="pointer_mode",
+            modifiers=tuple(),
+            base_key=base_key,
+            is_capability=True,
+            complexity=1,
+            preferred_hand="right",
+        ))
 
 
 def _ensure_raw_completion_shortcuts(shortcuts: List[Shortcut]):
