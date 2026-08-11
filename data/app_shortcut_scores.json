@@ -12300,6 +12300,33 @@
           ]
         }
       ]
+    },
+    {
+      "name": "PowerToys",
+      "user_weight": 1,
+      "total_shortcuts": 1,
+      "mapped": 0,
+      "unmapped": 0,
+      "coverage_pct": 0,
+      "weighted_score": 0,
+      "weighted_max": 0,
+      "efficiency_pct": 0,
+      "unmapped_high_frequency": [],
+      "shortcuts": [
+        {
+          "keys": "Alt+Space",
+          "action": "PowerToys Run launcher",
+          "category": "System Shortcuts",
+          "frequency": "high",
+          "freq_weight": 8,
+          "importance": 10,
+          "mapped": false,
+          "match_count": 0,
+          "best_match": null,
+          "access_score": 0,
+          "weighted_access": 0
+        }
+      ]
     }
   ]
 }

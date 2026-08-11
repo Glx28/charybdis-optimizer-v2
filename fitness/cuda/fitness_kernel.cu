@@ -2142,11 +2142,17 @@ __device__ void evaluate_single(
         }
     }
 
-    // unsupported_duplicate: mirrors acceptance's
+    // unsupported_duplicate: stricter form of acceptance's
     // unsupported_duplicates_near_zero class (run_evolution.analyze_duplicates)
     // -- a cross-layer duplicate (same sid on 2+ distinct generated layers, L7
-    // excluded) that has some usage evidence (support > 0; zero-evidence
-    // duplicates are tolerated) but duplicate support < 0.25. Mouse buttons,
+    // excluded) with duplicate support < 0.25. Zero-evidence duplicates
+    // (support <= 0) are NO LONGER tolerated: catalog entries with zero real
+    // usage (Alt+Click/Ctrl+Click/Shift+Click) were being cloned across up to 9
+    // layers -- 15 click placements in recent runs -- because the old
+    // `support <= 0.0` escape skipped exactly the shortcuts with no evidence
+    // justifying any duplicate. Only duplicates are penalized: a single
+    // placement never reaches this term (dup_layers >= 2 required), so forced
+    // zero-usage placements (Win+S, Alt+Space) are unaffected. Mouse buttons,
     // protected-group members, and _base_/is_l0_only shortcuts are excluded.
     // Magnitude is the number of extra copies beyond the first placement.
     // Mirrors fitness/kernel.py.
@@ -2163,7 +2169,7 @@ __device__ void evaluate_single(
         }
         if (in_group) continue;
         float support = duplicate_support[sid];
-        if (support <= 0.0f || support >= 0.25f) continue;
+        if (support >= 0.25f) continue;
         int dup_layers = 0;
         int dup_copies = 0;
         for (int layer = 0; layer < MAX_LAYERS; layer++) {

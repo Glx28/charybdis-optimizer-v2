@@ -5,7 +5,10 @@ Both terms exist so acceptance checks that were previously invisible to Deb
 feasibility-first selection (soft, ~1000x below the objective noise floor)
 become hard constraints. Classification must match acceptance
 (run_evolution.analyze_duplicates / evolution/acceptance.py
-momentary_only_thumb_side_clear).
+momentary_only_thumb_side_clear), except that unsupported_duplicate is
+deliberately stricter than acceptance on zero-evidence duplicates
+(support <= 0): those are penalized here while analyze_duplicates still
+files them as uncertain (needs_more_logger_data).
 """
 import os
 import sys
@@ -34,8 +37,10 @@ def _precompute(layout, hard_constraints):
 
 class TestUnsupportedDuplicateConstraint(unittest.TestCase):
     """unsupported_duplicate: cross-layer duplicate (same sid on 2+ distinct
-    generated layers, L7 excluded) with usage evidence (support > 0) but
-    duplicate support < 0.25. Magnitude = extra copies beyond the first."""
+    generated layers, L7 excluded) with duplicate support < 0.25 — including
+    zero-evidence duplicates (support <= 0), which are no longer tolerated
+    because zero-usage catalog clicks were being cloned across many layers.
+    Magnitude = extra copies beyond the first."""
 
     HC = ["unsupported_duplicate"]
 
@@ -83,9 +88,18 @@ class TestUnsupportedDuplicateConstraint(unittest.TestCase):
         arrays = _precompute(layout, self.HC)
         self.assertEqual(float(_single_genome(layout.genome, *arrays)[1][0]), 0.0)
 
-    def test_zero_evidence_duplicate_tolerated(self):
+    def test_zero_evidence_duplicate_counts(self):
+        # Zero-usage catalog shortcuts (support == 0) must NOT escape the
+        # constraint: 2 copies on 2 layers -> magnitude 1. Single placements
+        # stay free (dup_layers >= 2 required).
         layout = self._build(
             [0, -1, -1, -1, 0, 1, -1, -1], self._shortcuts(), UsageData())
+        arrays = _precompute(layout, self.HC)
+        self.assertEqual(float(_single_genome(layout.genome, *arrays)[1][0]), 1.0)
+
+    def test_zero_evidence_single_placement_free(self):
+        layout = self._build(
+            [0, -1, -1, -1, -1, 1, -1, -1], self._shortcuts(), UsageData())
         arrays = _precompute(layout, self.HC)
         self.assertEqual(float(_single_genome(layout.genome, *arrays)[1][0]), 0.0)
 

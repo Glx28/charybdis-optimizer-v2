@@ -2386,14 +2386,20 @@ if NUMBA_AVAILABLE:
                 if c > cap:
                     same_layer_duplicate += float(c - cap)
 
-        # unsupported_duplicate: mirrors acceptance's
+        # unsupported_duplicate: stricter form of acceptance's
         # unsupported_duplicates_near_zero class (run_evolution.analyze_duplicates)
         # -- a cross-layer duplicate (same sid on 2+ distinct generated layers,
-        # L7 excluded) that has some usage evidence (support > 0; zero-evidence
-        # duplicates are tolerated) but duplicate support < 0.25. Mouse buttons,
-        # protected-group members, and _base_/is_l0_only shortcuts are excluded
-        # (their duplicate rules live elsewhere). Magnitude is the number of
-        # extra copies beyond the first placement.
+        # L7 excluded) with duplicate support < 0.25. Zero-evidence duplicates
+        # (support <= 0) are NO LONGER tolerated here: catalog entries with zero
+        # real usage (Alt+Click/Ctrl+Click/Shift+Click) were being cloned across
+        # up to 9 layers -- 15 click placements in recent runs -- because the
+        # old `support <= 0.0` escape skipped exactly the shortcuts with no
+        # evidence justifying any duplicate. Only duplicates are penalized: a
+        # single placement never reaches this term (dup_layers >= 2 required),
+        # so forced zero-usage placements (Win+S, Alt+Space) are unaffected.
+        # Mouse buttons, protected-group members, and _base_/is_l0_only
+        # shortcuts are excluded (their duplicate rules live elsewhere).
+        # Magnitude is the number of extra copies beyond the first placement.
         unsupported_duplicate = 0.0
         for sid in range(n_short):
             if shortcut_l0_only[sid]:
@@ -2408,7 +2414,7 @@ if NUMBA_AVAILABLE:
             if in_group:
                 continue
             support = duplicate_support[sid]
-            if support <= 0.0 or support >= 0.25:
+            if support >= 0.25:
                 continue
             dup_layers = 0
             dup_copies = 0

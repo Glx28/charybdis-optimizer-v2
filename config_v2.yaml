@@ -64,6 +64,9 @@ fitness:
     everything_layer: 4.0
   shortcut_importance_overrides:
     Win+S: 12.0
+    # Alt+Space: PowerToys Run launcher — forced placement like Win+S (dedicated
+    # firmware behavior launcher_powertoys, see coach_beacon_macros.keymap.dtsi)
+    Alt+Space: 12.0
     LeftArrow: 4.0
     RightArrow: 4.0
     UpArrow: 4.0

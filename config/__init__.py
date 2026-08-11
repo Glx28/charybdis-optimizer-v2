@@ -74,6 +74,7 @@ DEFAULT_CONFIG = {
         },
         "shortcut_importance_overrides": {
             "Win+S": 12.0,
+            "Alt+Space": 12.0,
             "LeftArrow": 4.0,
             "RightArrow": 4.0,
             "UpArrow": 4.0,
