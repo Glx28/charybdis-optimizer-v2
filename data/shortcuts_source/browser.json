@@ -1,0 +1,1190 @@
+{
+  "id": "browser",
+  "name": "Browser (Chrome/Edge)",
+  "user_weight": 0.95,
+  "exe_names": [
+    "chrome.exe",
+    "msedge.exe"
+  ],
+  "expected_count": 80,
+  "shortcuts": [
+    {
+      "keys": "Ctrl+T",
+      "action": "New tab (+1 other app-specific meanings)",
+      "category": "Tab Management",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Go to symbol in workspace",
+          "importance": 2.7,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+W",
+      "action": "Close tab (+1 other app-specific meanings)",
+      "category": "Tab Management",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Close editor",
+          "importance": 9,
+          "frequency": "constant"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Tab",
+      "action": "Next tab (+2 other app-specific meanings)",
+      "category": "Tab Management",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Switch editor tab",
+          "importance": 9,
+          "frequency": "constant"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Next tab",
+          "importance": 2.4,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Alt+Left",
+      "action": "Back",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "Focus address bar (+5 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Select current line",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Focus address bar (alt)",
+          "importance": 1.35,
+          "frequency": "medium"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Clear screen",
+          "importance": 2.4,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Left align",
+          "importance": 0.9,
+          "frequency": "medium"
+        },
+        {
+          "app": "Claude Code CLI",
+          "action": "Redraw / clear terminal screen",
+          "importance": 3,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy",
+      "category": "Clipboard & Edit",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "Clipboard & Edit",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "j",
+      "action": "Scroll down",
+      "category": "Vimium Extension",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "k",
+      "action": "Scroll up",
+      "category": "Vimium Extension",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "f",
+      "action": "Open link in current tab",
+      "category": "Vimium Extension",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+L",
+      "action": "Autofill login",
+      "category": "Proton Pass Extension",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Tab",
+      "action": "Previous tab",
+      "category": "Tab Management",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+T",
+      "action": "Reopen closed tab (+1 other app-specific meanings)",
+      "category": "Tab Management",
+      "frequency": "high",
+      "importance": 5.7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "New tab",
+          "importance": 2.4,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Alt+Right",
+      "action": "Forward",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F5",
+      "action": "Refresh page (+4 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Start/continue debugging",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Refresh view",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Refresh",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Start from beginning",
+          "importance": 1.2,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Escape",
+      "action": "Stop loading / close suggestion",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Space",
+      "action": "Scroll down one screen",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "Find on page",
+      "category": "Find & Page",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F12",
+      "action": "Open DevTools (+1 other app-specific meanings)",
+      "category": "Developer Tools",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Go to definition",
+          "importance": 9,
+          "frequency": "constant"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+C",
+      "action": "Inspect element (+3 other app-specific meanings)",
+      "category": "Developer Tools",
+      "frequency": "high",
+      "importance": 5.7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Copy object link",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Copy path",
+          "importance": 2.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Copy (explicit)",
+          "importance": 2.4,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+X",
+      "action": "Cut",
+      "category": "Clipboard & Edit",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "category": "Clipboard & Edit",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+V",
+      "action": "Paste without formatting (+4 other app-specific meanings)",
+      "category": "Clipboard & Edit",
+      "frequency": "high",
+      "importance": 5.7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Outlook",
+          "action": "Paste as plain text",
+          "importance": 4.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Paste special",
+          "importance": 3,
+          "frequency": "high"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Paste (explicit)",
+          "importance": 2.4,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Paste special",
+          "importance": 1.8,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all",
+      "category": "Clipboard & Edit",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F",
+      "action": "Open link in new tab",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "d",
+      "action": "Scroll half page down",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "u",
+      "action": "Scroll half page up",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "H",
+      "action": "Go back in history",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "o",
+      "action": "Open URL/bookmark/history",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "x",
+      "action": "Close current tab",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "J",
+      "action": "Previous tab",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "K",
+      "action": "Next tab",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "/",
+      "action": "Enter find mode (+2 other app-specific meanings)",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 8,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Claude Code CLI",
+          "action": "Open slash command / skill menu",
+          "importance": 8,
+          "frequency": "high"
+        },
+        {
+          "app": "Codex CLI",
+          "action": "Open slash command menu (/model, /status, /review, ...)",
+          "importance": 7,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+1",
+      "action": "Switch to tab 1",
+      "category": "Tab Management",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+2",
+      "action": "Switch to tab 2",
+      "category": "Tab Management",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "New window",
+      "category": "Tab Management",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F5",
+      "action": "Hard refresh (bypass cache)",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+D",
+      "action": "Focus address bar (alt) (+1 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 2.85,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "File Explorer",
+          "action": "Focus address bar",
+          "importance": 2.7,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Shift+Space",
+      "action": "Scroll up one screen (+1 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Excel",
+          "action": "Select entire row",
+          "importance": 3,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "Find next",
+      "category": "Find & Page",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F3",
+      "action": "Find next (alt) (+2 other app-specific meanings)",
+      "category": "Find & Page",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Find next",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Search (alt)",
+          "importance": 2.1,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+H",
+      "action": "History (+5 other app-specific meanings)",
+      "category": "Find & Page",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Find and replace",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "History view",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Find and replace",
+          "importance": 1.5,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Find and replace",
+          "importance": 0.9,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Replace",
+          "importance": 0.2,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "Bookmark page (+5 other app-specific meanings)",
+      "category": "Find & Page",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Select next occurrence",
+          "importance": 9,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Delete (alt)",
+          "importance": 2.1,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Fill down",
+          "importance": 3,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Duplicate slide",
+          "importance": 1.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Claude Code CLI",
+          "action": "Exit Claude Code session (EOF)",
+          "importance": 6,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+P",
+      "action": "Print (+4 other app-specific meanings)",
+      "category": "Find & Page",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Quick open file",
+          "importance": 9,
+          "frequency": "constant"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Print",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Print",
+          "importance": 0.85,
+          "frequency": "low"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Print",
+          "importance": 0.9,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl++",
+      "action": "Zoom in",
+      "category": "Zoom & View",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+-",
+      "action": "Zoom out (+2 other app-specific meanings)",
+      "category": "Zoom & View",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Excel",
+          "action": "Delete cells/rows/columns",
+          "importance": 3,
+          "frequency": "high"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Zoom out",
+          "importance": 1.2,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+0",
+      "action": "Reset zoom (+2 other app-specific meanings)",
+      "category": "Zoom & View",
+      "frequency": "medium",
+      "importance": 2.85,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Excel",
+          "action": "Hide selected columns",
+          "importance": 1.5,
+          "frequency": "medium"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Reset zoom",
+          "importance": 0.4,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+I",
+      "action": "Open DevTools (alt) (+2 other app-specific meanings)",
+      "category": "Developer Tools",
+      "frequency": "high",
+      "importance": 4.2,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Outlook",
+          "action": "Go to Inbox",
+          "importance": 4.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Discord",
+          "action": "Open inbox",
+          "importance": 0.6,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+J",
+      "action": "Open Console",
+      "category": "Developer Tools",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Y",
+      "action": "Redo",
+      "category": "Clipboard & Edit",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+E",
+      "action": "Toggle sidebar",
+      "category": "Edge Specific",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+F",
+      "action": "Settings menu",
+      "category": "Edge Specific",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "L",
+      "action": "Go forward in history",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "t",
+      "action": "Search open tabs",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "X",
+      "action": "Restore closed tab",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "r",
+      "action": "Reload page",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "gg",
+      "action": "Scroll to top",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "G",
+      "action": "Scroll to bottom",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "gi",
+      "action": "Focus first input field",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "yy",
+      "action": "Copy current URL",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "n",
+      "action": "Find next match",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "N",
+      "action": "Find previous match (+1 other app-specific meanings)",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.85,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Next slide (in show)",
+          "importance": 2,
+          "frequency": "constant"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+S",
+      "action": "Open Proton Pass popup",
+      "category": "Proton Pass Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+3",
+      "action": "Switch to tab 3",
+      "category": "Tab Management",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+4",
+      "action": "Switch to tab 4",
+      "category": "Tab Management",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+9",
+      "action": "Last tab (+1 other app-specific meanings)",
+      "category": "Tab Management",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Excel",
+          "action": "Hide selected rows",
+          "importance": 1.5,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+N",
+      "action": "Incognito/InPrivate window (+3 other app-specific meanings)",
+      "category": "Tab Management",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "New window",
+          "importance": 0.9,
+          "frequency": "low"
+        },
+        {
+          "app": "File Explorer",
+          "action": "New folder",
+          "importance": 2.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Normal style",
+          "importance": 0.9,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Enter",
+      "action": "Add www./. com to URL",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Home",
+      "action": "Open home page",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+G",
+      "action": "Find previous (+4 other app-specific meanings)",
+      "category": "Find & Page",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Source control panel",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Group by",
+          "importance": 0.85,
+          "frequency": "low"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Flag / follow up",
+          "importance": 2.1,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Ungroup objects",
+          "importance": 0.6,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+J",
+      "action": "Downloads (+2 other app-specific meanings)",
+      "category": "Find & Page",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Toggle bottom panel",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Justify",
+          "importance": 0.3,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+B",
+      "action": "Toggle bookmarks bar",
+      "category": "Find & Page",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "Save page as (+7 other app-specific meanings)",
+      "category": "Find & Page",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Save",
+          "importance": 9,
+          "frequency": "constant"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Save / check in",
+          "importance": 8.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Save configuration",
+          "importance": 8.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Save",
+          "importance": 5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Save",
+          "importance": 3,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Save",
+          "importance": 2,
+          "frequency": "constant"
+        },
+        {
+          "app": "Kimi CLI",
+          "action": "Inject message directly into running turn",
+          "importance": 5,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "View page source",
+      "category": "Find & Page",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F11",
+      "action": "Toggle fullscreen (+3 other app-specific meanings)",
+      "category": "Zoom & View",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Step into",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Fullscreen",
+          "importance": 0.45,
+          "frequency": "low"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Toggle fullscreen",
+          "importance": 0.4,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+M",
+      "action": "Toggle device toolbar",
+      "category": "Developer Tools",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+B",
+      "action": "Toggle favorites bar",
+      "category": "Edge Specific",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+O",
+      "action": "Favorites manager",
+      "category": "Edge Specific",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Del",
+      "action": "Clear browsing data",
+      "category": "Edge Specific",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+P",
+      "action": "InPrivate window",
+      "category": "Edge Specific",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+R",
+      "action": "Read aloud",
+      "category": "Edge Specific",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "?",
+      "action": "Show Vimium help",
+      "category": "Vimium Extension",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+5",
+      "action": "Switch to tab 5",
+      "category": "Tab Management",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+6",
+      "action": "Switch to tab 6",
+      "category": "Tab Management",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+7",
+      "action": "Switch to tab 7",
+      "category": "Tab Management",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+8",
+      "action": "Switch to tab 8",
+      "category": "Tab Management",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+O",
+      "action": "Bookmark manager",
+      "category": "Find & Page",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F1",
+      "action": "Help",
+      "category": "Edge Specific",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+U",
+      "action": "View source",
+      "category": "Edge Specific",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    }
+  ]
+}

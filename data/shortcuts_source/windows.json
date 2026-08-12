@@ -1,0 +1,606 @@
+{
+  "id": "windows",
+  "name": "Windows 11",
+  "user_weight": 1,
+  "exe_names": [
+    "explorer.exe",
+    "shellexperiencehost.exe",
+    "searchhost.exe",
+    "startmenuexperiencehost.exe"
+  ],
+  "expected_count": 55,
+  "shortcuts": [
+    {
+      "keys": "Alt+Tab",
+      "action": "Switch apps",
+      "category": "Window Management",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Left",
+      "action": "Snap window left",
+      "category": "Window Management",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Right",
+      "action": "Snap window right",
+      "category": "Window Management",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+S",
+      "action": "Search",
+      "category": "System Shortcuts",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+1",
+      "action": "Open/switch pinned app 1",
+      "category": "Taskbar",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy",
+      "category": "Universal Clipboard & Edit",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "Universal Clipboard & Edit",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+F4",
+      "action": "Close window",
+      "category": "Window Management",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+D",
+      "action": "Show/hide desktop",
+      "category": "Window Management",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Tab",
+      "action": "Task View",
+      "category": "Window Management",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Up",
+      "action": "Maximize window",
+      "category": "Window Management",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Down",
+      "action": "Minimize / restore",
+      "category": "Window Management",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Shift+Left",
+      "action": "Move to left monitor",
+      "category": "Window Management",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Shift+Right",
+      "action": "Move to right monitor",
+      "category": "Window Management",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+E",
+      "action": "File Explorer",
+      "category": "System Shortcuts",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+V",
+      "action": "Clipboard history",
+      "category": "System Shortcuts",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Shift+S",
+      "action": "Screenshot (Snip)",
+      "category": "System Shortcuts",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+2",
+      "action": "Open/switch pinned app 2",
+      "category": "Taskbar",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+3",
+      "action": "Open/switch pinned app 3",
+      "category": "Taskbar",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+H",
+      "action": "Voice typing",
+      "category": "Input & Language",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Space",
+      "action": "Switch input language",
+      "category": "Input & Language",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+C",
+      "action": "Open Copilot",
+      "category": "Input & Language",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+X",
+      "action": "Cut (+7 other app-specific meanings)",
+      "category": "Universal Clipboard & Edit",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Cut",
+          "importance": 5.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Cut (line if no selection)",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Cut",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Cut",
+          "importance": 3,
+          "frequency": "high"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Cut",
+          "importance": 2.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Cut",
+          "importance": 1.8,
+          "frequency": "high"
+        },
+        {
+          "app": "Kimi CLI",
+          "action": "Switch between agent mode and shell command mode",
+          "importance": 6,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "category": "Universal Clipboard & Edit",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all",
+      "category": "Universal Clipboard & Edit",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Delete",
+      "action": "Delete (+6 other app-specific meanings)",
+      "category": "Universal Clipboard & Edit",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Delete (to recycle)",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Delete selected",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Delete message",
+          "importance": 4.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Clear cell contents",
+          "importance": 3,
+          "frequency": "high"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Delete to Recycle Bin",
+          "importance": 2.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Delete selected",
+          "importance": 1.2,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "F2",
+      "action": "Rename (+4 other app-specific meanings)",
+      "category": "Universal Clipboard & Edit",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Rename object",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Rename",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Edit cell",
+          "importance": 5,
+          "frequency": "constant"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Rename",
+          "importance": 4.5,
+          "frequency": "constant"
+        }
+      ]
+    },
+    {
+      "keys": "Win+Ctrl+D",
+      "action": "New virtual desktop",
+      "category": "Virtual Desktops",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Ctrl+Left",
+      "action": "Switch desktop left",
+      "category": "Virtual Desktops",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Ctrl+Right",
+      "action": "Switch desktop right",
+      "category": "Virtual Desktops",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+I",
+      "action": "Settings",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+L",
+      "action": "Lock PC",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+R",
+      "action": "Run dialog",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+X",
+      "action": "Power User menu",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+.",
+      "action": "Emoji picker (+1 other app-specific meanings)",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Windows 11",
+          "action": "Emoji picker (alt)",
+          "importance": 3,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+Esc",
+      "action": "Task Manager",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+4",
+      "action": "Open/switch pinned app 4",
+      "category": "Taskbar",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+5",
+      "action": "Open/switch pinned app 5",
+      "category": "Taskbar",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Shift",
+      "action": "Switch keyboard layout (alt)",
+      "category": "Input & Language",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+;",
+      "action": "Emoji picker",
+      "category": "Input & Language",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+.",
+      "action": "Emoji picker (alt)",
+      "category": "Input & Language",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Alt+2",
+      "action": "Type @ symbol",
+      "category": "Input & Language",
+      "frequency": "high",
+      "importance": 10,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Y",
+      "action": "Redo (+7 other app-specific meanings)",
+      "category": "Universal Clipboard & Edit",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Redo",
+          "importance": 2.85,
+          "frequency": "medium"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Redo (alt)",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Redo",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Redo",
+          "importance": 3,
+          "frequency": "high"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Redo",
+          "importance": 1.35,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Redo",
+          "importance": 1.8,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Redo",
+          "importance": 1.2,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Win+M",
+      "action": "Minimize all windows",
+      "category": "Window Management",
+      "frequency": "low",
+      "importance": 1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Ctrl+F4",
+      "action": "Close current desktop",
+      "category": "Virtual Desktops",
+      "frequency": "low",
+      "importance": 1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+P",
+      "action": "Project / display mode",
+      "category": "System Shortcuts",
+      "frequency": "low",
+      "importance": 1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+A",
+      "action": "Quick settings / Action center",
+      "category": "System Shortcuts",
+      "frequency": "low",
+      "importance": 1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+N",
+      "action": "Notification center",
+      "category": "System Shortcuts",
+      "frequency": "low",
+      "importance": 1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+T",
+      "action": "Cycle taskbar apps",
+      "category": "Taskbar",
+      "frequency": "low",
+      "importance": 1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+B",
+      "action": "Focus system tray",
+      "category": "Taskbar",
+      "frequency": "low",
+      "importance": 1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Home",
+      "action": "Minimize all except active",
+      "category": "Window Management",
+      "frequency": "rare",
+      "importance": 0.2,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Pause",
+      "action": "System info",
+      "category": "System Shortcuts",
+      "frequency": "rare",
+      "importance": 0.2,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+K",
+      "action": "Connect / Cast",
+      "category": "System Shortcuts",
+      "frequency": "rare",
+      "importance": 0.2,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+U",
+      "action": "Accessibility settings",
+      "category": "System Shortcuts",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    }
+  ]
+}

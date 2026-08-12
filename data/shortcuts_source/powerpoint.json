@@ -1,0 +1,393 @@
+{
+  "id": "powerpoint",
+  "name": "Microsoft PowerPoint",
+  "user_weight": 0.2,
+  "exe_names": [],
+  "expected_count": 50,
+  "shortcuts": [
+    {
+      "keys": "N",
+      "action": "Next slide (in show)",
+      "category": "Slideshow",
+      "frequency": "constant",
+      "importance": 2,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "Save",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 2,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 2,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 2,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 2,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F5",
+      "action": "Start from beginning",
+      "category": "Slideshow",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+F5",
+      "action": "Start from current slide",
+      "category": "Slideshow",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Escape",
+      "action": "End slideshow",
+      "category": "Slideshow",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "P",
+      "action": "Previous slide (in show)",
+      "category": "Slideshow",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+M",
+      "action": "New slide",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "Duplicate slide",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Y",
+      "action": "Redo",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "Group objects",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+B",
+      "action": "Bold",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Delete",
+      "action": "Delete selected",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Tab",
+      "action": "Next placeholder / indent",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Page Down",
+      "action": "Next slide",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Page Up",
+      "action": "Previous slide",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "B",
+      "action": "Black screen",
+      "category": "Slideshow",
+      "frequency": "medium",
+      "importance": 0.6000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+G",
+      "action": "Ungroup objects",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 0.6000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+I",
+      "action": "Italic",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 0.6000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Home",
+      "action": "First slide",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 0.6000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+End",
+      "action": "Last slide",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 0.6000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "Find",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 0.6000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "W",
+      "action": "White screen",
+      "category": "Slideshow",
+      "frequency": "low",
+      "importance": 0.2,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+H",
+      "action": "Replace",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 0.2,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "New presentation",
+      "category": "File",
+      "frequency": "medium",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+O",
+      "action": "Open presentation",
+      "category": "File",
+      "frequency": "medium",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+P",
+      "action": "Print",
+      "category": "File",
+      "frequency": "medium",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+X",
+      "action": "Cut",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "Underline",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+E",
+      "action": "Center align",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "Left align",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+R",
+      "action": "Right align",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+J",
+      "action": "Justify",
+      "category": "Editing",
+      "frequency": "low",
+      "importance": 2.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+>",
+      "action": "Increase font size",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+<",
+      "action": "Decrease font size",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Space",
+      "action": "Next slide / next animation",
+      "category": "Slideshow",
+      "frequency": "high",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Right",
+      "action": "Next slide",
+      "category": "Slideshow",
+      "frequency": "high",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Down",
+      "action": "Next slide",
+      "category": "Slideshow",
+      "frequency": "high",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Left",
+      "action": "Previous slide",
+      "category": "Slideshow",
+      "frequency": "high",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Up",
+      "action": "Previous slide",
+      "category": "Slideshow",
+      "frequency": "high",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F1",
+      "action": "Help",
+      "category": "General",
+      "frequency": "low",
+      "importance": 1.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K",
+      "action": "Insert hyperlink",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+C",
+      "action": "Copy formatting",
+      "category": "Editing",
+      "frequency": "low",
+      "importance": 2.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+V",
+      "action": "Paste formatting",
+      "category": "Editing",
+      "frequency": "low",
+      "importance": 2.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Tab",
+      "action": "Switch to previous view",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 2.0,
+      "preferred_hand": "either"
+    }
+  ]
+}

@@ -333,6 +333,18 @@ layer and use exactly one of two shapes: one row ordered `Left Up Down Right`,
 or two rows with `Left Down Right` on the bottom row and `Up` directly above
 `Down`.
 
+## Shortcut Corpus Is Generated, Not Hand-Edited
+
+`data/app_shortcut_scores.json` and the sibling `charybdis-coach/data/app_shortcut_reference.json` are generated from the canonical per-app source files in `data/shortcuts_source/`.
+
+- **Do not hand-edit `app_shortcut_scores.json` or `app_shortcut_reference.json`.** Edit the source files and regenerate.
+- Each source file contains `expected_count`: the estimated number of shortcuts the app should have. A large gap is treated as a critical error by `tools/validate_shortcut_coverage.py`.
+- To add or update shortcuts:
+  1. Edit the relevant `data/shortcuts_source/<app_id>.json`.
+  2. Run `python3 tools/validate_shortcut_coverage.py` to check for gaps.
+  3. Run `python3 tools/generate_shortcut_corpus.py` to regenerate both JSONs.
+- To capture shortcuts from the user's Windows PC, run `..\charybdis-tools\powershell\export_app_shortcuts.ps1` on the host, then merge with `python3 ../charybdis-tools/python/merge_shortcut_export.py <export.json>`.
+
 ## Agent Tooling Rules
 
 Before editing: run `just ai-status` and `just ai-context`. Prefer existing repo tools (rg, fd, ast-grep, just recipes, MCP, tests, linters) over custom scripts. Make minimal diffs. Do not rewrite broad systems. Do not replace CUDA/GPU/Numba/Triton/NVIDIA logic with CPU-only logic. Do not add processor-side escape hatches to hide CUDA bugs. Do not delete tests. Keep final answers short unless asked for detail. For CUDA work: reproduce the GPU failure, inspect the smallest failing path, fix the GPU path, run relevant tests, then `just ai-guard`. Before finishing: `just ai-guard` and `just ai-smoke`.

@@ -1,0 +1,294 @@
+{
+  "id": "terminal",
+  "name": "Windows Terminal / PowerShell",
+  "user_weight": 0.4,
+  "exe_names": [
+    "windowsterminal.exe",
+    "powershell.exe",
+    "pwsh.exe",
+    "wt.exe"
+  ],
+  "expected_count": 35,
+  "shortcuts": [
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy / Cancel",
+      "category": "Terminal Actions",
+      "frequency": "constant",
+      "importance": 4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "Terminal Actions",
+      "frequency": "constant",
+      "importance": 4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Tab",
+      "action": "Autocomplete",
+      "category": "Terminal Actions",
+      "frequency": "constant",
+      "importance": 4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Up",
+      "action": "Previous command",
+      "category": "Terminal Actions",
+      "frequency": "constant",
+      "importance": 4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+T",
+      "action": "New tab",
+      "category": "Tabs & Panes",
+      "frequency": "high",
+      "importance": 2.4000000000000004,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+W",
+      "action": "Close tab/pane",
+      "category": "Tabs & Panes",
+      "frequency": "high",
+      "importance": 2.4000000000000004,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Tab",
+      "action": "Next tab",
+      "category": "Tabs & Panes",
+      "frequency": "high",
+      "importance": 2.4000000000000004,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Shift+D",
+      "action": "Split pane (auto)",
+      "category": "Tabs & Panes",
+      "frequency": "high",
+      "importance": 2.4000000000000004,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+C",
+      "action": "Copy (explicit)",
+      "category": "Terminal Actions",
+      "frequency": "high",
+      "importance": 2.4000000000000004,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+V",
+      "action": "Paste (explicit)",
+      "category": "Terminal Actions",
+      "frequency": "high",
+      "importance": 2.4000000000000004,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+F",
+      "action": "Find",
+      "category": "Terminal Actions",
+      "frequency": "high",
+      "importance": 2.4000000000000004,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "Clear screen",
+      "category": "Terminal Actions",
+      "frequency": "high",
+      "importance": 2.4000000000000004,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+R",
+      "action": "Reverse search history",
+      "category": "Terminal Actions",
+      "frequency": "high",
+      "importance": 2.4000000000000004,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Down",
+      "action": "Next command",
+      "category": "Terminal Actions",
+      "frequency": "high",
+      "importance": 2.4000000000000004,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Tab",
+      "action": "Previous tab",
+      "category": "Tabs & Panes",
+      "frequency": "medium",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Shift+-",
+      "action": "Split pane horizontal",
+      "category": "Tabs & Panes",
+      "frequency": "medium",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Shift++",
+      "action": "Split pane vertical",
+      "category": "Tabs & Panes",
+      "frequency": "medium",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Left",
+      "action": "Focus pane left",
+      "category": "Tabs & Panes",
+      "frequency": "medium",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Right",
+      "action": "Focus pane right",
+      "category": "Tabs & Panes",
+      "frequency": "medium",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl++",
+      "action": "Zoom in",
+      "category": "Zoom & Settings",
+      "frequency": "medium",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+-",
+      "action": "Zoom out",
+      "category": "Zoom & Settings",
+      "frequency": "medium",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Up",
+      "action": "Focus pane up",
+      "category": "Tabs & Panes",
+      "frequency": "low",
+      "importance": 0.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Down",
+      "action": "Focus pane down",
+      "category": "Tabs & Panes",
+      "frequency": "low",
+      "importance": 0.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+0",
+      "action": "Reset zoom",
+      "category": "Zoom & Settings",
+      "frequency": "low",
+      "importance": 0.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+,",
+      "action": "Settings",
+      "category": "Zoom & Settings",
+      "frequency": "low",
+      "importance": 0.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F11",
+      "action": "Toggle fullscreen",
+      "category": "Zoom & Settings",
+      "frequency": "low",
+      "importance": 0.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Backspace",
+      "action": "Delete word backward",
+      "category": "Terminal Actions",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+P",
+      "action": "Command palette",
+      "category": "Terminal Actions",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Space",
+      "action": "Open defaults.json",
+      "category": "Terminal Actions",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Shift+W",
+      "action": "Close pane",
+      "category": "Tabs & Panes",
+      "frequency": "medium",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Up",
+      "action": "Resize pane up",
+      "category": "Tabs & Panes",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Down",
+      "action": "Resize pane down",
+      "category": "Tabs & Panes",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Left",
+      "action": "Resize pane left",
+      "category": "Tabs & Panes",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Right",
+      "action": "Resize pane right",
+      "category": "Tabs & Panes",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+1",
+      "action": "Open first profile",
+      "category": "Tabs & Panes",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    }
+  ]
+}

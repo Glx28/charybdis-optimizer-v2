@@ -1,0 +1,204 @@
+{
+  "id": "powertoys",
+  "name": "PowerToys",
+  "user_weight": 1,
+  "exe_names": [
+    "powertoys.exe",
+    "powertoys.powerlauncher.exe",
+    "powertoys.powerocr.exe",
+    "powertoys.measuretool.exe",
+    "powertoys.fancyzoneseditor.exe",
+    "powertoys.awake.exe"
+  ],
+  "expected_count": 15,
+  "shortcuts": [
+    {
+      "keys": "Alt+Space",
+      "action": "PowerToys Run launcher",
+      "category": "System Shortcuts",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either",
+      "aliases": [
+        "powertoys run",
+        "launcher",
+        "run launcher"
+      ]
+    },
+    {
+      "keys": "Win+Alt+Space",
+      "action": "PowerToys Command Palette (CmdPal)",
+      "category": "System Shortcuts",
+      "frequency": "high",
+      "importance": 9,
+      "preferred_hand": "either",
+      "aliases": [
+        "command palette",
+        "cmdpal",
+        "powertoys palette"
+      ]
+    },
+    {
+      "keys": "Win+Shift+C",
+      "action": "Color Picker",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 6,
+      "preferred_hand": "either",
+      "aliases": [
+        "color picker",
+        "eyedropper",
+        "colour"
+      ]
+    },
+    {
+      "keys": "Win+Shift+T",
+      "action": "Text Extractor (OCR)",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 6,
+      "preferred_hand": "either",
+      "aliases": [
+        "text extractor",
+        "ocr",
+        "extract text"
+      ]
+    },
+    {
+      "keys": "Win+Shift+V",
+      "action": "Advanced Paste",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 6,
+      "preferred_hand": "either",
+      "aliases": [
+        "advanced paste",
+        "paste advanced"
+      ]
+    },
+    {
+      "keys": "Ctrl+Space",
+      "action": "Peek (quick file preview)",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5,
+      "preferred_hand": "either",
+      "aliases": [
+        "peek",
+        "preview"
+      ]
+    },
+    {
+      "keys": "Win+`",
+      "action": "FancyZones editor",
+      "category": "Window Management",
+      "frequency": "low",
+      "importance": 5,
+      "preferred_hand": "either",
+      "aliases": [
+        "fancyzones",
+        "zones",
+        "window zones"
+      ]
+    },
+    {
+      "keys": "Win+Shift+M",
+      "action": "Find My Mouse",
+      "category": "Mouse",
+      "frequency": "low",
+      "importance": 3,
+      "preferred_hand": "either",
+      "aliases": [
+        "find my mouse",
+        "mouse locator"
+      ]
+    },
+    {
+      "keys": "Win+Shift+D",
+      "action": "Mouse Highlighter",
+      "category": "Mouse",
+      "frequency": "low",
+      "importance": 3,
+      "preferred_hand": "either",
+      "aliases": [
+        "mouse highlighter",
+        "highlight clicks"
+      ]
+    },
+    {
+      "keys": "Win+Shift+O",
+      "action": "Mouse Pointer Crosshairs",
+      "category": "Mouse",
+      "frequency": "low",
+      "importance": 3,
+      "preferred_hand": "either",
+      "aliases": [
+        "crosshairs",
+        "mouse crosshair"
+      ]
+    },
+    {
+      "keys": "Win+Shift+N",
+      "action": "New+ (create files/folders from template)",
+      "category": "System Shortcuts",
+      "frequency": "low",
+      "importance": 4,
+      "preferred_hand": "either",
+      "aliases": [
+        "new plus",
+        "new+",
+        "template"
+      ]
+    },
+    {
+      "keys": "Win+Shift+Q",
+      "action": "Video Conference Mute",
+      "category": "System Shortcuts",
+      "frequency": "low",
+      "importance": 3,
+      "preferred_hand": "either",
+      "aliases": [
+        "video conference mute",
+        "mute camera mic"
+      ]
+    },
+    {
+      "keys": "Win+Ctrl+`",
+      "action": "Workspaces (save/restore window sets)",
+      "category": "Window Management",
+      "frequency": "low",
+      "importance": 4,
+      "preferred_hand": "either",
+      "aliases": [
+        "workspaces",
+        "window sets"
+      ]
+    },
+    {
+      "keys": "Win+Shift+R",
+      "action": "Screen Ruler",
+      "category": "System Shortcuts",
+      "frequency": "low",
+      "importance": 3,
+      "preferred_hand": "either",
+      "aliases": [
+        "screen ruler",
+        "ruler",
+        "measure"
+      ]
+    },
+    {
+      "keys": "Win+Shift+S",
+      "action": "Snipping Tool / Screen snip (system, also PowerToys-aware)",
+      "category": "System Shortcuts",
+      "frequency": "high",
+      "importance": 8,
+      "preferred_hand": "either",
+      "aliases": [
+        "snip",
+        "screenshot",
+        "screen capture"
+      ]
+    }
+  ]
+}

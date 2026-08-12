@@ -1,0 +1,1510 @@
+{
+  "id": "teams",
+  "name": "Microsoft Teams",
+  "user_weight": 1,
+  "exe_names": [
+    "teams.exe",
+    "ms-teams.exe"
+  ],
+  "expected_count": 45,
+  "shortcuts": [
+    {
+      "keys": "Ctrl+2",
+      "action": "Chat (+4 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Switch to tab 2",
+          "importance": 2.85,
+          "frequency": "medium"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Switch to icon view",
+          "importance": 0.85,
+          "frequency": "low"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Switch to Calendar",
+          "importance": 4.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Double spacing",
+          "importance": 0.3,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+E",
+      "action": "Search / command bar (+6 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Check out document",
+          "importance": 8.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Search",
+          "importance": 7,
+          "frequency": "constant"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Search box",
+          "importance": 2.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Center align",
+          "importance": 0.9,
+          "frequency": "medium"
+        },
+        {
+          "app": "Discord",
+          "action": "Search",
+          "importance": 1.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Kimi CLI",
+          "action": "Expand plan/prompt view fullscreen",
+          "importance": 5,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Enter",
+      "action": "Send (expanded mode) (+4 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Add www./. com to URL",
+          "importance": 0.95,
+          "frequency": "low"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Insert line below",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Send message",
+          "importance": 7,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Page break",
+          "importance": 0.9,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Enter",
+      "action": "Send message (+5 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Open / expand selected",
+          "importance": 8.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Open/expand selected",
+          "importance": 8.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Confirm and move down",
+          "importance": 5,
+          "frequency": "constant"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Open selected item",
+          "importance": 4.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Discord",
+          "action": "Send message",
+          "importance": 2,
+          "frequency": "constant"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy (+13 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Windows 11",
+          "action": "Copy",
+          "importance": 10,
+          "frequency": "constant"
+        },
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Copy",
+          "importance": 9.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Copy (line if no selection)",
+          "importance": 9,
+          "frequency": "constant"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Copy",
+          "importance": 8.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Copy",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Copy",
+          "importance": 7,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Copy",
+          "importance": 5,
+          "frequency": "constant"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Copy",
+          "importance": 4.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Copy / Cancel",
+          "importance": 4,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Copy",
+          "importance": 3,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Copy",
+          "importance": 2,
+          "frequency": "constant"
+        },
+        {
+          "app": "Claude Code CLI",
+          "action": "Interrupt running op; 2nd press exits",
+          "importance": 8,
+          "frequency": "high"
+        },
+        {
+          "app": "Codex CLI",
+          "action": "Cancel current turn / close session",
+          "importance": 8,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste (+12 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Windows 11",
+          "action": "Paste",
+          "importance": 10,
+          "frequency": "constant"
+        },
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Paste",
+          "importance": 9.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Paste",
+          "importance": 9,
+          "frequency": "constant"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Paste",
+          "importance": 8.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Paste",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Paste",
+          "importance": 7,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Paste",
+          "importance": 5,
+          "frequency": "constant"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Paste",
+          "importance": 4.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Paste",
+          "importance": 4,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Paste",
+          "importance": 3,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Paste",
+          "importance": 2,
+          "frequency": "constant"
+        },
+        {
+          "app": "Kimi CLI",
+          "action": "Paste text/image/video from clipboard",
+          "importance": 3,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+M",
+      "action": "Toggle mute (+4 other app-specific meanings)",
+      "category": "Meetings & Calls",
+      "frequency": "constant",
+      "importance": 10,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Toggle device toolbar",
+          "importance": 0.95,
+          "frequency": "low"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Toggle problems panel",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "New message (alt)",
+          "importance": 2.1,
+          "frequency": "medium"
+        },
+        {
+          "app": "Discord",
+          "action": "Toggle mute",
+          "importance": 2,
+          "frequency": "constant"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+1",
+      "action": "Activity (+5 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Switch to tab 1",
+          "importance": 2.85,
+          "frequency": "medium"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Switch to list view",
+          "importance": 0.85,
+          "frequency": "low"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Switch to Mail",
+          "importance": 4.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Format Cells dialog",
+          "importance": 3,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Single spacing",
+          "importance": 0.3,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+3",
+      "action": "Teams/channels (+2 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Switch to tab 3",
+          "importance": 0.95,
+          "frequency": "low"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Switch to Contacts",
+          "importance": 2.1,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+4",
+      "action": "Calendar (+1 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Switch to tab 4",
+          "importance": 0.95,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Alt+Left",
+      "action": "Go back (+6 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Back",
+          "importance": 9.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Navigate back",
+          "importance": 9,
+          "frequency": "constant"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Navigate back",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Navigate back",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Back",
+          "importance": 4.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Focus pane left",
+          "importance": 1.2,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "New chat (+6 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "constant",
+      "importance": 7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "New window",
+          "importance": 2.85,
+          "frequency": "medium"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "New file",
+          "importance": 2.7,
+          "frequency": "medium"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "New document/object",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "New item/object",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "New mail",
+          "importance": 7,
+          "frequency": "constant"
+        },
+        {
+          "app": "File Explorer",
+          "action": "New window",
+          "importance": 1.35,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Shift+Enter",
+      "action": "New line in message (+3 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Excel",
+          "action": "Confirm and move up",
+          "importance": 1.5,
+          "frequency": "medium"
+        },
+        {
+          "app": "Discord",
+          "action": "New line",
+          "importance": 1.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Claude Code CLI",
+          "action": "Insert newline in multi-line input",
+          "importance": 7,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+B",
+      "action": "Bold (+7 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Toggle sidebar",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Bold",
+          "importance": 4.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Bold",
+          "importance": 3,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Bold",
+          "importance": 3,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Bold",
+          "importance": 1.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Discord",
+          "action": "Bold",
+          "importance": 0.6,
+          "frequency": "medium"
+        },
+        {
+          "app": "Claude Code CLI",
+          "action": "Background running Bash command/agent",
+          "importance": 4,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Up",
+      "action": "Edit last sent message (+2 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Previous command",
+          "importance": 4,
+          "frequency": "constant"
+        },
+        {
+          "app": "Discord",
+          "action": "Edit last message",
+          "importance": 1.2,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo (+10 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Windows 11",
+          "action": "Undo",
+          "importance": 6,
+          "frequency": "high"
+        },
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Undo",
+          "importance": 5.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Undo",
+          "importance": 9,
+          "frequency": "constant"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Undo",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Undo change",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Undo",
+          "importance": 4.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Undo",
+          "importance": 5,
+          "frequency": "constant"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Undo",
+          "importance": 2.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Undo",
+          "importance": 3,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Undo",
+          "importance": 2,
+          "frequency": "constant"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+O",
+      "action": "Toggle camera (+3 other app-specific meanings)",
+      "category": "Meetings & Calls",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Favorites manager",
+          "importance": 0.95,
+          "frequency": "low"
+        },
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Bookmark manager",
+          "importance": 0.19,
+          "frequency": "rare"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Go to symbol in file",
+          "importance": 5.4,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+E",
+      "action": "Toggle screen share (+3 other app-specific meanings)",
+      "category": "Meetings & Calls",
+      "frequency": "constant",
+      "importance": 8.5,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Toggle sidebar",
+          "importance": 2.85,
+          "frequency": "medium"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Explorer panel",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Check in document",
+          "importance": 8.5,
+          "frequency": "constant"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+H",
+      "action": "Hang up / end call (+2 other app-specific meanings)",
+      "category": "Meetings & Calls",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Replace in files",
+          "importance": 2.7,
+          "frequency": "medium"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Version history",
+          "importance": 5.1,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+A",
+      "action": "Accept call (+2 other app-specific meanings)",
+      "category": "Meetings & Calls",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Assign to user",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "New appointment",
+          "importance": 2.1,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Escape",
+      "action": "Close / go back (+7 other app-specific meanings)",
+      "category": "General",
+      "frequency": "high",
+      "importance": 9,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Stop loading / close suggestion",
+          "importance": 5.7,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Close dialog / cancel",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Cancel edit",
+          "importance": 5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "End slideshow",
+          "importance": 1.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Discord",
+          "action": "Close popups / deselect",
+          "importance": 1.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Claude Code CLI",
+          "action": "Interrupt Claude / close a dialog",
+          "importance": 9,
+          "frequency": "high"
+        },
+        {
+          "app": "Codex CLI",
+          "action": "Interrupt active task",
+          "importance": 9,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "Find in conversation (+9 other app-specific meanings)",
+      "category": "General",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Find on page",
+          "importance": 5.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Find",
+          "importance": 9,
+          "frequency": "constant"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Quick search",
+          "importance": 8.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Search/filter",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Forward",
+          "importance": 4.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Find",
+          "importance": 3,
+          "frequency": "high"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Search box (alt)",
+          "importance": 2.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Find",
+          "importance": 1.8,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Find",
+          "importance": 0.6,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+5",
+      "action": "Calls (+1 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Switch to tab 5",
+          "importance": 0.19,
+          "frequency": "rare"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+6",
+      "action": "Files (+1 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Switch to tab 6",
+          "importance": 0.19,
+          "frequency": "rare"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+.",
+      "action": "Show commands",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+F6",
+      "action": "Next section",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Right",
+      "action": "Go forward (+5 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Forward",
+          "importance": 5.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Navigate forward",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Navigate forward",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Forward",
+          "importance": 2.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Focus pane right",
+          "importance": 1.2,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+X",
+      "action": "Expand compose box (+2 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Extensions panel",
+          "importance": 0.9,
+          "frequency": "low"
+        },
+        {
+          "app": "Discord",
+          "action": "Strikethrough",
+          "importance": 0.2,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+F",
+      "action": "Format text (+4 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Format document",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Search across files",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Advanced search",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Find",
+          "importance": 2.4,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+I",
+      "action": "Italic (+6 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Object info",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Italic",
+          "importance": 2.1,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Italic",
+          "importance": 1.5,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Italic",
+          "importance": 1.8,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Italic",
+          "importance": 0.6,
+          "frequency": "medium"
+        },
+        {
+          "app": "Discord",
+          "action": "Italic",
+          "importance": 0.6,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+U",
+      "action": "Mark as unread (+2 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "View source",
+          "importance": 0.19,
+          "frequency": "rare"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Undo checkout",
+          "importance": 2.55,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+S",
+      "action": "Attach file (+2 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Open Proton Pass popup",
+          "importance": 2.85,
+          "frequency": "medium"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Save as",
+          "importance": 0.9,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+K",
+      "action": "Insert link (+4 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Add relationship",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Insert hyperlink",
+          "importance": 2.1,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Insert hyperlink",
+          "importance": 0.9,
+          "frequency": "medium"
+        },
+        {
+          "app": "Discord",
+          "action": "Quick switcher",
+          "importance": 1.2,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all (+10 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Windows 11",
+          "action": "Select all",
+          "importance": 6,
+          "frequency": "high"
+        },
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Select all",
+          "importance": 5.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Select all",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Select all",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "M-Files Admin",
+          "action": "Select all",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Select all",
+          "importance": 2.1,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Select all / current region",
+          "importance": 3,
+          "frequency": "high"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Select all",
+          "importance": 2.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Select all",
+          "importance": 1.8,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Select all",
+          "importance": 1.2,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+K",
+      "action": "Raise/lower hand (+1 other app-specific meanings)",
+      "category": "Meetings & Calls",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Delete line",
+          "importance": 5.4,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+B",
+      "action": "Toggle background blur (+2 other app-specific meanings)",
+      "category": "Meetings & Calls",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Toggle bookmarks bar",
+          "importance": 0.95,
+          "frequency": "low"
+        },
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Toggle favorites bar",
+          "importance": 0.95,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+D",
+      "action": "Decline call (+2 other app-specific meanings)",
+      "category": "Meetings & Calls",
+      "frequency": "medium",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Download copy",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "Discord",
+          "action": "Toggle deafen",
+          "importance": 0.6,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+P",
+      "action": "Toggle chat in meeting (+2 other app-specific meanings)",
+      "category": "Meetings & Calls",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "InPrivate window",
+          "importance": 0.95,
+          "frequency": "low"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Command palette",
+          "importance": 9,
+          "frequency": "constant"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+L",
+      "action": "Toggle sidebar (+2 other app-specific meanings)",
+      "category": "General",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Autofill login",
+          "importance": 9.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Select all occurrences",
+          "importance": 5.4,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "Go to... (+6 other app-specific meanings)",
+      "category": "General",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Find next",
+          "importance": 2.85,
+          "frequency": "medium"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Go to line",
+          "importance": 5.4,
+          "frequency": "high"
+        },
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Go to vault",
+          "importance": 2.55,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Go To dialog",
+          "importance": 1.5,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Go to page",
+          "importance": 0.3,
+          "frequency": "low"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Group objects",
+          "importance": 1.2,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+F6",
+      "action": "Previous section",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "Underline (+5 other app-specific meanings)",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 4.2,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "View page source",
+          "importance": 0.95,
+          "frequency": "low"
+        },
+        {
+          "app": "Visual Studio Code",
+          "action": "Undo last cursor",
+          "importance": 2.7,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Mark as unread",
+          "importance": 4.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Underline",
+          "importance": 1.5,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Word",
+          "action": "Underline",
+          "importance": 1.8,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+R",
+      "action": "Start recording (+2 other app-specific meanings)",
+      "category": "Meetings & Calls",
+      "frequency": "high",
+      "importance": 4.2,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Browser (Chrome/Edge)",
+          "action": "Read aloud",
+          "importance": 0.95,
+          "frequency": "low"
+        },
+        {
+          "app": "Microsoft Outlook",
+          "action": "Reply all",
+          "importance": 4.2,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+/",
+      "action": "Show keyboard shortcuts (+1 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Visual Studio Code",
+          "action": "Toggle line comment",
+          "importance": 9,
+          "frequency": "constant"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+C",
+      "action": "Start call",
+      "category": "Calls",
+      "frequency": "medium",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    }
+  ]
+}

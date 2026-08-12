@@ -1,0 +1,105 @@
+{
+  "id": "mouse",
+  "name": "Mouse",
+  "user_weight": 1,
+  "exe_names": [],
+  "expected_count": 12,
+  "shortcuts": [
+    {
+      "keys": "MB1",
+      "action": "Left click",
+      "category": "mouse",
+      "frequency": "constant",
+      "importance": 40.0,
+      "preferred_hand": "right"
+    },
+    {
+      "keys": "MB2",
+      "action": "Right click",
+      "category": "mouse",
+      "frequency": "constant",
+      "importance": 16.0,
+      "preferred_hand": "right"
+    },
+    {
+      "keys": "MB3",
+      "action": "Middle click",
+      "category": "mouse",
+      "frequency": "high",
+      "importance": 10.0,
+      "preferred_hand": "right"
+    },
+    {
+      "keys": "MB4",
+      "action": "Back button",
+      "category": "mouse",
+      "frequency": "high",
+      "importance": 7.0,
+      "preferred_hand": "right"
+    },
+    {
+      "keys": "MB5",
+      "action": "Forward button",
+      "category": "mouse",
+      "frequency": "high",
+      "importance": 5.0,
+      "preferred_hand": "right"
+    },
+    {
+      "keys": "UpArrow",
+      "action": "Up arrow",
+      "category": "navigation",
+      "frequency": "high",
+      "importance": 8.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "DownArrow",
+      "action": "Down arrow",
+      "category": "navigation",
+      "frequency": "high",
+      "importance": 8.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "LeftArrow",
+      "action": "Left arrow",
+      "category": "navigation",
+      "frequency": "high",
+      "importance": 8.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "RightArrow",
+      "action": "Right arrow",
+      "category": "navigation",
+      "frequency": "high",
+      "importance": 8.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "ScrollUp",
+      "action": "Scroll up",
+      "category": "navigation",
+      "frequency": "high",
+      "importance": 7.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "ScrollDown",
+      "action": "Scroll down",
+      "category": "navigation",
+      "frequency": "high",
+      "importance": 7.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "@ptr:fast_hold",
+      "action": "Pointer fast hold: 3x speed while held",
+      "category": "Pointer Mode",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "right"
+    }
+  ]
+}

@@ -1,0 +1,830 @@
+{
+  "id": "vscode",
+  "name": "Visual Studio Code",
+  "user_weight": 0.9,
+  "exe_names": [
+    "code.exe",
+    "code - insiders.exe"
+  ],
+  "expected_count": 80,
+  "shortcuts": [
+    {
+      "keys": "Ctrl+Shift+P",
+      "action": "Command palette",
+      "category": "General",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+P",
+      "action": "Quick open file",
+      "category": "General",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+`",
+      "action": "Toggle terminal (+1 other app-specific meanings)",
+      "category": "General",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Excel",
+          "action": "Show/hide formulas",
+          "importance": 1.5,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "Save",
+      "category": "File Operations",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+W",
+      "action": "Close editor",
+      "category": "File Operations",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy (line if no selection)",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "Select next occurrence",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+/",
+      "action": "Toggle line comment",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Tab",
+      "action": "Indent / accept suggestion (+5 other app-specific meanings)",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Admin",
+          "action": "Next field",
+          "importance": 8.5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Move to next cell",
+          "importance": 5,
+          "frequency": "constant"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Autocomplete",
+          "importance": 4,
+          "frequency": "constant"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Next placeholder / indent",
+          "importance": 1.2,
+          "frequency": "high"
+        },
+        {
+          "app": "Codex CLI",
+          "action": "Queue follow-up prompt while Codex is working",
+          "importance": 5,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "F12",
+      "action": "Go to definition",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Tab",
+      "action": "Switch editor tab",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Left",
+      "action": "Navigate back",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "Find",
+      "category": "Search & Replace",
+      "frequency": "constant",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+`",
+      "action": "New terminal",
+      "category": "General",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+B",
+      "action": "Toggle sidebar",
+      "category": "General",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+J",
+      "action": "Toggle bottom panel",
+      "category": "General",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+X",
+      "action": "Cut (line if no selection)",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Z",
+      "action": "Redo",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Y",
+      "action": "Redo (alt)",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+L",
+      "action": "Select all occurrences",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Up",
+      "action": "Move line up (+4 other app-specific meanings)",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Outlook",
+          "action": "Previous week",
+          "importance": 2.1,
+          "frequency": "medium"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Parent folder",
+          "importance": 2.7,
+          "frequency": "high"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Focus pane up",
+          "importance": 0.4,
+          "frequency": "low"
+        },
+        {
+          "app": "Discord",
+          "action": "Previous channel",
+          "importance": 1.2,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Alt+Down",
+      "action": "Move line down (+3 other app-specific meanings)",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Outlook",
+          "action": "Next week (month view)",
+          "importance": 2.1,
+          "frequency": "medium"
+        },
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Focus pane down",
+          "importance": 0.4,
+          "frequency": "low"
+        },
+        {
+          "app": "Discord",
+          "action": "Next channel",
+          "importance": 1.2,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Shift+Alt+Down",
+      "action": "Copy line down",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+K",
+      "action": "Delete line",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Enter",
+      "action": "Insert line below",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+F",
+      "action": "Format document",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Tab",
+      "action": "Outdent (+4 other app-specific meanings)",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 9,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Admin",
+          "action": "Previous field",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Move to previous cell",
+          "importance": 3,
+          "frequency": "high"
+        },
+        {
+          "app": "Claude Code CLI",
+          "action": "Cycle permission modes (auto-accept/plan/bypass)",
+          "importance": 9,
+          "frequency": "high"
+        },
+        {
+          "app": "Kimi CLI",
+          "action": "Toggle plan mode",
+          "importance": 8,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "Go to line",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+F12",
+      "action": "Peek definition",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+O",
+      "action": "Go to symbol in file",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Right",
+      "action": "Navigate forward",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+M",
+      "action": "Toggle problems panel",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+E",
+      "action": "Explorer panel",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+F",
+      "action": "Search across files",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+G",
+      "action": "Source control panel",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Click",
+      "action": "Add cursor at position",
+      "category": "Multi-cursor",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Alt+Up",
+      "action": "Add cursor above",
+      "category": "Multi-cursor",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Alt+Down",
+      "action": "Add cursor below",
+      "category": "Multi-cursor",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+H",
+      "action": "Find and replace",
+      "category": "Search & Replace",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F3",
+      "action": "Find next",
+      "category": "Search & Replace",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F5",
+      "action": "Start/continue debugging",
+      "category": "Debug",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F9",
+      "action": "Toggle breakpoint (+2 other app-specific meanings)",
+      "category": "Debug",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Outlook",
+          "action": "Send/Receive all",
+          "importance": 2.1,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft Excel",
+          "action": "Calculate all workbooks",
+          "importance": 1.5,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "F10",
+      "action": "Step over",
+      "category": "Debug",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F11",
+      "action": "Step into",
+      "category": "Debug",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+F11",
+      "action": "Step out",
+      "category": "Debug",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "Select current line",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 5.4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+,",
+      "action": "Open settings (+1 other app-specific meanings)",
+      "category": "General",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Settings",
+          "importance": 0.4,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+\\",
+      "action": "Split editor",
+      "category": "General",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K S",
+      "action": "Save all",
+      "category": "File Operations",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "New file",
+      "category": "File Operations",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+O",
+      "action": "Open file (+3 other app-specific meanings)",
+      "category": "File Operations",
+      "frequency": "medium",
+      "importance": 6,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Open document",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "Claude Code CLI",
+          "action": "Toggle transcript / verbose tool-use view",
+          "importance": 6,
+          "frequency": "medium"
+        },
+        {
+          "app": "Codex CLI",
+          "action": "Copy latest completed output",
+          "importance": 4,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Shift+Alt+Up",
+      "action": "Copy line up",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Enter",
+      "action": "Insert line above (+1 other app-specific meanings)",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Excel",
+          "action": "Array formula (legacy)",
+          "importance": 0.5,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Shift+Alt+A",
+      "action": "Toggle block comment",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+]",
+      "action": "Indent line",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+[",
+      "action": "Outdent line",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+\\",
+      "action": "Jump to matching bracket",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K Ctrl+F",
+      "action": "Format selection",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+T",
+      "action": "Go to symbol in workspace",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F8",
+      "action": "Go to next problem",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "Undo last cursor",
+      "category": "Multi-cursor",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+F3",
+      "action": "Find previous",
+      "category": "Search & Replace",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+H",
+      "action": "Replace in files",
+      "category": "Search & Replace",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+F5",
+      "action": "Stop debugging (+1 other app-specific meanings)",
+      "category": "Debug",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Start from current slide",
+          "importance": 1.2,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Shift+F5",
+      "action": "Restart debugging (+1 other app-specific meanings)",
+      "category": "Debug",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Desktop Client",
+          "action": "Send notification",
+          "importance": 0.85,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Shift+Alt+Right",
+      "action": "Expand selection",
+      "category": "Selection",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Alt+Left",
+      "action": "Shrink selection",
+      "category": "Selection",
+      "frequency": "medium",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+N",
+      "action": "New window",
+      "category": "General",
+      "frequency": "low",
+      "importance": 0.9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+S",
+      "action": "Save as",
+      "category": "File Operations",
+      "frequency": "low",
+      "importance": 0.9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K Ctrl+W",
+      "action": "Close all editors",
+      "category": "File Operations",
+      "frequency": "low",
+      "importance": 0.9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+F8",
+      "action": "Go to previous problem",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 0.9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+X",
+      "action": "Extensions panel",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 0.9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K Ctrl+S",
+      "action": "Keyboard shortcuts",
+      "category": "General",
+      "frequency": "rare",
+      "importance": 0.18000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K Ctrl+T",
+      "action": "Select color theme",
+      "category": "Preferences",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K Ctrl+Z",
+      "action": "Undo close editor",
+      "category": "Editor",
+      "frequency": "medium",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+End",
+      "action": "Select to end of file",
+      "category": "Editor",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Home",
+      "action": "Select to start of file",
+      "category": "Editor",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    }
+  ]
+}

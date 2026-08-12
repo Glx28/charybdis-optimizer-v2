@@ -1,0 +1,145 @@
+{
+  "id": "mfiles_admin",
+  "name": "M-Files Admin",
+  "user_weight": 0.85,
+  "exe_names": [],
+  "expected_count": 17,
+  "shortcuts": [
+    {
+      "keys": "Enter",
+      "action": "Open/expand selected",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 8.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Tab",
+      "action": "Next field",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 8.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "Save configuration",
+      "category": "Admin Operations",
+      "frequency": "constant",
+      "importance": 8.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "Search/filter",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F5",
+      "action": "Refresh",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Escape",
+      "action": "Close dialog / cancel",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Tab",
+      "action": "Previous field",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo change",
+      "category": "Admin Operations",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "New item/object",
+      "category": "Admin Operations",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F2",
+      "action": "Rename",
+      "category": "Admin Operations",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy",
+      "category": "Admin Operations",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "Admin Operations",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Enter",
+      "action": "Properties",
+      "category": "Admin Operations",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Left",
+      "action": "Navigate back",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Delete",
+      "action": "Delete selected",
+      "category": "Admin Operations",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all",
+      "category": "Admin Operations",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+P",
+      "action": "Print",
+      "category": "Admin Operations",
+      "frequency": "low",
+      "importance": 0.85,
+      "preferred_hand": "either"
+    }
+  ]
+}

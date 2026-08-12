@@ -1,0 +1,145 @@
+{
+  "id": "kimi_cli",
+  "name": "Kimi CLI",
+  "user_weight": 1,
+  "exe_names": [],
+  "expected_count": 15,
+  "shortcuts": [
+    {
+      "keys": "Ctrl+X",
+      "action": "Switch between agent mode and shell command mode",
+      "category": "Mode Control",
+      "frequency": "medium",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Tab",
+      "action": "Toggle plan mode",
+      "category": "Mode Control",
+      "frequency": "high",
+      "importance": 8,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+E",
+      "action": "Expand plan/prompt view fullscreen",
+      "category": "Session Control",
+      "frequency": "medium",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "Inject message directly into running turn",
+      "category": "Session Control",
+      "frequency": "medium",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste text/image/video from clipboard",
+      "category": "Input",
+      "frequency": "low",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Cancel current operation / exit",
+      "category": "Session Control",
+      "frequency": "high",
+      "importance": 8.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "Exit session",
+      "category": "Session Control",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "Clear terminal screen",
+      "category": "Session Control",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+R",
+      "action": "Reverse search history",
+      "category": "Session Control",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Enter",
+      "action": "Submit prompt",
+      "category": "Input",
+      "frequency": "constant",
+      "importance": 9.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Enter",
+      "action": "Insert newline",
+      "category": "Input",
+      "frequency": "high",
+      "importance": 7.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Up",
+      "action": "Previous prompt",
+      "category": "Input",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Down",
+      "action": "Next prompt",
+      "category": "Input",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Tab",
+      "action": "Autocomplete",
+      "category": "Input",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "/",
+      "action": "Slash command menu",
+      "category": "Input",
+      "frequency": "high",
+      "importance": 7.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "@",
+      "action": "Mention file or context",
+      "category": "Input",
+      "frequency": "high",
+      "importance": 7.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "!",
+      "action": "Run shell command inline",
+      "category": "Input",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    }
+  ]
+}

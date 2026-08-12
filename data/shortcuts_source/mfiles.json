@@ -1,0 +1,343 @@
+{
+  "id": "mfiles",
+  "name": "M-Files Desktop Client",
+  "user_weight": 0.85,
+  "exe_names": [],
+  "expected_count": 40,
+  "shortcuts": [
+    {
+      "keys": "Ctrl+F",
+      "action": "Quick search",
+      "category": "Search & Navigation",
+      "frequency": "constant",
+      "importance": 8.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Enter",
+      "action": "Open / expand selected",
+      "category": "Search & Navigation",
+      "frequency": "constant",
+      "importance": 8.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+E",
+      "action": "Check out document",
+      "category": "Document Operations",
+      "frequency": "constant",
+      "importance": 8.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+E",
+      "action": "Check in document",
+      "category": "Document Operations",
+      "frequency": "constant",
+      "importance": 8.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "Save / check in",
+      "category": "Document Operations",
+      "frequency": "constant",
+      "importance": 8.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Enter",
+      "action": "Properties / metadata card (+2 other app-specific meanings)",
+      "category": "Metadata & Properties",
+      "frequency": "constant",
+      "importance": 8.5,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "M-Files Admin",
+          "action": "Properties",
+          "importance": 5.1,
+          "frequency": "high"
+        },
+        {
+          "app": "File Explorer",
+          "action": "Properties",
+          "importance": 1.35,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy",
+      "category": "Clipboard & Edit",
+      "frequency": "constant",
+      "importance": 8.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "Clipboard & Edit",
+      "frequency": "constant",
+      "importance": 8.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Backspace",
+      "action": "Go back / up (+1 other app-specific meanings)",
+      "category": "Search & Navigation",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "File Explorer",
+          "action": "Go up one level",
+          "importance": 2.7,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Alt+Left",
+      "action": "Navigate back",
+      "category": "Search & Navigation",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F5",
+      "action": "Refresh view",
+      "category": "Search & Navigation",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "New document/object",
+      "category": "Document Operations",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+O",
+      "action": "Open document",
+      "category": "Document Operations",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F2",
+      "action": "Rename object",
+      "category": "Document Operations",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+C",
+      "action": "Copy object link",
+      "category": "Metadata & Properties",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+H",
+      "action": "Version history",
+      "category": "Metadata & Properties",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+W",
+      "action": "Change workflow state (+1 other app-specific meanings)",
+      "category": "Workflow & Assignments",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Windows Terminal / PowerShell",
+          "action": "Close tab/pane",
+          "importance": 2.4,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "category": "Clipboard & Edit",
+      "frequency": "high",
+      "importance": 5.1,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+F",
+      "action": "Advanced search",
+      "category": "Search & Navigation",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "Go to vault",
+      "category": "Search & Navigation",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Right",
+      "action": "Navigate forward",
+      "category": "Search & Navigation",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+U",
+      "action": "Undo checkout",
+      "category": "Document Operations",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Delete",
+      "action": "Delete (to recycle)",
+      "category": "Document Operations",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+D",
+      "action": "Download copy",
+      "category": "Document Operations",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+P",
+      "action": "Print",
+      "category": "Document Operations",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+I",
+      "action": "Object info",
+      "category": "Metadata & Properties",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K",
+      "action": "Add relationship",
+      "category": "Metadata & Properties",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all",
+      "category": "Views & Selection",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+H",
+      "action": "History view",
+      "category": "Views & Selection",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+A",
+      "action": "Assign to user",
+      "category": "Workflow & Assignments",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+M",
+      "action": "Add to favorites (+1 other app-specific meanings)",
+      "category": "Workflow & Assignments",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "New slide",
+          "importance": 1.2,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+X",
+      "action": "Cut",
+      "category": "Clipboard & Edit",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Y",
+      "action": "Redo",
+      "category": "Clipboard & Edit",
+      "frequency": "medium",
+      "importance": 2.55,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+1",
+      "action": "Switch to list view",
+      "category": "Views & Selection",
+      "frequency": "low",
+      "importance": 0.85,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+2",
+      "action": "Switch to icon view",
+      "category": "Views & Selection",
+      "frequency": "low",
+      "importance": 0.85,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+G",
+      "action": "Group by",
+      "category": "Views & Selection",
+      "frequency": "low",
+      "importance": 0.85,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+F5",
+      "action": "Send notification",
+      "category": "Workflow & Assignments",
+      "frequency": "low",
+      "importance": 0.85,
+      "preferred_hand": "either"
+    }
+  ]
+}

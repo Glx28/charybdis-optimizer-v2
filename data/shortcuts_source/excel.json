@@ -1,0 +1,613 @@
+{
+  "id": "excel",
+  "name": "Microsoft Excel",
+  "user_weight": 0.5,
+  "exe_names": [],
+  "expected_count": 75,
+  "shortcuts": [
+    {
+      "keys": "Ctrl+Left",
+      "action": "Jump to left edge of data",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Right",
+      "action": "Jump to right edge of data",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Tab",
+      "action": "Move to next cell",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Enter",
+      "action": "Confirm and move down",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F2",
+      "action": "Edit cell",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Escape",
+      "action": "Cancel edit",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "Save",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "=",
+      "action": "Start formula",
+      "category": "Formulas",
+      "frequency": "constant",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F4",
+      "action": "Toggle absolute ref ($) (+1 other app-specific meanings)",
+      "category": "Formulas",
+      "frequency": "constant",
+      "importance": 5,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "File Explorer",
+          "action": "Focus address bar dropdown",
+          "importance": 0.45,
+          "frequency": "low"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Home",
+      "action": "Go to cell A1 (+2 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Word",
+          "action": "Go to beginning",
+          "importance": 0.9,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "First slide",
+          "importance": 0.6,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+End",
+      "action": "Go to last used cell (+2 other app-specific meanings)",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "Microsoft Word",
+          "action": "Go to end",
+          "importance": 0.9,
+          "frequency": "medium"
+        },
+        {
+          "app": "Microsoft PowerPoint",
+          "action": "Last slide",
+          "importance": 0.6,
+          "frequency": "medium"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+Up",
+      "action": "Jump to top edge of data",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Down",
+      "action": "Jump to bottom edge of data",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "Find",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Page Down",
+      "action": "Next sheet",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Page Up",
+      "action": "Previous sheet",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Tab",
+      "action": "Move to previous cell",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all / current region",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Left",
+      "action": "Select to left edge",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Right",
+      "action": "Select to right edge",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Up",
+      "action": "Select to top edge",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Down",
+      "action": "Select to bottom edge",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Space",
+      "action": "Select entire row",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Space",
+      "action": "Select entire column",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Delete",
+      "action": "Clear cell contents",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+X",
+      "action": "Cut",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Y",
+      "action": "Redo",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "Fill down",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+V",
+      "action": "Paste special",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+B",
+      "action": "Bold",
+      "category": "Formatting",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+1",
+      "action": "Format Cells dialog",
+      "category": "Formatting",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift++",
+      "action": "Insert cells/rows/columns",
+      "category": "Rows & Columns",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+-",
+      "action": "Delete cells/rows/columns",
+      "category": "Rows & Columns",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+=",
+      "action": "AutoSum",
+      "category": "Formulas",
+      "frequency": "high",
+      "importance": 3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "Go To dialog",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+H",
+      "action": "Find and replace",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Enter",
+      "action": "Confirm and move up",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+End",
+      "action": "Select to last used cell",
+      "category": "Selection",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Home",
+      "action": "Select to cell A1",
+      "category": "Selection",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Click",
+      "action": "Select non-adjacent cells (+1 other app-specific meanings)",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either",
+      "variants": [
+        {
+          "app": "File Explorer",
+          "action": "Select multiple (non-adjacent)",
+          "importance": 2.7,
+          "frequency": "high"
+        }
+      ]
+    },
+    {
+      "keys": "Ctrl+R",
+      "action": "Fill right",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+;",
+      "action": "Insert current date",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+I",
+      "action": "Italic",
+      "category": "Formatting",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "Underline",
+      "category": "Formatting",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+!",
+      "action": "Number format",
+      "category": "Formatting",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+$",
+      "action": "Currency format",
+      "category": "Formatting",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+%",
+      "action": "Percent format",
+      "category": "Formatting",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+9",
+      "action": "Hide selected rows",
+      "category": "Rows & Columns",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+0",
+      "action": "Hide selected columns",
+      "category": "Rows & Columns",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+`",
+      "action": "Show/hide formulas",
+      "category": "Formulas",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F9",
+      "action": "Calculate all workbooks",
+      "category": "Formulas",
+      "frequency": "medium",
+      "importance": 1.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+;",
+      "action": "Insert current time",
+      "category": "Editing",
+      "frequency": "low",
+      "importance": 0.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+~",
+      "action": "General format",
+      "category": "Formatting",
+      "frequency": "low",
+      "importance": 0.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+9",
+      "action": "Unhide rows",
+      "category": "Rows & Columns",
+      "frequency": "low",
+      "importance": 0.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Enter",
+      "action": "Array formula (legacy)",
+      "category": "Formulas",
+      "frequency": "low",
+      "importance": 0.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "New workbook",
+      "category": "File",
+      "frequency": "medium",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+O",
+      "action": "Open workbook",
+      "category": "File",
+      "frequency": "medium",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+P",
+      "action": "Print",
+      "category": "File",
+      "frequency": "medium",
+      "importance": 4.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K",
+      "action": "Insert hyperlink",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+T",
+      "action": "Create table",
+      "category": "Data",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+L",
+      "action": "Toggle filters",
+      "category": "Data",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+#",
+      "action": "Date format",
+      "category": "Formatting",
+      "frequency": "low",
+      "importance": 2.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F5",
+      "action": "Go to",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F7",
+      "action": "Spell check",
+      "category": "Review",
+      "frequency": "low",
+      "importance": 2.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+U",
+      "action": "Expand/collapse formula bar",
+      "category": "Formulas",
+      "frequency": "low",
+      "importance": 2.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+PageUp",
+      "action": "Previous worksheet",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+PageDown",
+      "action": "Next worksheet",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    }
+  ]
+}
