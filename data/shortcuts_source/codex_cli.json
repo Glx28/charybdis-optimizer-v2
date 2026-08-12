@@ -1,0 +1,121 @@
+{
+  "id": "codex_cli",
+  "name": "Codex CLI",
+  "user_weight": 1,
+  "exe_names": [],
+  "expected_count": 15,
+  "shortcuts": [
+    {
+      "keys": "Escape",
+      "action": "Interrupt active task",
+      "category": "Session Control",
+      "frequency": "high",
+      "importance": 9,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Cancel current turn / close session",
+      "category": "Session Control",
+      "frequency": "high",
+      "importance": 8,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+R",
+      "action": "Search prompt history",
+      "category": "Session Control",
+      "frequency": "medium",
+      "importance": 6,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+O",
+      "action": "Copy latest completed output",
+      "category": "Session Control",
+      "frequency": "low",
+      "importance": 4,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Tab",
+      "action": "Queue follow-up prompt while Codex is working",
+      "category": "Input",
+      "frequency": "medium",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "@",
+      "action": "Search and add files to prompt",
+      "category": "Input",
+      "frequency": "high",
+      "importance": 7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "!",
+      "action": "Run local shell command (line prefix)",
+      "category": "Input",
+      "frequency": "medium",
+      "importance": 5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "/",
+      "action": "Open slash command menu (/model, /status, /review, ...)",
+      "category": "Input",
+      "frequency": "high",
+      "importance": 7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "Exit session",
+      "category": "Session Control",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "Clear terminal screen",
+      "category": "Session Control",
+      "frequency": "low",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Enter",
+      "action": "Submit prompt",
+      "category": "Input",
+      "frequency": "constant",
+      "importance": 9.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Enter",
+      "action": "Insert newline",
+      "category": "Input",
+      "frequency": "high",
+      "importance": 7.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Up",
+      "action": "Previous prompt",
+      "category": "Input",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Down",
+      "action": "Next prompt",
+      "category": "Input",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    }
+  ]
+}
