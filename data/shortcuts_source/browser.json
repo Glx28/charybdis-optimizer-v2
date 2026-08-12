@@ -1,0 +1,720 @@
+{
+  "id": "browser",
+  "name": "Browser (Chrome/Edge)",
+  "exe_names": [],
+  "expected_count": 89,
+  "shortcuts": [
+    {
+      "keys": "Ctrl+T",
+      "action": "New tab",
+      "category": "Tab Management",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+W",
+      "action": "Close tab",
+      "category": "Tab Management",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Tab",
+      "action": "Next tab",
+      "category": "Tab Management",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Left",
+      "action": "Back",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "Focus address bar",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy",
+      "category": "Clipboard & Edit",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "Clipboard & Edit",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "j",
+      "action": "Scroll down",
+      "category": "Vimium Extension",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "k",
+      "action": "Scroll up",
+      "category": "Vimium Extension",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "f",
+      "action": "Open link in current tab",
+      "category": "Vimium Extension",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+L",
+      "action": "Autofill login",
+      "category": "Proton Pass Extension",
+      "frequency": "constant",
+      "importance": 9.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Tab",
+      "action": "Previous tab",
+      "category": "Tab Management",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+T",
+      "action": "Reopen closed tab",
+      "category": "Tab Management",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Right",
+      "action": "Forward",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F5",
+      "action": "Refresh page",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Escape",
+      "action": "Stop loading / close suggestion",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Space",
+      "action": "Scroll down one screen",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "Find on page",
+      "category": "Find & Page",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F12",
+      "action": "Open DevTools",
+      "category": "Developer Tools",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+C",
+      "action": "Inspect element",
+      "category": "Developer Tools",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+X",
+      "action": "Cut",
+      "category": "Clipboard & Edit",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "category": "Clipboard & Edit",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+V",
+      "action": "Paste without formatting",
+      "category": "Clipboard & Edit",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all",
+      "category": "Clipboard & Edit",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F",
+      "action": "Open link in new tab",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "d",
+      "action": "Scroll half page down",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "u",
+      "action": "Scroll half page up",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "H",
+      "action": "Go back in history",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "o",
+      "action": "Open URL/bookmark/history",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "x",
+      "action": "Close current tab",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "J",
+      "action": "Previous tab",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "K",
+      "action": "Next tab",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "/",
+      "action": "Enter find mode",
+      "category": "Vimium Extension",
+      "frequency": "high",
+      "importance": 5.699999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+1",
+      "action": "Switch to tab 1",
+      "category": "Tab Management",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+2",
+      "action": "Switch to tab 2",
+      "category": "Tab Management",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "New window",
+      "category": "Tab Management",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F5",
+      "action": "Hard refresh (bypass cache)",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+D",
+      "action": "Focus address bar (alt)",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Space",
+      "action": "Scroll up one screen",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "Find next",
+      "category": "Find & Page",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F3",
+      "action": "Find next (alt)",
+      "category": "Find & Page",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+H",
+      "action": "History",
+      "category": "Find & Page",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "Bookmark page",
+      "category": "Find & Page",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+P",
+      "action": "Print",
+      "category": "Find & Page",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl++",
+      "action": "Zoom in",
+      "category": "Zoom & View",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+-",
+      "action": "Zoom out",
+      "category": "Zoom & View",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+0",
+      "action": "Reset zoom",
+      "category": "Zoom & View",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+I",
+      "action": "Open DevTools (alt)",
+      "category": "Developer Tools",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+J",
+      "action": "Open Console",
+      "category": "Developer Tools",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Y",
+      "action": "Redo",
+      "category": "Clipboard & Edit",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+E",
+      "action": "Toggle sidebar",
+      "category": "Edge Specific",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+F",
+      "action": "Settings menu",
+      "category": "Edge Specific",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "L",
+      "action": "Go forward in history",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "t",
+      "action": "Search open tabs",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "X",
+      "action": "Restore closed tab",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "r",
+      "action": "Reload page",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "gg",
+      "action": "Scroll to top",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "G",
+      "action": "Scroll to bottom",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "gi",
+      "action": "Focus first input field",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "yy",
+      "action": "Copy current URL",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "n",
+      "action": "Find next match",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "N",
+      "action": "Find previous match",
+      "category": "Vimium Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+S",
+      "action": "Open Proton Pass popup",
+      "category": "Proton Pass Extension",
+      "frequency": "medium",
+      "importance": 2.8499999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+3",
+      "action": "Switch to tab 3",
+      "category": "Tab Management",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+4",
+      "action": "Switch to tab 4",
+      "category": "Tab Management",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+9",
+      "action": "Last tab",
+      "category": "Tab Management",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+N",
+      "action": "Incognito/InPrivate window",
+      "category": "Tab Management",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Enter",
+      "action": "Add www./. com to URL",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Home",
+      "action": "Open home page",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+G",
+      "action": "Find previous",
+      "category": "Find & Page",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+J",
+      "action": "Downloads",
+      "category": "Find & Page",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+B",
+      "action": "Toggle bookmarks bar",
+      "category": "Find & Page",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "Save page as",
+      "category": "Find & Page",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "View page source",
+      "category": "Find & Page",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F11",
+      "action": "Toggle fullscreen",
+      "category": "Zoom & View",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+M",
+      "action": "Toggle device toolbar",
+      "category": "Developer Tools",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+B",
+      "action": "Toggle favorites bar",
+      "category": "Edge Specific",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+O",
+      "action": "Favorites manager",
+      "category": "Edge Specific",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Del",
+      "action": "Clear browsing data",
+      "category": "Edge Specific",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+P",
+      "action": "InPrivate window",
+      "category": "Edge Specific",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+R",
+      "action": "Read aloud",
+      "category": "Edge Specific",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "?",
+      "action": "Show Vimium help",
+      "category": "Vimium Extension",
+      "frequency": "low",
+      "importance": 0.95,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+5",
+      "action": "Switch to tab 5",
+      "category": "Tab Management",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+6",
+      "action": "Switch to tab 6",
+      "category": "Tab Management",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+7",
+      "action": "Switch to tab 7",
+      "category": "Tab Management",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+8",
+      "action": "Switch to tab 8",
+      "category": "Tab Management",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+O",
+      "action": "Bookmark manager",
+      "category": "Find & Page",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F1",
+      "action": "Help",
+      "category": "Edge Specific",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+U",
+      "action": "View source",
+      "category": "Edge Specific",
+      "frequency": "rare",
+      "importance": 0.19,
+      "preferred_hand": "either"
+    }
+  ]
+}

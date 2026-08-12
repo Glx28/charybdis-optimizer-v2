@@ -1,0 +1,256 @@
+{
+  "id": "explorer",
+  "name": "File Explorer",
+  "exe_names": [],
+  "expected_count": 31,
+  "shortcuts": [
+    {
+      "keys": "Alt+Left",
+      "action": "Back",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 4.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Enter",
+      "action": "Open selected item",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 4.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F2",
+      "action": "Rename",
+      "category": "File Operations",
+      "frequency": "constant",
+      "importance": 4.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy",
+      "category": "File Operations",
+      "frequency": "constant",
+      "importance": 4.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "File Operations",
+      "frequency": "constant",
+      "importance": 4.5,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Up",
+      "action": "Parent folder",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Right",
+      "action": "Forward",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+D",
+      "action": "Focus address bar",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Backspace",
+      "action": "Go up one level",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+N",
+      "action": "New folder",
+      "category": "File Operations",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Delete",
+      "action": "Delete to Recycle Bin",
+      "category": "File Operations",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+X",
+      "action": "Cut",
+      "category": "File Operations",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "category": "File Operations",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+C",
+      "action": "Copy path",
+      "category": "File Operations",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Click",
+      "action": "Select multiple (non-adjacent)",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Click",
+      "action": "Select range",
+      "category": "Selection",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+E",
+      "action": "Search box",
+      "category": "View & Search",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "Search box (alt)",
+      "category": "View & Search",
+      "frequency": "high",
+      "importance": 2.7,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "Focus address bar (alt)",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 1.35,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Enter",
+      "action": "Properties",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 1.35,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "New window",
+      "category": "File Operations",
+      "frequency": "medium",
+      "importance": 1.35,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Y",
+      "action": "Redo",
+      "category": "File Operations",
+      "frequency": "medium",
+      "importance": 1.35,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F4",
+      "action": "Focus address bar dropdown",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 0.45,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Delete",
+      "action": "Permanent delete",
+      "category": "File Operations",
+      "frequency": "low",
+      "importance": 0.45,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+6",
+      "action": "Toggle details pane",
+      "category": "Selection",
+      "frequency": "low",
+      "importance": 0.45,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F11",
+      "action": "Fullscreen",
+      "category": "View & Search",
+      "frequency": "low",
+      "importance": 0.45,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+P",
+      "action": "Preview pane",
+      "category": "View & Search",
+      "frequency": "low",
+      "importance": 0.45,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+6",
+      "action": "Details view",
+      "category": "View & Search",
+      "frequency": "low",
+      "importance": 0.45,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+1",
+      "action": "Extra large icons",
+      "category": "View & Search",
+      "frequency": "rare",
+      "importance": 0.09000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+2",
+      "action": "Large icons",
+      "category": "View & Search",
+      "frequency": "rare",
+      "importance": 0.09000000000000001,
+      "preferred_hand": "either"
+    }
+  ]
+}

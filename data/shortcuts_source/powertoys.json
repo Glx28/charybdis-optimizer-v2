@@ -1,0 +1,122 @@
+{
+  "id": "powertoys",
+  "name": "PowerToys",
+  "exe_names": [
+    "powertoys.exe"
+  ],
+  "expected_count": 14,
+  "shortcuts": [
+    {
+      "keys": "Alt+Space",
+      "action": "PowerToys Run launcher",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Alt+Space",
+      "action": "PowerToys Command Palette (CmdPal)",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Shift+C",
+      "action": "Color Picker",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Shift+T",
+      "action": "Text Extractor (OCR)",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Shift+V",
+      "action": "Advanced Paste",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Space",
+      "action": "Peek (quick file preview)",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+`",
+      "action": "FancyZones editor",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Shift+O",
+      "action": "Mouse Pointer Crosshairs",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Shift+D",
+      "action": "Mouse Highlighter",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Shift+M",
+      "action": "Find My Mouse",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Shift+N",
+      "action": "New+ (create from template)",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Shift+Q",
+      "action": "Video Conference Mute",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Ctrl+`",
+      "action": "Workspaces (save/restore window sets)",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Win+Shift+R",
+      "action": "Screen Ruler",
+      "category": "System Shortcuts",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    }
+  ]
+}

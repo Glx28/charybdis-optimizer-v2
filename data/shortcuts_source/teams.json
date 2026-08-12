@@ -1,0 +1,360 @@
+{
+  "id": "teams",
+  "name": "Microsoft Teams",
+  "exe_names": [],
+  "expected_count": 44,
+  "shortcuts": [
+    {
+      "keys": "Ctrl+2",
+      "action": "Chat",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 10.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+E",
+      "action": "Search / command bar",
+      "category": "Navigation",
+      "frequency": "constant",
+      "importance": 10.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Enter",
+      "action": "Send (expanded mode)",
+      "category": "Messaging",
+      "frequency": "constant",
+      "importance": 10.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Enter",
+      "action": "Send message",
+      "category": "Messaging",
+      "frequency": "constant",
+      "importance": 10.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy",
+      "category": "Messaging",
+      "frequency": "constant",
+      "importance": 10.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "Messaging",
+      "frequency": "constant",
+      "importance": 10.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+M",
+      "action": "Toggle mute",
+      "category": "Meetings & Calls",
+      "frequency": "constant",
+      "importance": 10.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+1",
+      "action": "Activity",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+3",
+      "action": "Teams/channels",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+4",
+      "action": "Calendar",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Left",
+      "action": "Go back",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "New chat",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Enter",
+      "action": "New line in message",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+B",
+      "action": "Bold",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Up",
+      "action": "Edit last sent message",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+O",
+      "action": "Toggle camera",
+      "category": "Meetings & Calls",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+E",
+      "action": "Toggle screen share",
+      "category": "Meetings & Calls",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+H",
+      "action": "Hang up / end call",
+      "category": "Meetings & Calls",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+A",
+      "action": "Accept call",
+      "category": "Meetings & Calls",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Escape",
+      "action": "Close / go back",
+      "category": "General",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "Find in conversation",
+      "category": "General",
+      "frequency": "high",
+      "importance": 6.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+5",
+      "action": "Calls",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+6",
+      "action": "Files",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+.",
+      "action": "Show commands",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+F6",
+      "action": "Next section",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Right",
+      "action": "Go forward",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+X",
+      "action": "Expand compose box",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+F",
+      "action": "Format text",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+I",
+      "action": "Italic",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+U",
+      "action": "Mark as unread",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+S",
+      "action": "Attach file",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K",
+      "action": "Insert link",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+K",
+      "action": "Raise/lower hand",
+      "category": "Meetings & Calls",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+B",
+      "action": "Toggle background blur",
+      "category": "Meetings & Calls",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+D",
+      "action": "Decline call",
+      "category": "Meetings & Calls",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+P",
+      "action": "Toggle chat in meeting",
+      "category": "Meetings & Calls",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+L",
+      "action": "Toggle sidebar",
+      "category": "General",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "Go to...",
+      "category": "General",
+      "frequency": "medium",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F6",
+      "action": "Previous section",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 1.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "Underline",
+      "category": "Messaging",
+      "frequency": "low",
+      "importance": 1.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+R",
+      "action": "Start recording",
+      "category": "Meetings & Calls",
+      "frequency": "low",
+      "importance": 1.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+/",
+      "action": "Show keyboard shortcuts",
+      "category": "Navigation",
+      "frequency": "rare",
+      "importance": 0.2,
+      "preferred_hand": "either"
+    }
+  ]
+}

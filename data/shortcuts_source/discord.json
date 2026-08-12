@@ -1,0 +1,136 @@
+{
+  "id": "discord",
+  "name": "Discord",
+  "exe_names": [],
+  "expected_count": 16,
+  "shortcuts": [
+    {
+      "keys": "Enter",
+      "action": "Send message",
+      "category": "Messaging",
+      "frequency": "constant",
+      "importance": 2.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+M",
+      "action": "Toggle mute",
+      "category": "Voice & Video",
+      "frequency": "constant",
+      "importance": 2.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K",
+      "action": "Quick switcher",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Up",
+      "action": "Previous channel",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Down",
+      "action": "Next channel",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Escape",
+      "action": "Close popups / deselect",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Shift+Enter",
+      "action": "New line",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Up",
+      "action": "Edit last message",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+E",
+      "action": "Search",
+      "category": "Messaging",
+      "frequency": "high",
+      "importance": 1.2000000000000002,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Shift+Up",
+      "action": "Previous unread",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 0.6000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Shift+Down",
+      "action": "Next unread",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 0.6000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+I",
+      "action": "Open inbox",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 0.6000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+B",
+      "action": "Bold",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 0.6000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+I",
+      "action": "Italic",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 0.6000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+D",
+      "action": "Toggle deafen",
+      "category": "Voice & Video",
+      "frequency": "medium",
+      "importance": 0.6000000000000001,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+X",
+      "action": "Strikethrough",
+      "category": "Messaging",
+      "frequency": "low",
+      "importance": 0.2,
+      "preferred_hand": "either"
+    }
+  ]
+}

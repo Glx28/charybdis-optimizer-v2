@@ -1,0 +1,248 @@
+{
+  "id": "outlook",
+  "name": "Microsoft Outlook",
+  "exe_names": [],
+  "expected_count": 30,
+  "shortcuts": [
+    {
+      "keys": "Ctrl+E",
+      "action": "Search",
+      "category": "Mail Navigation",
+      "frequency": "constant",
+      "importance": 7.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "New mail",
+      "category": "Mail Actions",
+      "frequency": "constant",
+      "importance": 7.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+R",
+      "action": "Reply",
+      "category": "Mail Actions",
+      "frequency": "constant",
+      "importance": 7.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Enter",
+      "action": "Send message",
+      "category": "Mail Actions",
+      "frequency": "constant",
+      "importance": 7.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 7.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 7.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+1",
+      "action": "Switch to Mail",
+      "category": "Mail Navigation",
+      "frequency": "high",
+      "importance": 4.199999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+2",
+      "action": "Switch to Calendar",
+      "category": "Mail Navigation",
+      "frequency": "high",
+      "importance": 4.199999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+I",
+      "action": "Go to Inbox",
+      "category": "Mail Navigation",
+      "frequency": "high",
+      "importance": 4.199999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+R",
+      "action": "Reply all",
+      "category": "Mail Actions",
+      "frequency": "high",
+      "importance": 4.199999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "Forward",
+      "category": "Mail Actions",
+      "frequency": "high",
+      "importance": 4.199999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Delete",
+      "action": "Delete message",
+      "category": "Mail Actions",
+      "frequency": "high",
+      "importance": 4.199999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Q",
+      "action": "Mark as read",
+      "category": "Mail Actions",
+      "frequency": "high",
+      "importance": 4.199999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "Mark as unread",
+      "category": "Mail Actions",
+      "frequency": "high",
+      "importance": 4.199999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 4.199999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+B",
+      "action": "Bold",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 4.199999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+V",
+      "action": "Paste as plain text",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 4.199999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+3",
+      "action": "Switch to Contacts",
+      "category": "Mail Navigation",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F3",
+      "action": "Search (alt)",
+      "category": "Mail Navigation",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F9",
+      "action": "Send/Receive all",
+      "category": "Mail Navigation",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+M",
+      "action": "New message (alt)",
+      "category": "Mail Actions",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "Delete (alt)",
+      "category": "Mail Actions",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+G",
+      "action": "Flag / follow up",
+      "category": "Mail Actions",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+I",
+      "action": "Italic",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K",
+      "action": "Insert hyperlink",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+A",
+      "action": "New appointment",
+      "category": "Calendar",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+Q",
+      "action": "New meeting",
+      "category": "Calendar",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Down",
+      "action": "Next week (month view)",
+      "category": "Calendar",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Alt+Up",
+      "action": "Previous week",
+      "category": "Calendar",
+      "frequency": "medium",
+      "importance": 2.0999999999999996,
+      "preferred_hand": "either"
+    }
+  ]
+}

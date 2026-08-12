@@ -1,0 +1,240 @@
+{
+  "id": "word",
+  "name": "Microsoft Word",
+  "exe_names": [],
+  "expected_count": 29,
+  "shortcuts": [
+    {
+      "keys": "Ctrl+B",
+      "action": "Bold",
+      "category": "Formatting",
+      "frequency": "constant",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "Copy",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "Paste",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "Undo",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "Save",
+      "category": "Editing",
+      "frequency": "constant",
+      "importance": 3.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+I",
+      "action": "Italic",
+      "category": "Formatting",
+      "frequency": "high",
+      "importance": 1.7999999999999998,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "Underline",
+      "category": "Formatting",
+      "frequency": "high",
+      "importance": 1.7999999999999998,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+X",
+      "action": "Cut",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.7999999999999998,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Y",
+      "action": "Redo",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.7999999999999998,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "Select all",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.7999999999999998,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "Find",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.7999999999999998,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+V",
+      "action": "Paste special",
+      "category": "Editing",
+      "frequency": "high",
+      "importance": 1.7999999999999998,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+E",
+      "action": "Center align",
+      "category": "Formatting",
+      "frequency": "medium",
+      "importance": 0.8999999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "Left align",
+      "category": "Formatting",
+      "frequency": "medium",
+      "importance": 0.8999999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+>",
+      "action": "Increase font size",
+      "category": "Formatting",
+      "frequency": "medium",
+      "importance": 0.8999999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+<",
+      "action": "Decrease font size",
+      "category": "Formatting",
+      "frequency": "medium",
+      "importance": 0.8999999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+H",
+      "action": "Find and replace",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 0.8999999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K",
+      "action": "Insert hyperlink",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 0.8999999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Enter",
+      "action": "Page break",
+      "category": "Editing",
+      "frequency": "medium",
+      "importance": 0.8999999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Home",
+      "action": "Go to beginning",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 0.8999999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+End",
+      "action": "Go to end",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 0.8999999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+P",
+      "action": "Print",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 0.8999999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "F7",
+      "action": "Spell check",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 0.8999999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+N",
+      "action": "Normal style",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 0.8999999999999999,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+R",
+      "action": "Right align",
+      "category": "Formatting",
+      "frequency": "low",
+      "importance": 0.3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+J",
+      "action": "Justify",
+      "category": "Formatting",
+      "frequency": "low",
+      "importance": 0.3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+1",
+      "action": "Single spacing",
+      "category": "Formatting",
+      "frequency": "low",
+      "importance": 0.3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+2",
+      "action": "Double spacing",
+      "category": "Formatting",
+      "frequency": "low",
+      "importance": 0.3,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "Go to page",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 0.3,
+      "preferred_hand": "either"
+    }
+  ]
+}
