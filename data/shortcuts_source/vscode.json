@@ -611,6 +611,14 @@
       "frequency": "rare",
       "importance": 0.18000000000000002,
       "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+Shift+T",
+      "action": "Reopen closed tab",
+      "category": "Tabs",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
     }
   ]
 }

@@ -1,7 +1,6 @@
 {
   "id": "codex_cli",
   "name": "Codex CLI",
-  "user_weight": 1,
   "exe_names": [],
   "expected_count": 15,
   "shortcuts": [
@@ -10,7 +9,7 @@
       "action": "Interrupt active task",
       "category": "Session Control",
       "frequency": "high",
-      "importance": 9,
+      "importance": 9.0,
       "preferred_hand": "either"
     },
     {
@@ -18,7 +17,7 @@
       "action": "Cancel current turn / close session",
       "category": "Session Control",
       "frequency": "high",
-      "importance": 8,
+      "importance": 8.0,
       "preferred_hand": "either"
     },
     {
@@ -26,7 +25,7 @@
       "action": "Search prompt history",
       "category": "Session Control",
       "frequency": "medium",
-      "importance": 6,
+      "importance": 6.0,
       "preferred_hand": "either"
     },
     {
@@ -34,7 +33,7 @@
       "action": "Copy latest completed output",
       "category": "Session Control",
       "frequency": "low",
-      "importance": 4,
+      "importance": 4.0,
       "preferred_hand": "either"
     },
     {
@@ -42,7 +41,7 @@
       "action": "Queue follow-up prompt while Codex is working",
       "category": "Input",
       "frequency": "medium",
-      "importance": 5,
+      "importance": 5.0,
       "preferred_hand": "either"
     },
     {
@@ -50,7 +49,7 @@
       "action": "Search and add files to prompt",
       "category": "Input",
       "frequency": "high",
-      "importance": 7,
+      "importance": 7.0,
       "preferred_hand": "either"
     },
     {
@@ -58,7 +57,7 @@
       "action": "Run local shell command (line prefix)",
       "category": "Input",
       "frequency": "medium",
-      "importance": 5,
+      "importance": 5.0,
       "preferred_hand": "either"
     },
     {
@@ -66,7 +65,7 @@
       "action": "Open slash command menu (/model, /status, /review, ...)",
       "category": "Input",
       "frequency": "high",
-      "importance": 7,
+      "importance": 7.0,
       "preferred_hand": "either"
     },
     {

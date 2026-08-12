@@ -1,7 +1,6 @@
 {
   "id": "claude_code_cli",
   "name": "Claude Code CLI",
-  "user_weight": 1,
   "exe_names": [],
   "expected_count": 15,
   "shortcuts": [
@@ -10,7 +9,7 @@
       "action": "Interrupt Claude / close a dialog",
       "category": "Session Control",
       "frequency": "high",
-      "importance": 9,
+      "importance": 9.0,
       "preferred_hand": "either"
     },
     {
@@ -18,7 +17,7 @@
       "action": "Interrupt running op; 2nd press exits",
       "category": "Session Control",
       "frequency": "high",
-      "importance": 8,
+      "importance": 8.0,
       "preferred_hand": "either"
     },
     {
@@ -26,7 +25,7 @@
       "action": "Exit Claude Code session (EOF)",
       "category": "Session Control",
       "frequency": "medium",
-      "importance": 6,
+      "importance": 6.0,
       "preferred_hand": "either"
     },
     {
@@ -34,7 +33,7 @@
       "action": "Cycle permission modes (auto-accept/plan/bypass)",
       "category": "Mode Control",
       "frequency": "high",
-      "importance": 9,
+      "importance": 9.0,
       "preferred_hand": "either"
     },
     {
@@ -42,7 +41,7 @@
       "action": "Toggle transcript / verbose tool-use view",
       "category": "Session Control",
       "frequency": "medium",
-      "importance": 6,
+      "importance": 6.0,
       "preferred_hand": "either"
     },
     {
@@ -50,7 +49,7 @@
       "action": "Reverse search prompt/command history",
       "category": "Session Control",
       "frequency": "medium",
-      "importance": 6,
+      "importance": 6.0,
       "preferred_hand": "either"
     },
     {
@@ -58,7 +57,7 @@
       "action": "Redraw / clear terminal screen",
       "category": "Session Control",
       "frequency": "low",
-      "importance": 3,
+      "importance": 3.0,
       "preferred_hand": "either"
     },
     {
@@ -66,7 +65,7 @@
       "action": "Background running Bash command/agent",
       "category": "Session Control",
       "frequency": "low",
-      "importance": 4,
+      "importance": 4.0,
       "preferred_hand": "either"
     },
     {
@@ -74,7 +73,7 @@
       "action": "Insert newline in multi-line input",
       "category": "Input",
       "frequency": "high",
-      "importance": 7,
+      "importance": 7.0,
       "preferred_hand": "either"
     },
     {
@@ -82,7 +81,7 @@
       "action": "Open slash command / skill menu",
       "category": "Input",
       "frequency": "high",
-      "importance": 8,
+      "importance": 8.0,
       "preferred_hand": "either"
     },
     {
@@ -90,32 +89,16 @@
       "action": "Enter shell mode, run command directly (+1 other app-specific meanings)",
       "category": "Input",
       "frequency": "medium",
-      "importance": 5,
-      "preferred_hand": "either",
-      "variants": [
-        {
-          "app": "Codex CLI",
-          "action": "Run local shell command (line prefix)",
-          "importance": 5,
-          "frequency": "medium"
-        }
-      ]
+      "importance": 5.0,
+      "preferred_hand": "either"
     },
     {
       "keys": "@",
       "action": "Trigger file path autocomplete/mention (+1 other app-specific meanings)",
       "category": "Input",
       "frequency": "high",
-      "importance": 7,
-      "preferred_hand": "either",
-      "variants": [
-        {
-          "app": "Codex CLI",
-          "action": "Search and add files to prompt",
-          "importance": 7,
-          "frequency": "high"
-        }
-      ]
+      "importance": 7.0,
+      "preferred_hand": "either"
     },
     {
       "keys": "Enter",

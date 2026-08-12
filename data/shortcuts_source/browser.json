@@ -715,6 +715,22 @@
       "frequency": "rare",
       "importance": 0.19,
       "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+K",
+      "action": "Focus address bar search",
+      "category": "Navigation",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+R",
+      "action": "Reload",
+      "category": "Navigation",
+      "frequency": "high",
+      "importance": 7.0,
+      "preferred_hand": "either"
     }
   ]
 }

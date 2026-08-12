@@ -1,7 +1,6 @@
 {
   "id": "kimi_cli",
   "name": "Kimi CLI",
-  "user_weight": 1,
   "exe_names": [],
   "expected_count": 15,
   "shortcuts": [
@@ -10,7 +9,7 @@
       "action": "Switch between agent mode and shell command mode",
       "category": "Mode Control",
       "frequency": "medium",
-      "importance": 6,
+      "importance": 6.0,
       "preferred_hand": "either"
     },
     {
@@ -18,7 +17,7 @@
       "action": "Toggle plan mode",
       "category": "Mode Control",
       "frequency": "high",
-      "importance": 8,
+      "importance": 8.0,
       "preferred_hand": "either"
     },
     {
@@ -26,7 +25,7 @@
       "action": "Expand plan/prompt view fullscreen",
       "category": "Session Control",
       "frequency": "medium",
-      "importance": 5,
+      "importance": 5.0,
       "preferred_hand": "either"
     },
     {
@@ -34,7 +33,7 @@
       "action": "Inject message directly into running turn",
       "category": "Session Control",
       "frequency": "medium",
-      "importance": 5,
+      "importance": 5.0,
       "preferred_hand": "either"
     },
     {
@@ -42,7 +41,7 @@
       "action": "Paste text/image/video from clipboard",
       "category": "Input",
       "frequency": "low",
-      "importance": 3,
+      "importance": 3.0,
       "preferred_hand": "either"
     },
     {

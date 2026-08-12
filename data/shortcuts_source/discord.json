@@ -131,6 +131,30 @@
       "frequency": "low",
       "importance": 0.2,
       "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+R",
+      "action": "Reply to message",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "Search in channel",
+      "category": "Messaging",
+      "frequency": "medium",
+      "importance": 5.0,
+      "preferred_hand": "either"
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "Toggle member list",
+      "category": "Navigation",
+      "frequency": "low",
+      "importance": 4.0,
+      "preferred_hand": "either"
     }
   ]
 }
