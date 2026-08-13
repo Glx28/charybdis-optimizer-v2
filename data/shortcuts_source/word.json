@@ -1,7 +1,9 @@
 {
   "id": "word",
   "name": "Microsoft Word",
-  "exe_names": [],
+  "exe_names": [
+    "winword.exe"
+  ],
   "expected_count": 29,
   "shortcuts": [
     {

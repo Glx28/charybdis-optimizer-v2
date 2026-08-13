@@ -1,7 +1,12 @@
 {
   "id": "terminal",
   "name": "Windows Terminal / PowerShell",
-  "exe_names": [],
+  "exe_names": [
+    "windowsterminal.exe",
+    "wt.exe",
+    "powershell.exe",
+    "pwsh.exe"
+  ],
   "expected_count": 26,
   "shortcuts": [
     {

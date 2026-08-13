@@ -1,7 +1,9 @@
 {
   "id": "powerpoint",
   "name": "Microsoft PowerPoint",
-  "exe_names": [],
+  "exe_names": [
+    "powerpnt.exe"
+  ],
   "expected_count": 27,
   "shortcuts": [
     {

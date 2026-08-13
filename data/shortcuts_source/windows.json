@@ -1,7 +1,12 @@
 {
   "id": "windows",
   "name": "Windows 11",
-  "exe_names": [],
+  "exe_names": [
+    "explorer.exe",
+    "searchhost.exe",
+    "startmenuexperiencehost.exe",
+    "shellexperiencehost.exe"
+  ],
   "expected_count": 52,
   "shortcuts": [
     {

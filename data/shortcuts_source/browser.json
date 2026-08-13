@@ -1,7 +1,10 @@
 {
   "id": "browser",
   "name": "Browser (Chrome/Edge)",
-  "exe_names": [],
+  "exe_names": [
+    "chrome.exe",
+    "msedge.exe"
+  ],
   "expected_count": 89,
   "shortcuts": [
     {
