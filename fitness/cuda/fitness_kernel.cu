@@ -1482,9 +1482,9 @@ __device__ void evaluate_single(
                             if (!shape_found) n_wrong_shape++;
                         }
                         raw_keyboard_completion_norwegian += (float)n_wrong_shape * 50000.0f;
+                    } else {
+                        raw_keyboard_completion_norwegian += 250000.0f;
                     }
-                } else {
-                    raw_keyboard_completion_norwegian += 250000.0f;
                 }
             }
         }
