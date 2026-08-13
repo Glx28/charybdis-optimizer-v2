@@ -362,7 +362,8 @@ def _access_rows(layout) -> np.ndarray:
 
 def precompute(layout, weights: dict, violation_weights: dict, missing_important_threshold: float,
                scale_factors: np.ndarray, reference_genome: np.ndarray = None,
-               hard_constraints=None, toggle_effort_multiplier: float = 2.5):
+               hard_constraints=None, toggle_effort_multiplier: float = 2.5,
+               layer_access_thumb_params: dict = None):
     """Assemble all static arrays needed by the compiled kernels."""
     pos_effort = np.asarray([p.effort for p in layout.positions], dtype=np.float32)
     pos_layer = np.asarray([p.layer for p in layout.positions], dtype=np.int32)
@@ -501,6 +502,15 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         weights.get("everything_layer", DEFAULT_FITNESS_WEIGHTS["everything_layer"]),
     ], dtype=np.float32)
 
+    lat = layer_access_thumb_params or DEFAULT_CONFIG["fitness"].get("layer_access_thumb", {})
+    lat_params = np.asarray([
+        float(lat.get("thumb_bonus", 0.8)),
+        float(lat.get("non_thumb_penalty", 1.0)),
+        float(lat.get("non_thumb_base", 2.0)),
+        float(lat.get("same_side_penalty", 1.0)),
+        float(lat.get("opposite_side_reward", 0.7)),
+    ], dtype=np.float32)
+
     vw = violation_weights or {}
     violation_weight_arr = np.asarray([
         vw.get("duplicate", DEFAULT_VIOLATION_WEIGHTS["duplicate"]),
@@ -527,6 +537,8 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         vw.get("mouse_hold_position_conflict", DEFAULT_VIOLATION_WEIGHTS.get("mouse_hold_position_conflict", 150000000000.0)),
         vw.get("mouse_layer_depth_penalty", DEFAULT_VIOLATION_WEIGHTS.get("mouse_layer_depth_penalty", 150000000000.0)),
         vw.get("same_layer_duplicate", DEFAULT_VIOLATION_WEIGHTS.get("same_layer_duplicate", 200000.0)),
+        vw.get("layer_access_thumb_preference", DEFAULT_VIOLATION_WEIGHTS.get("layer_access_thumb_preference", 2500.0)),
+        vw.get("same_side_hold_flow", DEFAULT_VIOLATION_WEIGHTS.get("same_side_hold_flow", 1500.0)),
     ], dtype=np.float32)
 
     VIOLATION_NAMES = (
@@ -541,6 +553,8 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         "mouse_hold_position_conflict",
         "mouse_layer_depth_penalty",
         "same_layer_duplicate",
+        "layer_access_thumb_preference",
+        "same_side_hold_flow",
     )
     hard_constraints = hard_constraints or []
     hard_constraint_indices = np.asarray(
@@ -574,6 +588,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         hard_constraint_indices, shortcut_key_group, np.int32(n_key_groups),
         np.float32(toggle_effort_multiplier),
         log1p_lut, pos_effort_waste,
+        lat_params,
     )
 
 
@@ -591,6 +606,7 @@ if NUMBA_AVAILABLE:
         shortcut_key_group, n_key_groups,
         toggle_effort_multiplier,
         log1p_lut, pos_effort_waste,
+        lat_params,
     ):
         n_pos = genome.shape[0]
         lut_size = log1p_lut.shape[0]
@@ -642,6 +658,8 @@ if NUMBA_AVAILABLE:
         has_hold_edge = np.zeros((32, 32), dtype=np.bool_)
         edge_cost = np.full((32, 32), 1000000.0, dtype=np.float32)
         edge_hand = np.full((32, 32), -1, dtype=np.int32)
+        edge_is_thumb = np.zeros((32, 32), dtype=np.bool_)
+        incoming_thumb_hand = np.full(32, -1, dtype=np.int32)
         access_layout = 0.0
         mouse_button_right = np.zeros((32, 6), dtype=np.int32)
         mouse_button_right_thumb = np.zeros((32, 6), dtype=np.int32)
@@ -731,6 +749,7 @@ if NUMBA_AVAILABLE:
                 edge_cost[source, target] = cost
                 momentary_edge[source, target] = shortcut_access_momentary[sid]
                 edge_hand[source, target] = pos_hand[i]
+                edge_is_thumb[source, target] = pos_is_thumb[i]
 
         for _ in range(32):
             changed = False
@@ -762,6 +781,8 @@ if NUMBA_AVAILABLE:
                         layer_right_required[target] = layer_right_required[source] or (
                             momentary_edge[source, target] and edge_hand[source, target] == 1
                         )
+                        if momentary_edge[source, target] and edge_is_thumb[source, target]:
+                            incoming_thumb_hand[target] = edge_hand[source, target]
                         changed = True
             if not changed:
                 break
@@ -2244,7 +2265,35 @@ if NUMBA_AVAILABLE:
                 else:
                     empty_pos_waste += pos_effort_waste[i]
 
-        raw_scores = np.empty(24, dtype=np.float32)
+        layer_access_thumb_preference = 0.0
+        same_side_hold_flow = 0.0
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_short:
+                continue
+            if not shortcut_access_momentary[sid]:
+                continue
+            target = shortcut_access_target[sid]
+            if target <= 0 or target >= 32:
+                continue
+            layer = pos_layer[i]
+            if layer < 0 or layer >= 32:
+                continue
+            imp = shortcut_importance[sid]
+            demand = layer_demand[target]
+            if pos_is_thumb[i]:
+                layer_access_thumb_preference -= imp * lat_params[0] * (1.0 + math.log1p(demand))
+            else:
+                layer_access_thumb_preference += imp * lat_params[1] + lat_params[2]
+            if pos_is_thumb[i]:
+                inc = incoming_thumb_hand[layer]
+                if inc >= 0:
+                    if pos_hand[i] == inc:
+                        same_side_hold_flow += imp * lat_params[3]
+                    else:
+                        same_side_hold_flow -= imp * lat_params[4]
+
+        raw_scores = np.empty(26, dtype=np.float32)
         raw_scores[0] = duplicate
         raw_scores[1] = l0_displacement
         raw_scores[2] = missing
@@ -2280,6 +2329,8 @@ if NUMBA_AVAILABLE:
         else:
             raw_scores[22] = 0.0
         raw_scores[23] = same_layer_duplicate
+        raw_scores[24] = layer_access_thumb_preference
+        raw_scores[25] = same_side_hold_flow
 
         # Hard constraints (g(x) <= 0 convention; raw_scores are >= 0).
         n_constr = hard_constraint_indices.shape[0]
@@ -2289,7 +2340,7 @@ if NUMBA_AVAILABLE:
 
         # Soft penalties weighted and summed into the violations objective.
         violations_raw = 0.0
-        for j in range(24):
+        for j in range(26):
             violations_raw += raw_scores[j] * violation_weights[j]
 
         workflow = 0.0
@@ -2382,6 +2433,7 @@ if NUMBA_AVAILABLE:
         shortcut_key_group, n_key_groups,
         toggle_effort_multiplier,
         log1p_lut, pos_effort_waste,
+        lat_params,
     ):
         batch = genomes.shape[0]
         n_constr = hard_constraint_indices.shape[0]
@@ -2401,6 +2453,7 @@ if NUMBA_AVAILABLE:
                 shortcut_key_group, n_key_groups,
                 toggle_effort_multiplier,
                 log1p_lut, pos_effort_waste,
+                lat_params,
             )
             out[b] = obj
             constraints[b] = constr

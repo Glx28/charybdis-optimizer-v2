@@ -115,7 +115,9 @@ def _build_args(arrays: Tuple[Any, ...]) -> Tuple[torch.Tensor, ...]:
         toggle_effort_multiplier,
         log1p_lut,
         pos_effort_waste,
+        lat_params,
     ) = arrays
+    # lat_params is consumed by the Numba kernel; the CUDA mirror will use it in Task 5.
     return (
         _to_tensor(pos_effort),
         _to_tensor(pos_layer),
