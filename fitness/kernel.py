@@ -2151,7 +2151,7 @@ if NUMBA_AVAILABLE:
                 layer_factor = 4.0
             ld = layer_demand[layer]
             demand_scale = 1.0 + ld / (1.0 + ld * 2.0) * 0.6
-            _empty_penalty = gate * layer_factor * demand_scale * 20.0
+            _empty_penalty = gate * layer_factor * demand_scale * 100.0
             if layer == 0:
                 _empty_penalty *= 3.0
             effort += _empty_penalty

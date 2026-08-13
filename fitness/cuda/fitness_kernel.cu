@@ -1905,7 +1905,7 @@ __device__ void evaluate_single(
         if (layer_factor > 4.0f) layer_factor = 4.0f;
         float ld = s->layer_demand[layer];
         float demand_scale = 1.0f + ld / (1.0f + ld * 2.0f) * 0.6f;
-        float empty_penalty = gate * layer_factor * demand_scale * 20.0f;
+        float empty_penalty = gate * layer_factor * demand_scale * 100.0f;
         if (layer == 0) {
             empty_penalty *= 3.0f;
         }
