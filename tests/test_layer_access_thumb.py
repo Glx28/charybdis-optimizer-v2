@@ -1,4 +1,8 @@
-"""Minimal parity test for thumb-aware layer access scoring."""
+"""Unit and parity tests for thumb-aware layer access scoring.
+
+Covers both behavioral directionality of the new thumb-preference terms
+and CUDA/Numba numerical parity on real and synthetic layouts.
+"""
 import os
 import sys
 import unittest
@@ -14,7 +18,7 @@ from fitness.evaluator import FitnessEvaluator
 
 
 class TestLayerAccessThumb(unittest.TestCase):
-    """CUDA/Numba parity for layer_access_thumb_preference and same_side_hold_flow."""
+    """Behavioral and CUDA/Numba parity tests for thumb-aware layer access."""
 
     @staticmethod
     def _make_minimal_layout():
@@ -153,8 +157,9 @@ class TestLayerAccessThumb(unittest.TestCase):
         genome_good = np.array([0, -1, -1, -1, -1, -1], dtype=np.int32)
         layout_good = Layout(genome_good, positions, shortcuts, frozen_mask, layer_to_indices)
 
-        # L1 hold on left finger -> bad
-        genome_bad = np.array([2, -1, 0, -1, -1, -1], dtype=np.int32)
+        # L1 hold on left finger -> bad; keep other slots unassigned so the
+        # only difference is thumb vs. non-thumb placement.
+        genome_bad = np.array([-1, -1, 0, -1, -1, -1], dtype=np.int32)
         layout_bad = Layout(genome_bad, positions, shortcuts, frozen_mask, layer_to_indices)
 
         ev = FitnessEvaluator()
