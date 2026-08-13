@@ -28,7 +28,14 @@ class ParityResult:
 
 
 class FitnessModel:
-    """Compiled fitness model: one source of truth for all evaluations."""
+    """Compiled fitness model: one source of truth for all evaluations.
+
+    Args:
+        layer_access_thumb_params: Optional dict with thumb-aware layer access
+            coefficients (thumb_bonus, non_thumb_penalty, non_thumb_base,
+            same_side_penalty, opposite_side_reward). When omitted, the kernel
+            falls back to ``DEFAULT_CONFIG["fitness"]["layer_access_thumb"]``.
+    """
 
     def __init__(
         self,

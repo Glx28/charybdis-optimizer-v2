@@ -84,6 +84,8 @@ class FitnessEvaluator:
                 scale_factors=self.scale_factors,
                 reference_genome=layout.genome,
                 hard_constraints=self.hard_constraints,
+                toggle_effort_multiplier=self.toggle_effort_multiplier,
+                require_cuda=self.require_cuda,
                 layer_access_thumb_params=self.layer_access_thumb_params,
             )
             objectives, constraints = model.evaluate(layout.genome)
