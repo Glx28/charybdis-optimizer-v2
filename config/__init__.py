@@ -98,6 +98,15 @@ DEFAULT_CONFIG = {
             "mouse_hold_position_conflict": 150000000000.0,
             "mouse_layer_depth_penalty": 150000000000.0,
             "same_layer_duplicate": 200000.0,
+            "layer_access_thumb_preference": 2500.0,
+            "same_side_hold_flow": 1500.0,
+        },
+        "layer_access_thumb": {
+            "thumb_bonus": 0.8,
+            "non_thumb_penalty": 1.0,
+            "non_thumb_base": 2.0,
+            "same_side_penalty": 1.0,
+            "opposite_side_reward": 0.7,
         },
         "hard_constraints": [
             "missing_important",
