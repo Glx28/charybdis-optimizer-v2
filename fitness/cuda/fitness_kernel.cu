@@ -411,6 +411,8 @@ __device__ void evaluate_single(
                         (s->momentary_edge[source][target] && s->edge_hand[source][target] == 1);
                     if (s->momentary_edge[source][target] && s->edge_is_thumb[source][target]) {
                         s->incoming_thumb_hand[target] = s->edge_hand[source][target];
+                    } else {
+                        s->incoming_thumb_hand[target] = -1;
                     }
                     changed = true;
                 }
