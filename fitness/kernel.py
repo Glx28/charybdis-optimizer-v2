@@ -537,8 +537,8 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         vw.get("mouse_hold_position_conflict", DEFAULT_VIOLATION_WEIGHTS.get("mouse_hold_position_conflict", 150000000000.0)),
         vw.get("mouse_layer_depth_penalty", DEFAULT_VIOLATION_WEIGHTS.get("mouse_layer_depth_penalty", 150000000000.0)),
         vw.get("same_layer_duplicate", DEFAULT_VIOLATION_WEIGHTS.get("same_layer_duplicate", 200000.0)),
-        vw.get("layer_access_thumb_preference", DEFAULT_VIOLATION_WEIGHTS.get("layer_access_thumb_preference", 2500.0)),
-        vw.get("same_side_hold_flow", DEFAULT_VIOLATION_WEIGHTS.get("same_side_hold_flow", 1500.0)),
+        vw.get("layer_access_thumb_preference", DEFAULT_VIOLATION_WEIGHTS["layer_access_thumb_preference"]),
+        vw.get("same_side_hold_flow", DEFAULT_VIOLATION_WEIGHTS["same_side_hold_flow"]),
     ], dtype=np.float32)
 
     VIOLATION_NAMES = (
@@ -783,6 +783,8 @@ if NUMBA_AVAILABLE:
                         )
                         if momentary_edge[source, target] and edge_is_thumb[source, target]:
                             incoming_thumb_hand[target] = edge_hand[source, target]
+                        else:
+                            incoming_thumb_hand[target] = -1
                         changed = True
             if not changed:
                 break
