@@ -8,12 +8,45 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import numpy as np
 
 from config import Config, DEFAULT_CONFIG
+from core import Layout, Position, Shortcut
 from core.loader import build_layout
 from fitness.evaluator import FitnessEvaluator
 
 
 class TestLayerAccessThumb(unittest.TestCase):
     """CUDA/Numba parity for layer_access_thumb_preference and same_side_hold_flow."""
+
+    @staticmethod
+    def _make_minimal_layout():
+        positions = (
+            # L0 left thumb
+            Position(0, 0, 3.0, 4.0, "left", 0, 1.0, is_thumb=True),
+            # L0 right thumb
+            Position(1, 0, 8.0, 4.0, "right", 0, 1.0, is_thumb=True),
+            # L0 left finger
+            Position(2, 0, 2.0, 2.0, "left", 1, 1.0, is_thumb=False),
+            # L1 left thumb
+            Position(3, 1, 3.0, 4.0, "left", 0, 1.0, is_thumb=True),
+            # L1 right thumb
+            Position(4, 1, 8.0, 4.0, "right", 0, 1.0, is_thumb=True),
+            # L1 left finger
+            Position(5, 1, 2.0, 2.0, "left", 1, 1.0, is_thumb=False),
+        )
+        shortcuts = (
+            Shortcut(0, "@access:L1:hold", "L1 hold", "Layer Access", 10.0,
+                     category="layer_access", is_layer_access=True,
+                     access_target_layer=1, access_is_momentary=True),
+            Shortcut(1, "@access:L2:hold", "L2 hold", "Layer Access", 10.0,
+                     category="layer_access", is_layer_access=True,
+                     access_target_layer=2, access_is_momentary=True),
+            Shortcut(2, "Ctrl+C", "Copy", "App", 5.0),
+        )
+        layer_to_indices = {
+            0: np.array([0, 1, 2], dtype=np.int32),
+            1: np.array([3, 4, 5], dtype=np.int32),
+        }
+        frozen_mask = np.zeros(len(positions), dtype=bool)
+        return positions, shortcuts, layer_to_indices, frozen_mask
 
     def _build_layout(self):
         config = Config.load("config_v2.yaml")
@@ -112,6 +145,38 @@ class TestLayerAccessThumb(unittest.TestCase):
 
         raw_cuda, raw_numba = self._isolated_raw_score("same_side_hold_flow", weight=1.0)
         np.testing.assert_allclose(raw_cuda, raw_numba, rtol=1e-4, atol=1e-3)
+
+    def test_layer_access_thumb_preference(self):
+        positions, shortcuts, layer_to_indices, frozen_mask = self._make_minimal_layout()
+
+        # L1 hold on left thumb -> good
+        genome_good = np.array([0, -1, -1, -1, -1, -1], dtype=np.int32)
+        layout_good = Layout(genome_good, positions, shortcuts, frozen_mask, layer_to_indices)
+
+        # L1 hold on left finger -> bad
+        genome_bad = np.array([2, -1, 0, -1, -1, -1], dtype=np.int32)
+        layout_bad = Layout(genome_bad, positions, shortcuts, frozen_mask, layer_to_indices)
+
+        ev = FitnessEvaluator()
+        score_good = ev.evaluate(layout_good).total_score
+        score_bad = ev.evaluate(layout_bad).total_score
+        self.assertGreater(score_bad, score_good, "non-thumb layer access should score worse")
+
+    def test_same_side_hold_flow(self):
+        positions, shortcuts, layer_to_indices, frozen_mask = self._make_minimal_layout()
+
+        # L0 left thumb -> L1, L1 left thumb -> L2 (same side, bad)
+        genome_same = np.array([0, -1, -1, 1, -1, -1], dtype=np.int32)
+        # L0 left thumb -> L1, L1 right thumb -> L2 (opposite, good)
+        genome_opp = np.array([0, -1, -1, -1, 1, -1], dtype=np.int32)
+
+        layout_same = Layout(genome_same, positions, shortcuts, frozen_mask, layer_to_indices)
+        layout_opp = Layout(genome_opp, positions, shortcuts, frozen_mask, layer_to_indices)
+
+        ev = FitnessEvaluator()
+        score_same = ev.evaluate(layout_same).total_score
+        score_opp = ev.evaluate(layout_opp).total_score
+        self.assertGreater(score_same, score_opp, "same-side hold chain should score worse")
 
 
 if __name__ == "__main__":
