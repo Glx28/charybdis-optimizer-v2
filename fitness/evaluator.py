@@ -29,6 +29,7 @@ class FitnessEvaluator:
         self.hard_constraints = hard_constraints or []
         self.toggle_effort_multiplier = toggle_effort_multiplier
         self.require_cuda = require_cuda
+        self.layer_access_thumb_params = DEFAULT_CONFIG["fitness"].get("layer_access_thumb", {})
 
         if reference_layout is not None:
             self.model = FitnessModel(
@@ -41,6 +42,7 @@ class FitnessEvaluator:
                 hard_constraints=self.hard_constraints,
                 toggle_effort_multiplier=toggle_effort_multiplier,
                 require_cuda=require_cuda,
+                layer_access_thumb_params=self.layer_access_thumb_params,
             )
         else:
             self.model = None
@@ -67,6 +69,8 @@ class FitnessEvaluator:
             "layer_similarity": 0.0,
             "layer_specialization": 0.0,
             "everything_layer": 0.0,
+            "layer_access_thumb_preference": 0.0,
+            "same_side_hold_flow": 0.0,
         }
 
     def evaluate(self, layout: Layout) -> FitnessResult:
@@ -80,6 +84,7 @@ class FitnessEvaluator:
                 scale_factors=self.scale_factors,
                 reference_genome=layout.genome,
                 hard_constraints=self.hard_constraints,
+                layer_access_thumb_params=self.layer_access_thumb_params,
             )
             objectives, constraints = model.evaluate(layout.genome)
         else:

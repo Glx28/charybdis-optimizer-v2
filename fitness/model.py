@@ -41,6 +41,7 @@ class FitnessModel:
         hard_constraints: Optional[List[str]] = None,
         toggle_effort_multiplier: float = 2.5,
         require_cuda: bool = False,
+        layer_access_thumb_params: Optional[Dict] = None,
     ):
         if not NUMBA_AVAILABLE:
             raise RuntimeError("Numba is required by the single-source fitness model")
@@ -64,6 +65,7 @@ class FitnessModel:
             reference_genome=reference_genome,
             hard_constraints=self.hard_constraints,
             toggle_effort_multiplier=toggle_effort_multiplier,
+            layer_access_thumb_params=layer_access_thumb_params,
         )
 
         # CUDA is the only production batch-evaluation path. Numba remains
