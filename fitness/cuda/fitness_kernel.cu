@@ -75,6 +75,8 @@ struct PerThreadScratch {
     bool has_hold_edge[MAX_LAYERS][MAX_LAYERS];
     float edge_cost[MAX_LAYERS][MAX_LAYERS];
     int edge_hand[MAX_LAYERS][MAX_LAYERS];
+    bool edge_is_thumb[MAX_LAYERS][MAX_LAYERS];
+    int incoming_thumb_hand[MAX_LAYERS];
 
     int mouse_button_right[MAX_LAYERS][6];
     int mouse_button_right_thumb[MAX_LAYERS][6];
@@ -184,7 +186,8 @@ __device__ void evaluate_single(
     float toggle_effort_multiplier,
     const float* log1p_lut,
     int lut_size,
-    const float* pos_effort_waste
+    const float* pos_effort_waste,
+    const float* lat_params
 ) {
     // -------------------------------------------------------------------------
     // Initialize scratch
@@ -233,6 +236,7 @@ __device__ void evaluate_single(
         s->reachable_momentary_access[l] = false;
         s->layer_hop_depth[l] = 999;
         s->hold_hop_depth[l] = 999;
+        s->incoming_thumb_hand[l] = -1;
         s->scroll_right_momentary[l] = false;
         s->scroll_right_momentary_thumb[l] = false;
         s->scroll_right_momentary_effort[l] = 0.0f;
@@ -263,6 +267,7 @@ __device__ void evaluate_single(
             s->has_hold_edge[l][l2] = false;
             s->edge_cost[l][l2] = 1000000.0f;
             s->edge_hand[l][l2] = -1;
+            s->edge_is_thumb[l][l2] = false;
         }
         for (int b = 0; b < 6; b++) {
             s->mouse_button_right[l][b] = 0;
@@ -375,6 +380,7 @@ __device__ void evaluate_single(
             s->edge_cost[source][target] = cost;
             s->momentary_edge[source][target] = shortcut_access_momentary[sid];
             s->edge_hand[source][target] = pos_hand[i];
+            s->edge_is_thumb[source][target] = pos_is_thumb[i];
         }
     }
 
@@ -403,6 +409,9 @@ __device__ void evaluate_single(
                         (s->momentary_edge[source][target] && s->edge_hand[source][target] == 0);
                     s->layer_right_required[target] = s->layer_right_required[source] ||
                         (s->momentary_edge[source][target] && s->edge_hand[source][target] == 1);
+                    if (s->momentary_edge[source][target] && s->edge_is_thumb[source][target]) {
+                        s->incoming_thumb_hand[target] = s->edge_hand[source][target];
+                    }
                     changed = true;
                 }
             }
@@ -2013,9 +2022,41 @@ __device__ void evaluate_single(
 
 
     // -------------------------------------------------------------------------
+    // Thumb-aware layer access scoring
+    // -------------------------------------------------------------------------
+    float layer_access_thumb_preference = 0.0f;
+    float same_side_hold_flow = 0.0f;
+    for (int i = 0; i < n_pos; i++) {
+        int sid = genome[i];
+        if (sid < 0 || sid >= n_short) continue;
+        if (!shortcut_access_momentary[sid]) continue;
+        int target = shortcut_access_target[sid];
+        if (target <= 0 || target >= MAX_LAYERS) continue;
+        int layer = pos_layer[i];
+        if (layer < 0 || layer >= MAX_LAYERS) continue;
+        float imp = shortcut_importance[sid];
+        float demand = s->layer_demand[target];
+        if (pos_is_thumb[i]) {
+            layer_access_thumb_preference -= imp * lat_params[0] * (1.0f + log1pf(demand));
+        } else {
+            layer_access_thumb_preference += imp * lat_params[1] + lat_params[2];
+        }
+        if (pos_is_thumb[i]) {
+            int inc = s->incoming_thumb_hand[layer];
+            if (inc >= 0) {
+                if (pos_hand[i] == inc) {
+                    same_side_hold_flow += imp * lat_params[3];
+                } else {
+                    same_side_hold_flow -= imp * lat_params[4];
+                }
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Assemble raw scores
     // -------------------------------------------------------------------------
-    float raw_scores[24];
+    float raw_scores[26];
     raw_scores[0] = duplicate;
     raw_scores[1] = l0_displacement;
     raw_scores[2] = missing;
@@ -2050,6 +2091,8 @@ __device__ void evaluate_single(
         raw_scores[22] = 0.0f;
     }
     raw_scores[23] = same_layer_duplicate;
+    raw_scores[24] = layer_access_thumb_preference;
+    raw_scores[25] = same_side_hold_flow;
 
     // -------------------------------------------------------------------------
     // Constraints
@@ -2062,7 +2105,7 @@ __device__ void evaluate_single(
     // Soft violations sum
     // -------------------------------------------------------------------------
     float violations_raw = 0.0f;
-    for (int j = 0; j < 24; j++) {
+    for (int j = 0; j < 26; j++) {
         violations_raw += raw_scores[j] * violation_weights[j];
     }
 
@@ -2160,7 +2203,7 @@ __device__ void evaluate_single(
     out[2] = objective_viol / scale_factors[2];
 
     if (raw_scores_out != nullptr) {
-        for (int j = 0; j < 24; j++) {
+        for (int j = 0; j < 26; j++) {
             raw_scores_out[j] = raw_scores[j];
         }
     }
@@ -2230,6 +2273,7 @@ __global__ void evaluate_batch_kernel(
     const float* log1p_lut,
     int lut_size,
     const float* pos_effort_waste,
+    const float* lat_params,
     int8_t* scratch_buffer
 ) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -2260,7 +2304,8 @@ __global__ void evaluate_batch_kernel(
         blind_rows, n_blind_rows,
         reference_genome, objective_weights, violation_weights, scale_factors,
         threshold, hard_constraint_indices, shortcut_key_group,
-        toggle_effort_multiplier, log1p_lut, lut_size, pos_effort_waste
+        toggle_effort_multiplier, log1p_lut, lut_size, pos_effort_waste,
+        lat_params
     );
 }
 
@@ -2315,7 +2360,8 @@ torch::Tensor evaluate_batch(
     torch::Tensor n_groups_tensor,
     torch::Tensor toggle_effort_multiplier_tensor,
     torch::Tensor log1p_lut,
-    torch::Tensor pos_effort_waste
+    torch::Tensor pos_effort_waste,
+    torch::Tensor lat_params
 ) {
     int batch = genomes.size(0);
     int n_pos = genomes.size(1);
@@ -2387,6 +2433,7 @@ torch::Tensor evaluate_batch(
         log1p_lut.data_ptr<float>(),
         lut_size,
         pos_effort_waste.data_ptr<float>(),
+        lat_params.data_ptr<float>(),
         scratch.data_ptr<int8_t>()
     );
 
