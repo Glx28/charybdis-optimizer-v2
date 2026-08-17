@@ -93,6 +93,34 @@ def build_group_placements(layout):
             anchor_list = [[a[i] for i in range(1, 6)] for a in anchors]
             groups.append((sid_tuple, anchor_list))
 
+    # Semantic clusters with explicit relative offsets (order 0 is anchor).
+    for cluster in getattr(layout, "semantic_clusters", ()):
+        members = list(cluster.get("members", []))
+        if len(members) < 2:
+            continue
+        offsets = {}
+        sid_by_order = {}
+        valid = True
+        for m in members:
+            order = int(m.get("order", 0))
+            sid = int(m.get("sid", -1))
+            dx = int(round(float(m.get("dx", 0.0))))
+            dy = int(round(float(m.get("dy", 0.0))))
+            if sid < 0:
+                valid = False
+                break
+            offsets[order] = (dx, dy)
+            sid_by_order[order] = sid
+        if not valid or 0 not in offsets:
+            continue
+        # The shape uses order as key and offset relative to order-0 anchor.
+        anchors = anchors_for_offsets(offsets)
+        if anchors:
+            orders = sorted(sid_by_order.keys())
+            sid_tuple = tuple(sid_by_order[o] for o in orders)
+            anchor_list = [[a[o] for o in orders] for a in anchors]
+            groups.append((sid_tuple, anchor_list))
+
     return groups
 
 

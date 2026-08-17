@@ -68,6 +68,35 @@ def _chain_rows(layout, source: dict, min_count: int, multiplier: float) -> np.n
     return np.asarray(rows, dtype=np.float32).reshape((-1, 3)) if rows else np.empty((0, 3), dtype=np.float32)
 
 
+def _semantic_chain_rows(layout) -> np.ndarray:
+    """Generate high-weight chain rows that pull semantic cluster members onto the same layer.
+
+    Detected semantic clusters (Copy/Paste, Undo/Redo, left/right directional pairs,
+    etc.) are often split across layers by the optimizer because it has no other
+    signal that they belong together.  Adding synthetic pairwise chain rows gives
+    the existing workflow-coherence penalty a strong, usage-independent reason to
+    keep cluster members on one layer.
+    """
+    rows = []
+    for cluster in getattr(layout, "semantic_clusters", ()):
+        members = list(cluster.get("members", []))
+        weight = float(cluster.get("weight", 1.0))
+        if len(members) < 2:
+            continue
+        sids = [int(m.get("sid", -1)) for m in members]
+        sids = [sid for sid in sids if 0 <= sid < layout.n_shortcuts]
+        if len(sids) < 2:
+            continue
+        # Pairwise pressure: every split pair pays.  Scale by cluster weight and
+        # a multiplier chosen so the penalty dominates generic workflow noise but
+        # stays below hard constraints.
+        pair_weight = weight * 5.0
+        for i in range(len(sids)):
+            for j in range(i + 1, len(sids)):
+                rows.append((sids[i], sids[j], pair_weight))
+    return np.asarray(rows, dtype=np.float32).reshape((-1, 3)) if rows else np.empty((0, 3), dtype=np.float32)
+
+
 def _sequence_rows(layout) -> np.ndarray:
     from fitness.factors.workflow_coherence import WorkflowCoherenceFactor
 
@@ -580,7 +609,10 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         shortcut_access_target, shortcut_access_momentary, shortcut_scroll_mode_access, shortcut_usage_count,
         app_usage_weight, _group_matrix(layout), _sequence_rows(layout), _app_workflow_rows(layout, app_map),
         _shortcut_duplicate_support(layout),
-        _chain_rows(layout, layout.usage_data.chains, 2, 1.0),
+        np.concatenate([
+            _chain_rows(layout, layout.usage_data.chains, 2, 1.0),
+            _semantic_chain_rows(layout),
+        ], axis=0) if len(_semantic_chain_rows(layout)) > 0 else _chain_rows(layout, layout.usage_data.chains, 2, 1.0),
         _chain_rows(layout, layout.usage_data.workflows, 3, 2.0),
         _blind_rows(layout), reference_genome, objective_weights, violation_weight_arr,
         np.asarray(scale_factors, dtype=np.float32),

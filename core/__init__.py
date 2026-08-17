@@ -117,7 +117,8 @@ class Layout:
     # Scoring and acceptance use genome shortcuts (shortcut.is_layer_access) instead.
     layer_access: Tuple[LayerAccess, ...] = field(default_factory=tuple)
     dynamic_groups: Tuple[Dict, ...] = field(default_factory=tuple)
-    
+    semantic_clusters: Tuple[Dict, ...] = field(default_factory=tuple)
+
     def __post_init__(self):
         assert self.genome.shape[0] == len(self.positions), "Genome length mismatch"
         assert self.frozen_mask.shape[0] == len(self.positions), "Frozen mask length mismatch"
@@ -283,6 +284,7 @@ class Layout:
             usage_data=self.usage_data,
             layer_access=self.layer_access,
             dynamic_groups=self.dynamic_groups,
+            semantic_clusters=self.semantic_clusters,
         )
     
     def is_valid(self) -> bool:

@@ -8,6 +8,7 @@ import numpy as np
 
 from core import Position, Shortcut, Layout, UsageData, LayerAccess
 from core.norwegian_keys import canonical_hid_parameter, parse_shortcut_keys_norwegian
+from core.semantic_clusters import detect_semantic_clusters
 
 
 RAW_ARROW_BASE_KEYS = {"LeftArrow", "RightArrow", "UpArrow", "DownArrow"}
@@ -717,7 +718,42 @@ def build_layout(data_dir: str, config: dict = None) -> Layout:
     genome = build_frozen_genome(layout_data, positions, shortcuts)
 
     # Discover dynamic groups from usage data
-    dynamic_groups = _discover_dynamic_groups(usage, shortcuts) if usage else []
+    dynamic_groups = list(_discover_dynamic_groups(usage, shortcuts)) if usage else []
+
+    # Discover semantic clusters from the shortcut corpus.
+    semantic_clusters = detect_semantic_clusters(shortcuts)
+    semantic_cluster_dicts = [
+        {
+            "name": c.name,
+            "sids": c.member_sids,
+            "weight": c.weight,
+            "protected": True,
+            "semantic": True,
+            "members": [
+                {"sid": m.sid, "order": m.order, "dx": m.dx, "dy": m.dy}
+                for m in c.members
+            ],
+        }
+        for c in semantic_clusters
+    ]
+
+    # All semantic clusters are added as protected dynamic groups so the kernel's
+    # group_split term rewards compactness when they land on the same layer.
+    # Critical clusters (clipboard, history) are also treated as atomic groups for
+    # group-move mutations, so they seed in valid relative positions.
+    for c in semantic_clusters:
+        group_dict = {
+            "name": c.name,
+            "sids": c.member_sids,
+            "weight": c.weight,
+            "protected": True,
+            "semantic": True,
+            "members": [
+                {"sid": m.sid, "order": m.order, "dx": m.dx, "dy": m.dy}
+                for m in c.members
+            ],
+        }
+        dynamic_groups.append(group_dict)
 
     layout = Layout(
         genome=genome,
@@ -728,6 +764,7 @@ def build_layout(data_dir: str, config: dict = None) -> Layout:
         usage_data=usage if usage else UsageData(),
         layer_access=tuple(layer_access),
         dynamic_groups=tuple(dynamic_groups),
+        semantic_clusters=tuple(semantic_cluster_dicts),
     )
 
     return layout
