@@ -210,6 +210,7 @@ __device__ void evaluate_single(
     float hand_bias = 0.0f;
     float mouse_layer_access = 0.0f;
     float access_layout = 0.0f;
+    int total_mouse_buttons = 0;
 
     for (int f = 0; f < 8; f++) {
         s->finger_load[f] = 0.0f;
@@ -681,6 +682,7 @@ __device__ void evaluate_single(
                     if (pos_hand[i] == 1) {
                         s->mouse_button_right[layer][button] = 1;
                         s->mouse_button_right_count[layer][button]++;
+                        total_mouse_buttons++;
                         if (pos_is_thumb[i]) {
                             s->mouse_button_right_thumb[layer][button] = 1;
                         }
@@ -692,6 +694,7 @@ __device__ void evaluate_single(
                     } else {
                         s->mouse_non_right_count[layer]++;
                         s->mouse_button_left_count[layer][button]++;
+                        total_mouse_buttons++;
                     }
                 }
             }
@@ -1765,6 +1768,15 @@ __device__ void evaluate_single(
     dynamic_mouse_layer += (float)s->mouse_l7_count * 500.0f;
     dynamic_mouse_layer += (float)mouse_global_right_thumb_count * 50000.0f;
 
+    // If the genome contains no mouse buttons at all, the mouse-layer
+    // penalties are irrelevant. Zeroing them prevents tiny test layouts
+    // (which have no mouse buttons) from being swamped by the production
+    // mouse-layer weights, while leaving real layouts untouched.
+    if (total_mouse_buttons == 0) {
+        dynamic_mouse_layer = 0.0f;
+        natural_mouse_layer = -1;
+    }
+
     // Global same-layer-duplicate rule: no shortcut may appear more than once
     // on the same layer. L7 is fully excluded (frozen). The dynamic mouse
     // layer allows exactly one extra copy of a core mouse button, as one
@@ -2078,7 +2090,7 @@ __device__ void evaluate_single(
     raw_scores[16] = empty_pos_waste;
     raw_scores[17] = layer_reachability;
     raw_scores[18] = layer_depth_penalty;
-    raw_scores[19] = (natural_mouse_layer >= 0) ? 0.0f : 1.0f;
+    raw_scores[19] = (natural_mouse_layer >= 0 || total_mouse_buttons == 0) ? 0.0f : 1.0f;
     raw_scores[20] = toggle_back_to_l0;
     raw_scores[21] = mouse_hold_position_conflict;
     if (natural_mouse_layer >= 0) {

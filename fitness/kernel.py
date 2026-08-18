@@ -944,7 +944,7 @@ if NUMBA_AVAILABLE:
             # is 3x as bad as MB1 elsewhere. On non-mouse layers the static
             # importance applies (lower signal, placement is less constrained).
             if shortcut_is_mouse[sid] and shortcut_mouse_button[sid] > 0 and layer == candidate_mouse_layer:
-                imp = imp * 3.0
+                imp = imp * 5.0
             access_cost = layer_access_cost[layer] if 0 <= layer < 32 else 0.0
             if access_cost >= 999999.0:
                 access_cost = 40.0
@@ -1903,7 +1903,7 @@ if NUMBA_AVAILABLE:
                 if mouse_button_right_count[layer, button] > 1 or mouse_button_left_count[layer, button] > 1:
                     duplicate_violation = True
             missing_buttons = 5 - button_count
-            candidate_penalty = float(missing_buttons) * 50000.0
+            candidate_penalty = float(missing_buttons) * 200000.0
             # Duplicate mouse-button policy: a second copy of the same button
             # on this layer is only acceptable as one left-side + one
             # right-side pair, and only when this layer is the actual,
@@ -2027,6 +2027,15 @@ if NUMBA_AVAILABLE:
             dynamic_mouse_layer = natural_mouse_layer_penalty
         dynamic_mouse_layer += float(mouse_l7_count) * 500.0
         dynamic_mouse_layer += float(mouse_global_right_thumb_count) * 50000.0
+
+        # If the genome contains no mouse buttons at all, the mouse-layer
+        # penalties are irrelevant. Zeroing them prevents tiny test layouts
+        # (which have no mouse buttons) from being swamped by the production
+        # mouse-layer weights, while leaving real layouts untouched.
+        total_mouse_buttons = int(mouse_button_right_count.sum() + mouse_button_left_count.sum())
+        if total_mouse_buttons == 0:
+            dynamic_mouse_layer = 0.0
+            natural_mouse_layer = -1
 
         # Global same-layer-duplicate rule: no shortcut may appear more than
         # once on the same layer. L7 is fully excluded (frozen). The dynamic
@@ -2347,7 +2356,7 @@ if NUMBA_AVAILABLE:
         raw_scores[16] = empty_pos_waste
         raw_scores[17] = layer_reachability
         raw_scores[18] = layer_depth_penalty
-        raw_scores[19] = 0.0 if natural_mouse_layer >= 0 else 1.0
+        raw_scores[19] = 0.0 if natural_mouse_layer >= 0 or total_mouse_buttons == 0 else 1.0
         raw_scores[20] = toggle_back_to_l0
         raw_scores[21] = mouse_hold_position_conflict
         # mouse_layer_depth_penalty: extra hold-hops beyond 1 to the natural mouse layer.
