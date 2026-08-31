@@ -231,6 +231,17 @@ layer and use exactly one of two shapes: one row ordered `Left Up Down Right`,
 or two rows with `Left Down Right` on the bottom row and `Up` directly above
 `Down`.
 
+## Run-Length Expectations
+
+Do not treat `evolution.n_generations: 500000` as a normal target. It is an absolute ceiling for an overnight run.
+
+- **Short diagnostic / sanity run:** a few hundred generations.
+- **Normal production run:** up to ~30 000 generations. By this point the optimizer should have settled on a feasible, well-clustered layout.
+- **Long production run:** 30 000–50 000 generations only when a specific, verifiable issue (e.g. stubborn mouse-layer acceptance) remains.
+- **Overnight ceiling:** 500 000 generations must only be used for an unattended overnight run, and the user must be told it is an overnight ceiling, not a standard target.
+
+If a layout still fails acceptance or clustering after 30 000 generations, the correct response is to fix the scoring/weights/groups and restart, not to extend the run indefinitely.
+
 ## Agent Tooling Rules
 
 Before editing: run `just ai-status` and `just ai-context`. Prefer existing repo tools (rg, fd, ast-grep, just recipes, MCP, tests, linters) over custom scripts. Make minimal diffs. Do not rewrite broad systems. Do not replace CUDA/GPU/Numba/Triton/NVIDIA logic with CPU-only logic. Do not add processor-side escape hatches to hide CUDA bugs. Do not delete tests. Keep final answers short unless asked for detail. For CUDA work: reproduce the GPU failure, inspect the smallest failing path, fix the GPU path, run relevant tests, then `just ai-guard`. Before finishing: `just ai-guard` and `just ai-smoke`.
