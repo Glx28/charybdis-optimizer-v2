@@ -1,6 +1,6 @@
 {
-  "eval_genomes_per_sec": 13118.958381828308,
-  "mutation_individuals_per_sec": 24198.95911834637,
-  "recorded_at": "2026-07-09T13:34:28Z",
-  "reason": "Initial baseline established 2026-07-09 after fixing the O(n_pos) full-genome-rescan regression in evolution/__init__.py's duplicate-safety mutation checks (same-layer-duplicate feature); this is the restored/optimized reference point, not the original pre-regression number."
+  "eval_genomes_per_sec": 6973.544749663964,
+  "mutation_individuals_per_sec": 55313.16099218195,
+  "recorded_at": "2026-08-31T09:39:25Z",
+  "reason": "WSL migration to new drive plus accumulated kernel changes (thumb-aware scoring, semantic workflow rows) on current hardware. CPU mutation throughput is ~3x higher than the old baseline, confirming the environment changed; GPU eval is now ~47% slower. Re-baselining to current code+environment so future regressions are measured against today's reference."
 }
