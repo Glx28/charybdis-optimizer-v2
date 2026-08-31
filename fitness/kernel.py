@@ -68,14 +68,13 @@ def _chain_rows(layout, source: dict, min_count: int, multiplier: float) -> np.n
     return np.asarray(rows, dtype=np.float32).reshape((-1, 3)) if rows else np.empty((0, 3), dtype=np.float32)
 
 
-def _semantic_chain_rows(layout) -> np.ndarray:
-    """Generate high-weight chain rows that pull semantic cluster members onto the same layer.
+def _semantic_workflow_rows(layout) -> np.ndarray:
+    """Generate high-weight workflow rows that penalize semantic clusters split across layers.
 
-    Detected semantic clusters (Copy/Paste, Undo/Redo, left/right directional pairs,
-    etc.) are often split across layers by the optimizer because it has no other
-    signal that they belong together.  Adding synthetic pairwise chain rows gives
-    the existing workflow-coherence penalty a strong, usage-independent reason to
-    keep cluster members on one layer.
+    Semantic clusters (Copy/Paste, Undo/Redo, browser tabs, PowerToys, Excel navigation,
+    etc.) should live on a single layer.  Unlike chain_rows, which are proximity-based
+    and parity-inconsistent between Numba single-genome and CUDA batch evaluation,
+    workflow_rows are handled identically by both kernels as a pure same-layer penalty.
     """
     rows = []
     for cluster in getattr(layout, "semantic_clusters", ()):
@@ -88,13 +87,24 @@ def _semantic_chain_rows(layout) -> np.ndarray:
         if len(sids) < 2:
             continue
         # Pairwise pressure: every split pair pays.  Scale by cluster weight and
-        # a multiplier chosen so the penalty dominates generic workflow noise but
-        # stays below hard constraints.
-        pair_weight = weight * 5.0
+        # a multiplier chosen so the penalty is comparable to group_split (2M weight)
+        # but still below hard constraints (billions).
+        pair_weight = weight * 200.0
         for i in range(len(sids)):
             for j in range(i + 1, len(sids)):
                 rows.append((sids[i], sids[j], pair_weight))
     return np.asarray(rows, dtype=np.float32).reshape((-1, 3)) if rows else np.empty((0, 3), dtype=np.float32)
+
+
+def _workflow_rows_with_semantic(layout) -> np.ndarray:
+    """Usage workflow rows plus semantic-cluster same-layer rows."""
+    usage_rows = _chain_rows(layout, layout.usage_data.workflows, 3, 2.0)
+    semantic_rows = _semantic_workflow_rows(layout)
+    if semantic_rows.shape[0] == 0:
+        return usage_rows
+    if usage_rows.shape[0] == 0:
+        return semantic_rows
+    return np.concatenate([usage_rows, semantic_rows], axis=0)
 
 
 def _sequence_rows(layout) -> np.ndarray:
@@ -609,11 +619,8 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         shortcut_access_target, shortcut_access_momentary, shortcut_scroll_mode_access, shortcut_usage_count,
         app_usage_weight, _group_matrix(layout), _sequence_rows(layout), _app_workflow_rows(layout, app_map),
         _shortcut_duplicate_support(layout),
-        np.concatenate([
-            _chain_rows(layout, layout.usage_data.chains, 2, 1.0),
-            _semantic_chain_rows(layout),
-        ], axis=0) if len(_semantic_chain_rows(layout)) > 0 else _chain_rows(layout, layout.usage_data.chains, 2, 1.0),
-        _chain_rows(layout, layout.usage_data.workflows, 3, 2.0),
+        _chain_rows(layout, layout.usage_data.chains, 2, 1.0),
+        _workflow_rows_with_semantic(layout),
         _blind_rows(layout), reference_genome, objective_weights, violation_weight_arr,
         np.asarray(scale_factors, dtype=np.float32),
         np.float32(missing_important_threshold),
@@ -655,6 +662,7 @@ if NUMBA_AVAILABLE:
         trackball = 0.0
         mouse_effective_access = 0.0
         mouse_workflow = 0.0
+        workflow = 0.0
         hand_bias = 0.0
         mouse_layer_access = 0.0
         finger_load = np.zeros(8, dtype=np.float32)
@@ -1240,6 +1248,14 @@ if NUMBA_AVAILABLE:
                     if app_layer_importance[app_b, layer] < shared:
                         shared = app_layer_importance[app_b, layer]
                     adjacency += weight * math.log1p(shared) * 2.0
+
+        for r in range(workflow_rows.shape[0]):
+            sid_a = int(workflow_rows[r, 0])
+            sid_b = int(workflow_rows[r, 1])
+            pos_a = sid_pos[sid_a]
+            pos_b = sid_pos[sid_b]
+            if pos_a >= 0 and pos_b >= 0 and pos_layer[pos_a] != pos_layer[pos_b]:
+                workflow += workflow_rows[r, 2] * 10.0
 
         # Violations
         duplicate = 0.0

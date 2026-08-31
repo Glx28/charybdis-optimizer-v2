@@ -138,6 +138,121 @@ def test_keyword_family_detects_browser_tab_group():
     assert sorted(m.sid for m in tab.members) == [0, 1, 2]
 
 
+def test_semantic_workflow_rows_are_high_weight():
+    """Semantic clusters must produce strong same-layer workflow rows."""
+    from fitness.kernel import _semantic_workflow_rows
+
+    shortcuts = [
+        _sc(0, "Ctrl+C", "Copy", modifiers=("ctrl",), base_key="C"),
+        _sc(1, "Ctrl+V", "Paste", modifiers=("ctrl",), base_key="V"),
+    ]
+    layout = type("Layout", (), {
+        "n_shortcuts": 2,
+        "semantic_clusters": ({
+            "name": "sequence_clipboard",
+            "sids": [0, 1],
+            "weight": 5.0,
+            "members": [{"sid": 0, "order": 0, "dx": 0.0, "dy": 0.0},
+                        {"sid": 1, "order": 1, "dx": 1.0, "dy": 0.0}],
+        },),
+    })()
+    rows = _semantic_workflow_rows(layout)
+    assert rows.shape == (1, 3)
+    assert rows[0, 0] == 0.0
+    assert rows[0, 1] == 1.0
+    # Multiplier is 200.0, so pair weight = 5.0 * 200.0 = 1000.0
+    assert rows[0, 2] == 1000.0
+
+
+def test_semantic_cluster_split_penalty_is_strong():
+    """Splitting a semantic cluster across layers must increase the violations objective."""
+    import numpy as np
+    from core.loader import build_layout
+    from fitness.model import FitnessModel
+    from config import DEFAULT_CONFIG
+
+    layout = build_layout("data", DEFAULT_CONFIG)
+    cluster = next(c for c in layout.semantic_clusters if len(c["sids"]) >= 2)
+    sids = list(cluster["sids"])
+
+    # Mutable positions grouped by layer, excluding L7
+    mutable_by_layer = {}
+    for idx in layout.mutable_indices:
+        layer = layout.positions[idx].layer
+        if layer != 7:
+            mutable_by_layer.setdefault(layer, []).append(idx)
+    layers = sorted(mutable_by_layer.keys())[:2]
+    assert len(layers) == 2, "need two mutable layers for the test"
+
+    def make_genome(layer_for_sid):
+        genome = layout.genome.copy()
+        # clear old placements of cluster sids
+        for i, sid in enumerate(genome):
+            if sid in layer_for_sid:
+                genome[i] = -1
+        for sid, layer in layer_for_sid.items():
+            for idx in mutable_by_layer[layer]:
+                if genome[idx] < 0:
+                    genome[idx] = sid
+                    break
+            else:
+                raise RuntimeError(f"no empty slot on layer {layer}")
+        return genome
+
+    split_map = {sids[i]: layers[i % 2] for i in range(len(sids))}
+    together_map = {sid: layers[0] for sid in sids}
+
+    model = FitnessModel(
+        layout=layout,
+        weights=DEFAULT_CONFIG["fitness"]["weights"],
+        violation_weights=DEFAULT_CONFIG["fitness"]["violation_sub_weights"],
+        missing_important_threshold=DEFAULT_CONFIG["fitness"]["missing_important_threshold"],
+        hard_constraints=DEFAULT_CONFIG["fitness"]["hard_constraints"],
+        toggle_effort_multiplier=DEFAULT_CONFIG["fitness"]["toggle_effort_multiplier"],
+        require_cuda=False,
+    )
+
+    split_layout = layout.clone_with(genome=make_genome(split_map))
+    together_layout = layout.clone_with(genome=make_genome(together_map))
+
+    obj_split, _ = model.evaluate(split_layout.genome)
+    obj_together, _ = model.evaluate(together_layout.genome)
+
+    assert obj_split[2] > obj_together[2] + 1000.0, \
+        f"Expected large violations increase when cluster {cluster['name']} is split; " \
+        f"split={obj_split[2]:.1f}, together={obj_together[2]:.1f}"
+
+
+def test_compactness_cluster_group_placements():
+    """Compactness-only semantic clusters must produce atomic group placements."""
+    from evolution import build_group_placements
+    from core.loader import build_layout
+    from config import DEFAULT_CONFIG
+
+    layout = build_layout("data", DEFAULT_CONFIG)
+    groups = build_group_placements(layout)
+    # Find a keyword-family cluster with all offsets (0, 0)
+    for cluster in layout.semantic_clusters:
+        members = cluster.get("members", [])
+        if len(members) < 2:
+            continue
+        if all(abs(m.get("dx", 0.0)) < 0.01 and abs(m.get("dy", 0.0)) < 0.01 for m in members):
+            sids = set(cluster["sids"])
+            placements = [g for g in groups if set(g[0]) == sids]
+            assert len(placements) >= 1, \
+                f"Compactness cluster {cluster['name']} should have atomic placements"
+            # Each placement should put all members on the same layer
+            for sid_tuple, anchor_list in placements:
+                for placement in anchor_list[:3]:
+                    layers = {layout.positions[idx].layer for idx in placement}
+                    assert len(layers) == 1, \
+                        f"Atomic placement for {cluster['name']} spans layers {layers}"
+            break
+    else:
+        # No compactness cluster found in this corpus; skip assertively
+        pass
+
+
 if __name__ == "__main__":
     test_detects_copy_paste()
     test_detects_undo_redo()
@@ -148,4 +263,7 @@ if __name__ == "__main__":
     test_clipboard_includes_cut()
     test_keyword_family_prefers_whole_words()
     test_keyword_family_detects_browser_tab_group()
+    test_semantic_workflow_rows_are_high_weight()
+    test_semantic_cluster_split_penalty_is_strong()
+    test_compactness_cluster_group_placements()
     print("All semantic cluster tests passed.")
