@@ -72,7 +72,7 @@ fitness:
     l0_displacement: 50.0
     missing_important: 500.0
     cross_layer_duplicate: 40000.0
-    group_split: 200.0
+    group_split: 2000000.0
     thumb_occupancy: 30000.0
     arrow_order: 10000.0
     hand_bias: 25000.0

@@ -9,9 +9,12 @@ from fitness import FitnessFactor
 # on the same layer. They must not force members onto the same layer. Scroll is
 # intentionally absent: it is modeled as trackball scroll-mode access, not
 # ScrollUp/ScrollDown keys.
+ARROW_KEYS = ["LeftArrow", "RightArrow", "UpArrow", "DownArrow"]
 KEY_GROUPS = [
-    {"name": "arrows", "params": ["Left", "Right", "Up", "Down", "LeftArrow", "RightArrow", "UpArrow", "DownArrow"], "protected": True},
-    {"name": "win_directions", "params": ["Left", "Right", "Up", "Down"], "mods_required": "win", "protected": True},
+    {"name": "arrows", "params": ARROW_KEYS, "protected": True, "base_only": True},
+    {"name": "win_directions", "params": ARROW_KEYS, "mods_required": "win", "protected": True},
+    {"name": "browser_nav", "params": ARROW_KEYS, "mods_required": "alt", "protected": True},
+    {"name": "ctrl_word_nav", "params": ARROW_KEYS, "mods_required": "ctrl", "protected": True},
     {"name": "clipboard", "params": ["C", "V", "X", "Z", "Y"], "mods_required": "ctrl", "protected": True},
     {"name": "f_keys_low", "params": ["F1", "F2", "F3", "F4", "F5", "F6"], "protected": True, "base_only": True},
     {"name": "f_keys_high", "params": ["F7", "F8", "F9", "F10", "F11", "F12"], "protected": True, "base_only": True},
