@@ -84,7 +84,7 @@ class SurrogateTrainer:
         # no tensor cores, no throughput gain, and no GradScaler → gradient underflow risk.
         cap = torch.cuda.get_device_capability() if torch.cuda.is_available() else (0, 0)
         self.use_amp = bool(mixed_precision and str(device).startswith("cuda") and cap[0] >= 7)
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
+        self.scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
         self.history = []
         self.mean = None
         self.std = None
@@ -178,7 +178,7 @@ class SurrogateTrainer:
         train_model.to(self.device)
         train_model.train()
         optimizer = torch.optim.Adam(train_model.parameters(), lr=1e-3)
-        scaler = torch.cuda.amp.GradScaler(enabled=self.use_amp)
+        scaler = torch.amp.GradScaler("cuda", enabled=self.use_amp)
 
         mean = exact_scores.mean(axis=0)
         std = exact_scores.std(axis=0) + 1e-6
