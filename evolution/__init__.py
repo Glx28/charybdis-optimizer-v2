@@ -121,6 +121,60 @@ def build_group_placements(layout):
             anchor_list = [[a[o] for o in orders] for a in anchors]
             groups.append((sid_tuple, anchor_list))
 
+    # Compactness-only semantic clusters (keyword families): no fixed shape, just
+    # keep members on the same layer near each other.
+    mutable_positions = [p for p in layout.positions if not p.is_frozen and p.layer != 7]
+    positions_by_layer = {}
+    for p in mutable_positions:
+        positions_by_layer.setdefault(p.layer, []).append(p)
+    max_compactness_anchors_per_layer = 8
+
+    def _nearest_same_layer_positions(anchor_pos, count):
+        """Return ``count`` nearest mutable positions on the same layer, including anchor."""
+        layer_positions = positions_by_layer.get(anchor_pos.layer, [])
+        if len(layer_positions) < count:
+            return None
+        others = [p for p in layer_positions if p.gene_idx != anchor_pos.gene_idx]
+        others.sort(key=lambda p: abs(p.x - anchor_pos.x) + abs(p.y - anchor_pos.y))
+        return [anchor_pos.gene_idx] + [p.gene_idx for p in others[:count - 1]]
+
+    for cluster in getattr(layout, "semantic_clusters", ()):
+        members = list(cluster.get("members", []))
+        if len(members) < 2:
+            continue
+        sids = []
+        compact = True
+        for m in members:
+            sid = int(m.get("sid", -1))
+            dx = float(m.get("dx", 0.0))
+            dy = float(m.get("dy", 0.0))
+            if sid < 0:
+                compact = False
+                break
+            if abs(dx) > 0.01 or abs(dy) > 0.01:
+                compact = False
+                break
+            sids.append(sid)
+        if not compact or len(sids) < 2:
+            continue
+        # Skip clusters that already have an explicit-offset placement above.
+        sid_set = frozenset(sids)
+        already_covered = any(frozenset(g[0]) == sid_set for g in groups)
+        if already_covered:
+            continue
+        sid_tuple = tuple(sids)
+        anchor_list = []
+        for layer, layer_positions in positions_by_layer.items():
+            # Use evenly spaced anchors across the layer to keep variety without
+            # generating thousands of placements.
+            step = max(1, len(layer_positions) // max_compactness_anchors_per_layer)
+            for anchor in layer_positions[::step]:
+                placement = _nearest_same_layer_positions(anchor, len(sids))
+                if placement is not None:
+                    anchor_list.append(placement)
+        if anchor_list:
+            groups.append((sid_tuple, anchor_list))
+
     return groups
 
 
