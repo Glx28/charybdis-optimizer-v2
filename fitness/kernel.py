@@ -86,10 +86,12 @@ def _semantic_workflow_rows(layout) -> np.ndarray:
         sids = [sid for sid in sids if 0 <= sid < layout.n_shortcuts]
         if len(sids) < 2:
             continue
-        # Pairwise pressure: every split pair pays.  Scale by cluster weight and
-        # a multiplier chosen so the penalty is comparable to group_split (2M weight)
-        # but still below hard constraints (billions).
-        pair_weight = weight * 200.0
+        # Pairwise pressure: every split pair pays.  The multiplier must be large
+        # enough to survive normalization by the violations IQR scale factor
+        # (~3e11).  A weight-15 cluster split pair therefore contributes a
+        # normalized violation of ~15 * 1e9 * 10 * 20 / 3e11 ≈ 10, which is
+        # comparable to other soft layout pressures and well below hard constraints.
+        pair_weight = weight * 1_000_000_000.0
         for i in range(len(sids)):
             for j in range(i + 1, len(sids)):
                 rows.append((sids[i], sids[j], pair_weight))

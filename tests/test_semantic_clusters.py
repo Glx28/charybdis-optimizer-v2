@@ -160,8 +160,8 @@ def test_semantic_workflow_rows_are_high_weight():
     assert rows.shape == (1, 3)
     assert rows[0, 0] == 0.0
     assert rows[0, 1] == 1.0
-    # Multiplier is 200.0, so pair weight = 5.0 * 200.0 = 1000.0
-    assert rows[0, 2] == 1000.0
+    # Multiplier is 1e9, so pair weight = 5.0 * 1e9 = 5e9
+    assert rows[0, 2] == 5_000_000_000.0
 
 
 def test_semantic_cluster_split_penalty_is_strong():
