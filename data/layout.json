@@ -1209,6 +1209,86 @@
     }
   },
   "l7_frozen": {
+    "0:0": {
+      "x": 0,
+      "y": 0,
+      "behavior": "Bluetooth",
+      "parameter": "BT_SEL 0",
+      "modifiers": [],
+      "label": "BT 0"
+    },
+    "1:0": {
+      "x": 1,
+      "y": 0,
+      "behavior": "Bluetooth",
+      "parameter": "BT_SEL 1",
+      "modifiers": [],
+      "label": "BT 1"
+    },
+    "2:0": {
+      "x": 2,
+      "y": 0,
+      "behavior": "Bluetooth",
+      "parameter": "BT_SEL 2",
+      "modifiers": [],
+      "label": "BT 2"
+    },
+    "3:0": {
+      "x": 3,
+      "y": 0,
+      "behavior": "Bluetooth",
+      "parameter": "BT_SEL 3",
+      "modifiers": [],
+      "label": "BT 3"
+    },
+    "4:0": {
+      "x": 4,
+      "y": 0,
+      "behavior": "Bluetooth",
+      "parameter": "BT_SEL 4",
+      "modifiers": [],
+      "label": "BT 4"
+    },
+    "5:0": {
+      "x": 5,
+      "y": 0,
+      "behavior": "Bluetooth",
+      "parameter": "BT_SEL 5",
+      "modifiers": [],
+      "label": "BT 5"
+    },
+    "7:0": {
+      "x": 7,
+      "y": 0,
+      "behavior": "Bluetooth",
+      "parameter": "BT_CLEAR",
+      "modifiers": [],
+      "label": "BT Clear"
+    },
+    "8:0": {
+      "x": 8,
+      "y": 0,
+      "behavior": "Bluetooth",
+      "parameter": "BT_PREV",
+      "modifiers": [],
+      "label": "BT Prev"
+    },
+    "9:0": {
+      "x": 9,
+      "y": 0,
+      "behavior": "Bluetooth",
+      "parameter": "BT_NEXT",
+      "modifiers": [],
+      "label": "BT Next"
+    },
+    "12:0": {
+      "x": 12,
+      "y": 0,
+      "behavior": "Bootloader",
+      "parameter": "",
+      "modifiers": [],
+      "label": "Bootloader"
+    },
     "1:1": {
       "x": 1,
       "y": 1,
