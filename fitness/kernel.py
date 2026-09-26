@@ -2196,6 +2196,19 @@ if NUMBA_AVAILABLE:
         # drowned by the violation scale factor (2.3e12 vs effort scale ~39k).
         # Soft sigmoid gate peaks at effort=0 (home row) and falls sharply;
         # multiplier 5.0 makes each empty prime slot cost ~15 effort units.
+        _layer_occupancy = np.zeros(32, dtype=np.int32)
+        for i in range(n_pos):
+            if genome[i] >= 0 and pos_layer[i] < 32:
+                _layer_occupancy[pos_layer[i]] += 1
+        for layer in range(1, 32):
+            if layer == 7 or layer_access_cost[layer] >= 999999.0:
+                continue
+            _count = _layer_occupancy[layer]
+            # Empty generated layers cost nothing; partially populated layers
+            # pay until at least 20 bindings consolidate onto the layer.
+            if 0 < _count < 20:
+                effort += 750.0 + 2500.0 * (20 - _count) / 20.0
+
         for i in range(n_pos):
             if genome[i] >= 0:
                 continue
