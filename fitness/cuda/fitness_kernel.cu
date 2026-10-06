@@ -1751,6 +1751,13 @@ __device__ void evaluate_single(
             layer_occupancy[layer]++;
         }
     }
+    for (int layer = 1; layer < MAX_LAYERS; layer++) {
+        if (layer == 7 || s->layer_access_cost[layer] >= 999999.0f) continue;
+        int count = layer_occupancy[layer];
+        if (count > 0 && count < 20) {
+            effort += 750.0f + 2500.0f * (20 - count) / 20.0f;
+        }
+    }
     for (int i = 0; i < n_pos; i++) {
         if (genome[i] >= 0) continue;
         if (pos_is_frozen[i]) continue;
