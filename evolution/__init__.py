@@ -27,20 +27,16 @@ def build_group_placements(layout):
     Used by SwapMutation to drive _overwrite_group_as_unit and by
     generate_random_layouts to seed initial genomes with groups in valid shape.
     """
-    arrow_by_type = {}
-    arrow_base = {"LEFTARROW": 1, "UPARROW": 2, "DOWNARROW": 3, "RIGHTARROW": 4}
     completion_by_order = {}
     completion_order_map = {
         "DASH AND UNDERSCORE": 1,
         "EQUALS AND PLUS": 2,
         "GRAVE ACCENT AND TILDE": 3,
         "RIGHT BRACE": 4,
-        "BACKSLASH AND PIPE": 5,
+        "NON-US BACKSLASH AND PIPE": 5,
     }
     for shortcut in layout.shortcuts:
         base = (shortcut.base_key or "").upper()
-        if not shortcut.modifiers and base in arrow_base:
-            arrow_by_type.setdefault(arrow_base[base], shortcut.sid)
         if not shortcut.modifiers and not shortcut.is_l0_only and base in completion_order_map:
             completion_by_order.setdefault(completion_order_map[base], shortcut.sid)
 
@@ -70,20 +66,6 @@ def build_group_placements(layout):
 
     groups = []
 
-    if len(arrow_by_type) == 4:
-        # Two valid arrow shapes; LEFT is type-1 anchor.
-        arrow_shapes = [
-            {1: (0, 0), 2: (1, 0), 3: (2, 0), 4: (3, 0)},   # same row
-            {1: (0, 1), 2: (1, 0), 3: (1, 1), 4: (2, 1)},   # T-cluster
-        ]
-        anchors = []
-        for shape in arrow_shapes:
-            anchors.extend(anchors_for_offsets(shape))
-        if anchors:
-            sid_tuple = tuple(arrow_by_type[i] for i in (1, 2, 3, 4))
-            anchor_list = [[a[i] for i in (1, 2, 3, 4)] for a in anchors]
-            groups.append((sid_tuple, anchor_list))
-
     if len(completion_by_order) == 5:
         # Norwegian extra-key group: fixed shape, EQUALS is anchor.
         completion_offsets = {1: (-1, 0), 2: (0, 0), 3: (-2, 0), 4: (-2, 1), 5: (-2, 3)}
@@ -111,9 +93,12 @@ def build_group_placements(layout):
                 break
             offsets[order] = (dx, dy)
             sid_by_order[order] = sid
-        if not valid or 0 not in offsets:
+        if not valid:
             continue
-        # The shape uses order as key and offset relative to order-0 anchor.
+        # ClusterMember offsets are already relative to the geometric anchor;
+        # their semantic order may start at -1 or 1 (e.g. Cut/Paste or Ctrl+1).
+        if not any(abs(dx) <= 0.01 and abs(dy) <= 0.01 for dx, dy in offsets.values()):
+            continue
         anchors = anchors_for_offsets(offsets)
         if anchors:
             orders = sorted(sid_by_order.keys())
@@ -157,9 +142,11 @@ def build_group_placements(layout):
             sids.append(sid)
         if not compact or len(sids) < 2:
             continue
-        # Skip clusters that already have an explicit-offset placement above.
+        # Skip clusters already covered by a larger or equal atomic group.
+        # family_raw_completion matches the same five raw-key sids. Its
+        # compactness mutation must not replace the exact-shape group move.
         sid_set = frozenset(sids)
-        already_covered = any(frozenset(g[0]) == sid_set for g in groups)
+        already_covered = any(sid_set.issubset(frozenset(g[0])) for g in groups)
         if already_covered:
             continue
         sid_tuple = tuple(sids)
@@ -1242,10 +1229,22 @@ def _numba_propose_l7_access(genome, pos_map, state,
 def _numba_overwrite_group_as_unit(genome, pos_map, state,
                                    group_sids_arr, group_sizes,
                                    group_anchors_flat, group_anchor_start,
-                                   n_groups, n_shortcuts):
+                                   n_groups, n_shortcuts, mutable_arr,
+                                   raw_arrow_group_index):
     if n_groups == 0:
         return False
-    g = _rand_int(state, n_groups)
+    g = np.int32(_rand_int(state, n_groups))
+    arrow_group = np.int32(raw_arrow_group_index)
+    if arrow_group >= 0:
+        arrows_missing = False
+        for k in range(group_sizes[arrow_group]):
+            if pos_map[group_sids_arr[arrow_group, k]] < 0:
+                arrows_missing = True
+                break
+        # Repair absent raw arrows much more often than a uniform draw among
+        # dozens of overlapping semantic groups would.
+        if arrows_missing and _rand_float(state) < 0.5:
+            g = arrow_group
     gsize = group_sizes[g]
     a_start = group_anchor_start[g]
     a_end = group_anchor_start[g + 1]
@@ -1301,6 +1300,7 @@ def _numba_overwrite_group_as_unit(genome, pos_map, state,
                 n_vacated += 1
 
     n_filled = 0
+    relocated = np.zeros(gsize, dtype=np.bool_)
     for k in range(gsize):
         s = displaced[k]
         is_member = False
@@ -1311,10 +1311,31 @@ def _numba_overwrite_group_as_unit(genome, pos_map, state,
         if not is_member and n_filled < n_vacated:
             genome[vacated[n_filled]] = s
             n_filled += 1
+            relocated[k] = True
 
     while n_filled < n_vacated:
         genome[vacated[n_filled]] = -1
         n_filled += 1
+
+    # When an absent group is injected, it has no old slots for displaced
+    # bindings. Preserve remaining occupants in empty mutable slots.
+    for k in range(gsize):
+        s = displaced[k]
+        if relocated[k] or s < 0:
+            continue
+        is_member = False
+        for m in range(gsize):
+            if s == sids[m]:
+                is_member = True
+                break
+        if is_member:
+            continue
+        for p in range(len(mutable_arr)):
+            target = mutable_arr[p]
+            if genome[target] < 0:
+                genome[target] = s
+                relocated[k] = True
+                break
 
     return True
 
@@ -1517,7 +1538,7 @@ def _semantic_mutations_batch_numba(
     return_toggle_sid,
     mouse_button_sids,
     group_sids_arr, group_sizes, group_anchors_flat, group_anchor_start,
-    n_groups,
+    n_groups, raw_arrow_group_index,
     app_sids_flat, app_sids_start, n_apps, n_app_sample,
     pos_x, pos_y, mutable_arr,
     is_group_sid_lut, n_shortcuts,
@@ -1574,7 +1595,8 @@ def _semantic_mutations_batch_numba(
                 genome, pos_map, state,
                 group_sids_arr, group_sizes,
                 group_anchors_flat, group_anchor_start,
-                n_groups, n_shortcuts,
+                n_groups, n_shortcuts, mutable_arr,
+                raw_arrow_group_index,
             ):
                 handled[i] = True
                 continue
@@ -1792,6 +1814,10 @@ class SwapMutation(Mutation):
     ):
         super().__init__()
         self.prob = prob
+        self.layout = layout
+        # Rare targeted exchange keeps layer toggles off L0 when LeftAlt or a
+        # matching momentary hold already occupies a deeper thumb position.
+        self.l0_toggle_deeper_thumb_swap_prob = 0.005
         # Backward-compatible alias for older tests/config.  The behavior is
         # overwrite-triggered group movement, not periodic group repair.
         self.group_overwrite_prob = group_overwrite_prob if group_move_prob is None else group_move_prob
@@ -1799,7 +1825,9 @@ class SwapMutation(Mutation):
         self.l7_access_prob = l7_access_prob
         self.random_assign_prob = random_assign_prob
         self.bulk_assign_prob = bulk_assign_prob
-        self.optional_arrow_drop_prob = optional_arrow_drop_prob
+        # Raw arrows are supplied by frozen L7 and are not a mutable-layer
+        # optimization target.
+        self.optional_arrow_drop_prob = 0.0
         self.cluster_app_prob = cluster_app_prob
         self.effort_swap_prob = effort_swap_prob
         self.smart_duplicate_prob = smart_duplicate_prob
@@ -1816,6 +1844,7 @@ class SwapMutation(Mutation):
         self.assignable_sids = None
         self.important_sids = set()
         self.raw_arrow_sids = set()
+        self.raw_arrow_group_index = -1
         self.mouse_button_sids = {}
         self.scroll_access_by_target = {}
         self.access_hold_by_target = {}
@@ -1823,6 +1852,9 @@ class SwapMutation(Mutation):
         self.right_non_thumb_by_layer = defaultdict(list)
         self.safe_access_positions = []
         self.l0_safe_access_positions = []
+        self.l0_thumb_positions = []
+        self.l0_non_thumb_positions = []
+        self.l0_left_thumb_positions = []
         # Bug 3 & 5: per-layer position pools and access SID metadata
         self.right_positions_by_layer: dict = defaultdict(list)
         self.right_thumb_positions_by_layer: dict = defaultdict(list)
@@ -1832,6 +1864,20 @@ class SwapMutation(Mutation):
         self._pos_is_thumb_arr = np.zeros(len(layout.positions) if layout is not None else 0, dtype=np.bool_)
         self._access_sid_targets: dict = {}
         self._access_sid_momentary: dict = {}
+        self._l0_mutable_positions = np.asarray(
+            [p.gene_idx for p in layout.positions if not p.is_frozen and p.layer == 0],
+            dtype=np.int32,
+        ) if layout is not None else np.empty(0, dtype=np.int32)
+        self._l0_mutable_position_set = set(self._l0_mutable_positions.tolist())
+        self._mutable_position_set = set(self.mutable_list or [])
+        self._deeper_thumb_positions = np.asarray(
+            [p.gene_idx for p in layout.positions
+             if not p.is_frozen and p.layer not in (0, 7) and p.is_thumb],
+            dtype=np.int32,
+        ) if layout is not None else np.empty(0, dtype=np.int32)
+        self._deeper_thumb_position_set = set(self._deeper_thumb_positions.tolist())
+        self._left_alt_sid = None
+        self._momentary_access_sids_by_target = defaultdict(list)
         if layout is not None:
             for idx, pos in enumerate(layout.positions):
                 self._pos_layer_arr[idx] = int(pos.layer)
@@ -1850,6 +1896,12 @@ class SwapMutation(Mutation):
                 if s.is_layer_access:
                     self._access_sid_targets[s.sid] = int(s.access_target_layer)
                     self._access_sid_momentary[s.sid] = bool(s.access_is_momentary)
+                    if s.access_is_momentary and s.access_target_layer not in (0, 7):
+                        self._momentary_access_sids_by_target[int(s.access_target_layer)].append(int(s.sid))
+                key = (s.keys or "").replace(" ", "").casefold()
+                base = (s.base_key or "").replace(" ", "").casefold()
+                if not s.modifiers and (key == "leftalt" or base == "leftalt"):
+                    self._left_alt_sid = int(s.sid)
         if layout is not None and self.mutable_list:
             frozen_sids = {
                 int(layout.genome[i])
@@ -1870,7 +1922,29 @@ class SwapMutation(Mutation):
                 and not s.modifiers
                 and (s.base_key or "").upper() in {"LEFTARROW", "UPARROW", "DOWNARROW", "RIGHTARROW"}
             }
-            self._build_protected_group_moves(layout)
+        self._build_protected_group_moves(layout)
+        self.required_group_member_sids = set()
+        if layout is not None:
+            for cluster in getattr(layout, "semantic_clusters", ()):
+                members = list(cluster.get("members", ()))
+                if any(
+                    abs(float(member.get("dx", 0.0))) > 0.01
+                    or abs(float(member.get("dy", 0.0))) > 0.01
+                    for member in members
+                ):
+                    self.required_group_member_sids.update(
+                        int(member["sid"]) for member in members
+                    )
+            completion_bases = {
+                "DASH AND UNDERSCORE", "EQUALS AND PLUS",
+                "GRAVE ACCENT AND TILDE", "RIGHT BRACE", "NON-US BACKSLASH AND PIPE",
+            }
+            self.required_group_member_sids.update(
+                shortcut.sid for shortcut in layout.shortcuts
+                if not shortcut.modifiers
+                and (shortcut.base_key or "").upper() in completion_bases
+                and not shortcut.is_l0_only
+            )
             # Collect all group member sids so individual mutations can't scatter them.
             for sid_set in self.group_sid_sets:
                 self.group_member_sids.update(sid_set)
@@ -1961,14 +2035,16 @@ class SwapMutation(Mutation):
         # _get_layer_occupied_thumbs — one numpy gather replaces 510-iter loops.
         self._access_target_lut = np.full(n_sc, -1, dtype=np.int32)
         self._access_is_mo_lut = np.zeros(n_sc, dtype=np.bool_)
-        # Momentary-only target layer: used to block self-referential hold placements.
-        # Value = target layer for momentary access sids, -1 for everything else.
-        # A hold key @LX:hold placed ON layer X is illegal: it never fires usefully.
+        # Ordinary momentary targets block useless self-referential layer holds.
+        # Scroll changes pointer mode and is useful on its own target layer.
+        # This lookup is shared by warmstart cleanup and mutation proposals.
         self._mo_access_target_lut = np.full(n_sc, -1, dtype=np.int32)
         for _sid, _tgt in self._access_sid_targets.items():
             if 0 <= _sid < n_sc:
                 self._access_target_lut[_sid] = int(_tgt)
-                if self._access_sid_momentary.get(_sid, False):
+                shortcut = layout.shortcuts[_sid]
+                is_scroll_mode = "scroll" in f"{shortcut.keys} {shortcut.action} {shortcut.base_key}".lower()
+                if self._access_sid_momentary.get(_sid, False) and not is_scroll_mode:
                     self._mo_access_target_lut[_sid] = int(_tgt)
         for _sid, _is_mo in self._access_sid_momentary.items():
             if 0 <= _sid < n_sc:
@@ -2185,6 +2261,12 @@ class SwapMutation(Mutation):
             self.safe_access_positions.append(pos.gene_idx)
             if pos.layer == 0:
                 self.l0_safe_access_positions.append(pos.gene_idx)
+                if pos.is_thumb:
+                    self.l0_thumb_positions.append(pos.gene_idx)
+                    if pos.hand == "left":
+                        self.l0_left_thumb_positions.append(pos.gene_idx)
+                else:
+                    self.l0_non_thumb_positions.append(pos.gene_idx)
             if pos.layer == 0:
                 continue
             if pos.hand == "right" and not pos.is_thumb:
@@ -2311,7 +2393,32 @@ class SwapMutation(Mutation):
         if not candidate_layers:
             return False
         layer = random.choice(candidate_layers)
-        right_positions = self.right_non_thumb_by_layer[layer]
+        sids = [
+            self.scroll_access_by_target[layer],
+            self.mouse_button_sids[2],
+            self.mouse_button_sids[1],
+            self.mouse_button_sids[3],
+            self.mouse_button_sids[4],
+            self.mouse_button_sids[5],
+            self.access_hold_by_target[layer],
+            self.access_toggle_by_target[layer],
+        ]
+        return_sid = self.access_toggle_by_target.get(0)
+        capability_sids = set(sids)
+        if return_sid is not None:
+            capability_sids.add(return_sid)
+        # The workflow move must not tear apart atomic shortcut groups. If a
+        # capability itself belongs to a protected group, that group needs a
+        # different coordinated move and this proposal is not safe.
+        if capability_sids & self.group_member_sids:
+            return False
+        protected_sids = self.required_group_member_sids
+        right_positions = [
+            pos for pos in self.right_non_thumb_by_layer[layer]
+            if int(genome[pos]) not in protected_sids
+        ]
+        if len(right_positions) < 6:
+            return False
         target_positions = random.sample(right_positions[:min(len(right_positions), 12)], 6)
         # Sort by effort (ascending), not position index, so the lowest-effort
         # slots go to the highest-priority mouse-group members instead of an
@@ -2328,38 +2435,44 @@ class SwapMutation(Mutation):
                 if self._pos_x[target_positions[k]] not in (7.0, 8.0):
                     target_positions[0], target_positions[k] = target_positions[k], target_positions[0]
                     break
-        sids = [
-            self.scroll_access_by_target[layer],
-            self.mouse_button_sids[2],
-            self.mouse_button_sids[1],
-            self.mouse_button_sids[3],
-            self.mouse_button_sids[4],
-            self.mouse_button_sids[5],
-        ]
-
         blocked = set(target_positions)
-        # Proposal bias only: prefer L0 for initial mouse-layer access so the
-        # candidate is reachable immediately. Scoring can still move access
-        # elsewhere when the live genome provides another reachable path.
+        # Keep the direct momentary mouse-layer hold on the left thumb. A right
+        # thumb hold blocks trackball use and fails the mouse-layer contract.
         access_pool = self.l0_safe_access_positions or [
             pos for pos in self.safe_access_positions
             if self._pos_layer_arr[pos] != layer
         ]
-        safe_access = [pos for pos in access_pool if pos not in blocked]
-        if len(safe_access) < 2:
+        hold_pool = [
+            pos for pos in self.l0_left_thumb_positions
+            if pos not in blocked and int(genome[pos]) not in protected_sids
+        ]
+        if not hold_pool:
             return False
-        hold_pos = random.choice(safe_access)
-        safe_access = [pos for pos in safe_access if pos != hold_pos]
+        safe_access = [
+            pos for pos in access_pool
+            if pos not in blocked and int(genome[pos]) not in protected_sids
+        ]
+        safe_access = [pos for pos in safe_access if pos not in hold_pool]
+        # The momentary hold is already reserved on its own left-thumb pool;
+        # this pool only needs one independent slot for the toggle.
+        if len(safe_access) < 1:
+            return False
+        hold_pos = random.choice(hold_pool)
         toggle_pos = random.choice(safe_access)
-        sids.extend([self.access_hold_by_target[layer], self.access_toggle_by_target[layer]])
         target_positions.extend([hold_pos, toggle_pos])
         # Bug 3 fix: place return-to-L0 toggle ON the mouse layer (right side preferred).
         # Every toggle-accessible layer must have a return toggle back to L0.
         if 0 in self.access_toggle_by_target:
             return_sid = self.access_toggle_by_target[0]
             placed_set = set(target_positions)
-            right_thumbs = [p for p in self.right_thumb_positions_by_layer.get(layer, []) if p not in placed_set]
-            right_any = [p for p in self.right_positions_by_layer.get(layer, []) if p not in placed_set]
+            right_thumbs = [
+                p for p in self.right_thumb_positions_by_layer.get(layer, [])
+                if p not in placed_set and int(genome[p]) not in protected_sids
+            ]
+            right_any = [
+                p for p in self.right_positions_by_layer.get(layer, [])
+                if p not in placed_set and int(genome[p]) not in protected_sids
+            ]
             return_pool = right_thumbs if right_thumbs else right_any
             if return_pool:
                 sids.append(return_sid)
@@ -2369,12 +2482,36 @@ class SwapMutation(Mutation):
     def _propose_l7_access(self, genome, row_pos_map=None):
         if 7 not in self.access_hold_by_target or 7 not in self.access_toggle_by_target:
             return False
-        # L7 (arrows) is always accessed from L0: prefer l0_safe_access_positions,
-        # fall back to all safe positions. Bug 2 fix only applies to mouse workflow layer.
-        access_pool = self.l0_safe_access_positions or self.safe_access_positions
-        if len(access_pool) < 2:
+        # L7 (arrows) direct momentary access belongs on an L0 thumb. Prefer
+        # left thumb so the hold does not interfere with trackball use; put the
+        # toggle off the thumb when a non-thumb slot is available.
+        l7_sids = {
+            self.access_hold_by_target[7],
+            self.access_toggle_by_target[7],
+        }
+        if l7_sids & self.group_member_sids:
             return False
-        positions = random.sample(access_pool, 2)
+        hold_pool = [
+            pos for pos in (self.l0_left_thumb_positions or self.l0_thumb_positions)
+            if int(genome[pos]) not in self.required_group_member_sids
+        ]
+        toggle_pool = [
+            pos for pos in (self.l0_non_thumb_positions or self.l0_safe_access_positions)
+            if int(genome[pos]) not in self.required_group_member_sids
+        ]
+        if not hold_pool or not toggle_pool:
+            return False
+        hold_pos = random.choice(hold_pool)
+        toggle_candidates = [pos for pos in toggle_pool if pos != hold_pos]
+        if not toggle_candidates:
+            toggle_candidates = [
+                pos for pos in self.l0_safe_access_positions
+                if pos != hold_pos
+                and int(genome[pos]) not in self.required_group_member_sids
+            ]
+        if not toggle_candidates:
+            return False
+        positions = [hold_pos, random.choice(toggle_candidates)]
         sids = [self.access_hold_by_target[7], self.access_toggle_by_target[7]]
         return self._place_sids(genome, sids, positions, row_pos_map)
 
@@ -2661,7 +2798,14 @@ class SwapMutation(Mutation):
         """
         if not self.group_sid_sets:
             return False
-        group_idx = random.randrange(len(self.group_sid_sets))
+        pos_map = self._genome_pos_map(genome, row_pos_map)
+        arrows_missing = self.raw_arrow_group_index >= 0 and any(
+            pos_map[sid] < 0 for sid in self.group_sid_sets[self.raw_arrow_group_index]
+        )
+        if arrows_missing and random.random() < 0.5:
+            group_idx = self.raw_arrow_group_index
+        else:
+            group_idx = random.randrange(len(self.group_sid_sets))
         group_sids = self.group_sid_sets[group_idx]
         anchors_arr = self.group_anchor_arrays[group_idx]
         if len(anchors_arr) == 0:
@@ -2670,7 +2814,6 @@ class SwapMutation(Mutation):
 
         # Find current genome positions for each group sid (None = absent).
         # Reuse a batched sid→position map when available.
-        pos_map = self._genome_pos_map(genome, row_pos_map)
         current_positions = [
             (int(pos_map[sid]) if 0 <= sid < self.n_shortcuts and pos_map[sid] >= 0 else None)
             for sid in group_sids
@@ -2701,6 +2844,15 @@ class SwapMutation(Mutation):
         # Positions that can't be filled become -1 (unassigned — valid in genome).
         for pos in vacated[len(fill_sids):]:
             genome[pos] = -1
+
+        # If some group members were absent, fewer old slots exist to receive
+        # displaced bindings. Keep the remainder in free mutable positions.
+        remaining = fill_sids[len(vacated):]
+        if remaining:
+            free = [int(pos) for pos in self._mutable_arr
+                    if genome[int(pos)] < 0 and int(pos) not in target]
+            for pos, sid in zip(free, remaining):
+                genome[pos] = sid
 
         return True
 
@@ -2978,14 +3130,16 @@ class SwapMutation(Mutation):
         return True
 
     def sanitize_self_ref_momentary(self, genome):
-        """Remove any momentary hold key placed on its own target layer (illegal placement).
+        """Remove ordinary layer holds on their own target; preserve Scroll and frozen keys.
 
         Called once on warmstart genomes. Replaces each violation with -1 (empty),
         letting subsequent mutations and smart_duplicate fill the slot properly.
         Returns the number of violations cleared.
         """
         cleared = 0
-        for i, sid in enumerate(genome):
+        indices = self.mutable_indices if self.mutable_indices is not None else range(len(genome))
+        for i in indices:
+            sid = genome[i]
             if sid < 0 or sid >= self.n_shortcuts:
                 continue
             tgt = int(self._mo_access_target_lut[sid])
@@ -3102,18 +3256,109 @@ class SwapMutation(Mutation):
         genome[int(random.choice(pool))] = ret_sid
         return True
 
+    def _propose_l0_toggle_deeper_thumb_swap(self, genome):
+        """Exchange an L0 layer toggle for LeftAlt or its matching deeper hold.
+
+        Prefer putting LeftAlt back on L0 when it was displaced by the toggle.
+        Once Alt is already directly available, use a matching momentary access
+        shortcut from a deeper thumb position so the toggle moves there instead.
+        """
+        if self.layout is None or len(self._l0_mutable_positions) == 0:
+            return False
+        genome_arr = np.asarray(genome, dtype=np.int32)
+        n_shortcuts = len(self.layout.shortcuts)
+        valid_alt_positions = (
+            np.flatnonzero(genome_arr == self._left_alt_sid)
+            if self._left_alt_sid is not None else np.empty(0, dtype=np.int32)
+        )
+        alt_is_on_l0 = any(int(i) in self._l0_mutable_position_set for i in valid_alt_positions)
+
+        # Restore direct L0 Alt availability even when it was displaced by a
+        # regular shortcut rather than by a layer toggle. The prior path only
+        # considered Alt on deeper thumb positions, so this common case could
+        # never be proposed by the targeted mutation.
+        if not alt_is_on_l0:
+            for l0_pos in self._l0_mutable_positions:
+                l0_pos = int(l0_pos)
+                sid = int(genome_arr[l0_pos])
+                if sid < 0 or sid >= n_shortcuts:
+                    continue
+                binding = self.layout.shortcuts[sid]
+                if binding.is_layer_access:
+                    continue
+                for alt_pos in valid_alt_positions:
+                    alt_pos = int(alt_pos)
+                    if alt_pos not in self._mutable_position_set:
+                        continue
+                    if int(self._pos_layer_arr[alt_pos]) in (0, 7):
+                        continue
+                    if alt_pos not in self._l0_mutable_position_set:
+                        genome[l0_pos], genome[alt_pos] = genome[alt_pos], genome[l0_pos]
+                        return True
+
+        for l0_pos in self._l0_mutable_positions:
+            l0_pos = int(l0_pos)
+            sid = int(genome_arr[l0_pos])
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            toggle = self.layout.shortcuts[sid]
+            if not toggle.is_layer_access or toggle.access_is_momentary:
+                continue
+            target = int(toggle.access_target_layer)
+            if target in (0, 7):
+                continue
+
+            if not alt_is_on_l0:
+                for alt_pos in valid_alt_positions:
+                    alt_pos = int(alt_pos)
+                    if alt_pos in self._deeper_thumb_position_set:
+                        genome[l0_pos], genome[alt_pos] = genome[alt_pos], genome[l0_pos]
+                        return True
+
+            matching_holds = self._momentary_access_sids_by_target.get(target, ())
+            if matching_holds:
+                hold_positions = np.flatnonzero(np.isin(genome_arr, matching_holds))
+                for hold_pos in hold_positions:
+                    hold_pos = int(hold_pos)
+                    if hold_pos in self._deeper_thumb_position_set:
+                        genome[l0_pos], genome[hold_pos] = genome[hold_pos], genome[l0_pos]
+                        return True
+        return False
+
     def _do(self, problem, X, **kwargs):
         n = X.shape[0]
         prob = float(self.prob.value if hasattr(self.prob, "value") else self.prob)
         handled = np.zeros(n, dtype=np.bool_)
 
+        # Preserve the direct L0 LeftAlt contract while moving the displaced
+        # toggle into an existing deeper thumb position as a real mutation.
+        toggle_swap_rows = np.flatnonzero(
+            np.random.random(n) < self.l0_toggle_deeper_thumb_swap_prob
+        )
+        for i in toggle_swap_rows:
+            if self._propose_l0_toggle_deeper_thumb_swap(X[int(i)]):
+                handled[int(i)] = True
+
         # Pass 1: complex semantic mutations.  When Numba is available we run a
         # single parallel dispatcher over the whole batch; otherwise fall back to
         # per-candidate Python attempt loops.
         if NUMBA_AVAILABLE and n > 0:
+            # These coordinated repairs must preserve required relative groups.
+            # Keep one implementation for CUDA/Numba and Python execution so
+            # production cannot silently take the older unprotected path.
+            for mutation_fn, mutation_prob in (
+                (self._propose_mouse_workflow_layer, self.mouse_workflow_prob),
+                (self._propose_l7_access, self.l7_access_prob),
+            ):
+                candidates = np.where(~handled & (np.random.random(n) < mutation_prob))[0]
+                if len(candidates):
+                    pos_maps = self._batched_pos_map(X[candidates])
+                    for row, i in enumerate(candidates):
+                        if mutation_fn(X[i], row_pos_map=pos_maps[row]):
+                            handled[i] = True
             semantic_probs = np.array([
-                self.mouse_workflow_prob,
-                self.l7_access_prob,
+                0.0,
+                0.0,
                 self.group_overwrite_prob,
                 self.optional_arrow_drop_prob,
                 self.bulk_assign_prob,
@@ -3148,6 +3393,7 @@ class SwapMutation(Mutation):
                 self._group_anchors_flat,
                 self._group_anchor_start,
                 np.int32(self._group_sizes.shape[0]),
+                np.int32(self.raw_arrow_group_index),
                 self._app_sids_flat,
                 self._app_sids_start,
                 np.int32(self._n_apps),

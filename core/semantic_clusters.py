@@ -18,83 +18,12 @@ from dataclasses import dataclass, field
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from core import Shortcut
+from core.norwegian_keys import RAW_COMPLETION_NORWEGIAN
 
 
 # ---------------------------------------------------------------------------
 # Directional / sequence / antonym vocabulary
 # ---------------------------------------------------------------------------
-
-# Each token maps to a canonical order and a relative offset from the anchor
-# (order 0).  Horizontal pairs use (dx, dy); vertical pairs use (0, 1).
-DIRECTION_TOKENS = {
-    # horizontal: earlier / left
-    "left": (0, 0.0, 0.0),
-    "previous": (0, 0.0, 0.0),
-    "prev": (0, 0.0, 0.0),
-    "back": (0, 0.0, 0.0),
-    "backward": (0, 0.0, 0.0),
-    "before": (0, 0.0, 0.0),
-    "earlier": (0, 0.0, 0.0),
-    "first": (0, 0.0, 0.0),
-    "home": (0, 0.0, 0.0),
-    "start": (0, 0.0, 0.0),
-    "beginning": (0, 0.0, 0.0),
-    # horizontal: later / right
-    "right": (1, 1.0, 0.0),
-    "next": (1, 1.0, 0.0),
-    "forward": (1, 1.0, 0.0),
-    "forwards": (1, 1.0, 0.0),
-    "after": (1, 1.0, 0.0),
-    "later": (1, 1.0, 0.0),
-    "last": (1, 1.0, 0.0),
-    "end": (1, 1.0, 0.0),
-    # vertical: earlier / up
-    "up": (0, 0.0, 0.0),
-    "upward": (0, 0.0, 0.0),
-    "above": (0, 0.0, 0.0),
-    "top": (0, 0.0, 0.0),
-    # vertical: later / down
-    "down": (1, 0.0, 1.0),
-    "downward": (1, 0.0, 1.0),
-    "below": (1, 0.0, 1.0),
-    "bottom": (1, 0.0, 1.0),
-    # zoom / scale
-    "in": (0, 0.0, 0.0),
-    "out": (1, 1.0, 0.0),
-    # open/close, show/hide, enable/disable
-    "open": (0, 0.0, 0.0),
-    "show": (0, 0.0, 0.0),
-    "enable": (0, 0.0, 0.0),
-    "close": (1, 1.0, 0.0),
-    "hide": (1, 1.0, 0.0),
-    "disable": (1, 1.0, 0.0),
-    # size / state
-    "maximize": (1, 1.0, 0.0),
-    "minimize": (0, 0.0, 0.0),
-    "restore": (0, 0.0, 0.0),
-    "shrink": (0, 0.0, 0.0),
-    "expand": (1, 1.0, 0.0),
-    "increase": (1, 1.0, 0.0),
-    "decrease": (0, 0.0, 0.0),
-    "raise": (0, 0.0, 0.0),
-    "lower": (1, 0.0, 1.0),
-    "indent": (1, 1.0, 0.0),
-    "outdent": (0, 0.0, 0.0),
-    "add": (1, 1.0, 0.0),
-    "remove": (0, 0.0, 0.0),
-    "delete": (0, 0.0, 0.0),
-    "insert": (1, 1.0, 0.0),
-    "upper": (1, 1.0, 0.0),
-    "lower": (0, 0.0, 0.0),
-    "start": (0, 0.0, 0.0),
-    "stop": (1, 1.0, 0.0),
-    "play": (0, 0.0, 0.0),
-    "pause": (1, 1.0, 0.0),
-    "mute": (0, 0.0, 0.0),
-    "unmute": (1, 1.0, 0.0),
-    "lock": (0, 0.0, 0.0),
-    "unlock": (1, 1.0, 0.0),
-}
 
 # Sequence tokens where the word itself implies order (not spatial direction).
 # Value: (order, dx, dy, family).  Family groups related sequence words so that
@@ -120,14 +49,6 @@ RAW_KEY_CLUSTERS: Dict[str, List[Tuple[str, int, float, float]]] = {
     "volume": [
         ("VolumeUp", 0, 0.0, 0.0),
         ("VolumeDown", 1, 0.0, 1.0),
-    ],
-    "arrow_horizontal": [
-        ("LeftArrow", 0, 0.0, 0.0),
-        ("RightArrow", 1, 1.0, 0.0),
-    ],
-    "arrow_vertical": [
-        ("UpArrow", 0, 0.0, 0.0),
-        ("DownArrow", 1, 0.0, 1.0),
     ],
 }
 
@@ -157,17 +78,21 @@ KEYWORD_FAMILIES = [
     # Clipboard (already partly covered by SEQUENCE_TOKENS, but this catches
     # app-specific phrasing like "Paste without formatting" and "Clipboard history").
     # Exclude line-copying actions which are editor-specific, not clipboard.
-    KeywordFamily("clipboard", ("cut", "copy", "paste", "clipboard"), exclude_keywords=("line",), min_members=2),
+    KeywordFamily("clipboard", ("cut", "copy", "paste", "clipboard"),
+                  exclude_keywords=("line", "clipboard history"), min_members=2),
     # History (Undo/Redo).
     KeywordFamily("history", ("undo", "redo")),
     # Browser tabs.
-    KeywordFamily("browser_tab", ("tab",), direction_tokens=("new", "close", "reopen", "next", "previous", "last", "switch")),
+    KeywordFamily("browser_tab", ("tab",),
+                  direction_tokens=("new", "close", "reopen", "next", "previous"),
+                  exclude_keywords=("switch to tab", "last tab")),
     # Browser navigation.
     KeywordFamily("browser_nav", ("back", "forward")),
     # Browser refresh/reload.
     KeywordFamily("browser_refresh", ("refresh", "reload", "hard refresh")),
     # Browser find.
-    KeywordFamily("browser_find", ("find",), direction_tokens=("previous", "next", "on page")),
+    KeywordFamily("browser_find", ("find",), direction_tokens=("previous", "next", "on page"),
+                  exclude_keywords=("my mouse",)),
     # Browser zoom.
     KeywordFamily("browser_zoom", ("zoom",), direction_tokens=("in", "out", "reset")),
     # Browser DevTools.
@@ -181,19 +106,32 @@ KEYWORD_FAMILIES = [
     # Browser file operations.
     KeywordFamily("browser_file_ops", ("print", "save page as")),
     # Browser panels / sidebar.
-    KeywordFamily("browser_panel", ("history", "downloads", "sidebar")),
+    KeywordFamily("browser_panel", ("history", "downloads", "sidebar"),
+                  exclude_keywords=("version history", "clipboard history")),
     # Browser fullscreen / view toggles.
     KeywordFamily("browser_view", ("fullscreen", "device toolbar")),
     # Window management (Windows).
-    KeywordFamily("window_state", ("maximize", "minimize", "restore", "close window", "snap window")),
+    KeywordFamily("window_state", ("maximize", "minimize", "restore", "close window", "snap window"),
+                  exclude_keywords=("window sets", "workspaces")),
     # Virtual desktops.
     KeywordFamily("virtual_desktop", ("virtual desktop", "desktop", "switch desktop")),
     # Monitor movement.
     KeywordFamily("monitor_move", ("monitor",), direction_tokens=("left", "right")),
-    # Launchers / search.
-    KeywordFamily("launcher", ("search", "run dialog", "launcher", "command palette")),
-    # PowerToys tools (all in the PowerToys app).
-    KeywordFamily("powertoys", (), require_app="PowerToys"),
+    # Keep launchers in their actual contexts: PowerToys' two launch surfaces,
+    # and Windows Search/Run. Browser address/search shortcuts have their own
+    # family above; unrelated app search shortcuts do not join these groups.
+    KeywordFamily("powertoys_launcher", ("launcher", "command palette"),
+                  require_app="PowerToys"),
+    KeywordFamily("windows_launcher", ("search", "run dialog"),
+                  require_app="Windows 11"),
+    # PowerToys feature groups. Keep unrelated utilities out of one app-wide
+    # mega-cluster; the launcher pair and distinct tools form useful contexts.
+    KeywordFamily("powertoys_visual_tools", ("color picker", "text extractor", "screen ruler"),
+                  require_app="PowerToys"),
+    KeywordFamily("powertoys_mouse_tools", ("mouse pointer crosshairs", "mouse highlighter", "find my mouse"),
+                  require_app="PowerToys"),
+    KeywordFamily("powertoys_workspace_tools", ("fancyzones", "workspaces"),
+                  require_app="PowerToys"),
     # Text formatting.
     KeywordFamily("text_format", ("bold", "italic", "underline", "strikethrough")),
     # Font size.
@@ -230,20 +168,15 @@ KEYWORD_FAMILIES = [
     KeywordFamily("emoji", ("emoji picker", "emoji")),
     # Screenshots / snips.
     KeywordFamily("screenshot", ("screenshot", "snip")),
-    # Windows system tools (clipboard history, screenshot, task manager).
-    KeywordFamily("windows_tools", ("clipboard history", "screenshot", "task manager")),
     # System settings / info.
     KeywordFamily("system_settings", ("settings", "system info")),
     # Input language.
     KeywordFamily("input_language", ("input language", "keyboard layout")),
     # Teams call controls.
     KeywordFamily("teams_call", ("mute", "deafen", "video", "raise hand", "lower hand")),
-    # M-Files workflow.
-    KeywordFamily("mfiles", (), require_app="M-Files Desktop Client"),
     # Raw completion keys.
-    KeywordFamily("raw_completion", (), require_app="Raw Keys"),
-    # Mouse arrows.
-    KeywordFamily("mouse_arrows", (), require_app="Mouse"),
+    KeywordFamily("raw_completion", ()),
+    KeywordFamily("modifier_keys", (), require_app="Modifier Keys"),
 ]
 
 
@@ -288,16 +221,6 @@ def _tokenize(action: str) -> List[str]:
     return _normalize_action(action).split()
 
 
-def _extract_direction(action: str) -> Optional[Tuple[str, int, float, float, str]]:
-    """Return (token, order, dx, dy, family) if the action contains a directional word."""
-    tokens = _tokenize(action)
-    for tok in tokens:
-        if tok in DIRECTION_TOKENS:
-            info = DIRECTION_TOKENS[tok]
-            return (tok, info[0], info[1], info[2], "direction")
-    return None
-
-
 def _extract_sequence(action: str) -> Optional[Tuple[str, int, float, float, str]]:
     """Return (token, order, dx, dy, family) if the action contains a sequence word."""
     tokens = _tokenize(action)
@@ -338,6 +261,13 @@ def _skip_shortcut(sc: Shortcut) -> bool:
     if sc.category == "mouse":
         return True
     return False
+
+
+def _is_unmodified_arrow(sc: Shortcut) -> bool:
+    return (not sc.modifiers
+            and (sc.base_key or "").upper() in {
+                "LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW",
+            })
 
 
 def _build_cluster(
@@ -401,8 +331,7 @@ def _build_cluster(
 def _direction_and_sequence_clusters(
     shortcuts: List[Shortcut], by_sid: Dict[int, Shortcut]
 ) -> List[SemanticCluster]:
-    """Action-stem clusters using DIRECTION_TOKENS and SEQUENCE_TOKENS."""
-    stem_groups: Dict[Tuple[str, str], List[Tuple[int, str, int, float, float]]] = {}
+    """Curated directional pairs plus ordered sequence-word clusters."""
     seq_groups: Dict[Tuple[str, str], List[Tuple[int, str, int, float, float]]] = {}
 
     for sc in shortcuts:
@@ -412,43 +341,39 @@ def _direction_and_sequence_clusters(
         if any(ig in norm for ig in IGNORED_ACTION_WORDS):
             continue
 
-        dir_info = _extract_direction(sc.action)
-        if dir_info is not None:
-            token, order, dx, dy, family = dir_info
-            stem = _action_stem(sc.action, token) or "_"
-            stem_groups.setdefault((stem, family), []).append((sc.sid, token, order, dx, dy))
-
         seq_info = _extract_sequence(sc.action)
         if seq_info is not None:
             token, order, dx, dy, family = seq_info
             stem = _action_stem(sc.action, token) or "_"
             seq_groups.setdefault((stem, family), []).append((sc.sid, token, order, dx, dy))
 
-    clusters: List[SemanticCluster] = []
+    clusters: List[SemanticCluster] = _direction_clusters_for_tokens(shortcuts, by_sid)
 
-    def _from_entries(key, entries, category):
-        # Convert (sid, token, order, dx, dy) -> (sid, order, dx, dy) using token-specific offsets.
-        best_by_order: Dict[int, Tuple[int, str, int, float, float]] = {}
+    def _from_sequence_entries(key, entries):
+        by_order: Dict[int, List[Tuple[int, str, int, float, float]]] = {}
         for sid, token, order, dx, dy in entries:
-            existing = best_by_order.get(order)
-            if existing is None or by_sid[sid].importance > by_sid[existing[0]].importance:
-                best_by_order[order] = (sid, token, order, dx, dy)
-        if len(best_by_order) < 2:
+            by_order.setdefault(order, []).append((sid, token, order, dx, dy))
+        if len(by_order) < 2:
             return None
         stem, family = key
-        tokens = [e[1] for e in best_by_order.values()]
-        default_name = family if category == "sequence" else ""
-        name = _make_cluster_name(stem, category, default_name, tokens)
-        build_entries = [(e[0], e[2], e[3], e[4]) for e in best_by_order.values()]
-        return _build_cluster(name, category, by_sid, build_entries, is_critical=(category == "sequence"))
-
-    for key, entries in stem_groups.items():
-        cluster = _from_entries(key, entries, "direction")
-        if cluster is not None:
-            clusters.append(cluster)
+        tokens = [items[0][1] for _, items in sorted(by_order.items())]
+        name = _make_cluster_name(stem, "sequence", family, tokens)
+        # Preserve alternate bindings for the same semantic action (for
+        # example Ctrl+Y and Ctrl+Shift+Z for Redo). Keep aliases adjacent to
+        # their sequence neighbors instead of dropping them from the ordered
+        # contract or leaving them anywhere in a broad same-layer family.
+        build_entries = []
+        ordinal = min(by_order)
+        for _semantic_order, items in sorted(by_order.items()):
+            for sid, _token, _order, _dx, _dy in sorted(
+                items, key=lambda item: (-by_sid[item[0]].importance, item[0]),
+            ):
+                build_entries.append((sid, ordinal, float(ordinal), 0.0))
+                ordinal += 1
+        return _build_cluster(name, "sequence", by_sid, build_entries, is_critical=True)
 
     for key, entries in seq_groups.items():
-        cluster = _from_entries(key, entries, "sequence")
+        cluster = _from_sequence_entries(key, entries)
         if cluster is not None:
             clusters.append(cluster)
 
@@ -456,7 +381,8 @@ def _direction_and_sequence_clusters(
 
 
 def _keyword_family_clusters(
-    shortcuts: List[Shortcut], by_sid: Dict[int, Shortcut]
+    shortcuts: List[Shortcut], by_sid: Dict[int, Shortcut],
+    exclude_compact_sids: Optional[set] = None,
 ) -> List[SemanticCluster]:
     """Clusters from semantic keyword families."""
     clusters: List[SemanticCluster] = []
@@ -475,7 +401,11 @@ def _keyword_family_clusters(
         matched: List[Shortcut] = []
         patterns = family_patterns[family]
         for sc in shortcuts:
-            if _skip_shortcut(sc):
+            if _skip_shortcut(sc) or _is_unmodified_arrow(sc):
+                continue
+            if family.name == "raw_completion":
+                if sc.base_key in RAW_COMPLETION_NORWEGIAN and not sc.modifiers and not sc.is_l0_only:
+                    matched.append(sc)
                 continue
             if family.require_app is not None and sc.app != family.require_app:
                 continue
@@ -492,17 +422,166 @@ def _keyword_family_clusters(
         if len(matched) < family.min_members:
             continue
 
-        # Build the family as a compactness cluster.  Directional families
-        # (e.g. browser_tab) would ideally carry relative offsets, but the
-        # primary goal is to keep the whole semantic family on one layer; the
-        # separate directional-stem detector still creates ordered sub-clusters
-        # for strongly left/right pairs.
-        entries = [(sc.sid, 0, 0.0, 0.0) for sc in matched]
-        cluster = _build_cluster(f"family_{family.name}", "keyword_family", by_sid, entries, compactness=True)
+        # Do not make broad same-layer families pull ordered subgroups away
+        # from their declared geometry. Keep compact pressure only for family
+        # members that have no more specific ordered/pattern context.
+        compact_members = [sc for sc in matched
+                           if sc.sid not in (exclude_compact_sids or set())]
+        entries = [(sc.sid, 0, 0.0, 0.0) for sc in compact_members]
+        cluster = _build_cluster(f"family_{family.name}", "keyword_family", by_sid,
+                                 entries, compactness=True)
         if cluster is not None:
             clusters.append(cluster)
+        if family.direction_tokens:
+            clusters.extend(_keyword_direction_clusters(matched, family, by_sid))
 
     return clusters
+
+
+_CURATED_DIRECTION_PAIRS = (
+    (("left", "right"), (0.0, 0.0), (1.0, 0.0)),
+    (("top", "bottom"), (0.0, 0.0), (0.0, 1.0)),
+    (("up", "down"), (0.0, 0.0), (0.0, 1.0)),
+    (("above", "below"), (0.0, 0.0), (0.0, 1.0)),
+    (("raise", "lower"), (0.0, 0.0), (0.0, 1.0)),
+    (("previous", "next"), (0.0, 0.0), (1.0, 0.0)),
+    (("prev", "next"), (0.0, 0.0), (1.0, 0.0)),
+    (("back", "forward"), (0.0, 0.0), (1.0, 0.0)),
+    (("backward", "forward"), (0.0, 0.0), (1.0, 0.0)),
+    (("before", "after"), (0.0, 0.0), (1.0, 0.0)),
+    (("earlier", "later"), (0.0, 0.0), (1.0, 0.0)),
+    (("in", "out"), (0.0, 0.0), (1.0, 0.0)),
+    (("increase", "decrease"), (0.0, 0.0), (0.0, 1.0)),
+    (("horizontal", "vertical"), (0.0, 0.0), (1.0, 0.0)),
+    (("open", "close"), (0.0, 0.0), (1.0, 0.0)),
+    (("show", "hide"), (0.0, 0.0), (1.0, 0.0)),
+    (("enable", "disable"), (0.0, 0.0), (1.0, 0.0)),
+    (("minimize", "maximize"), (0.0, 0.0), (1.0, 0.0)),
+    (("shrink", "expand"), (0.0, 0.0), (1.0, 0.0)),
+    (("outdent", "indent"), (0.0, 0.0), (1.0, 0.0)),
+    (("remove", "add"), (0.0, 0.0), (1.0, 0.0)),
+    (("first", "last"), (0.0, 0.0), (1.0, 0.0)),
+    (("home", "end"), (0.0, 0.0), (1.0, 0.0)),
+    (("start", "stop"), (0.0, 0.0), (1.0, 0.0)),
+    (("play", "pause"), (0.0, 0.0), (1.0, 0.0)),
+    (("mute", "unmute"), (0.0, 0.0), (1.0, 0.0)),
+    (("lock", "unlock"), (0.0, 0.0), (1.0, 0.0)),
+)
+
+
+def _direction_clusters_for_tokens(shortcuts, by_sid, allowed=None, prefix=""):
+    """Make action-stem pairs only for curated, semantically compatible tokens."""
+    allowed = set(allowed) if allowed is not None else None
+    result = []
+    for (left, right), left_offset, right_offset in _CURATED_DIRECTION_PAIRS:
+        if allowed is not None and (left not in allowed or right not in allowed):
+            continue
+        buckets = {}
+        for sc in shortcuts:
+            if _skip_shortcut(sc) or _is_unmodified_arrow(sc):
+                continue
+            tokens = _tokenize(sc.action)
+            token = left if left in tokens else (right if right in tokens else None)
+            if token is None:
+                continue
+            stem = _action_stem(sc.action, token) or "_"
+            pair = buckets.setdefault(stem, {})
+            if token not in pair or sc.importance > pair[token].importance:
+                pair[token] = sc
+        for stem, pair in buckets.items():
+            if left not in pair or right not in pair:
+                continue
+            left_sc, right_sc = pair[left], pair[right]
+            # Preserve the user's physical direction when action wording is
+            # abstract. PageUp/PageDown and Up/Down are vertical relations even
+            # when the descriptions say Previous/Next (slides, tabs, items).
+            left_key = re.sub(r"[^a-z0-9]", "", (left_sc.base_key or "").lower())
+            right_key = re.sub(r"[^a-z0-9]", "", (right_sc.base_key or "").lower())
+            vertical_context = (left_key, right_key) in {
+                ("pageup", "pagedown"), ("uparrow", "downarrow"),
+            }
+            pair_left_offset, pair_right_offset = left_offset, right_offset
+            if vertical_context:
+                pair_left_offset, pair_right_offset = (0.0, 0.0), (0.0, 1.0)
+            entries = [
+                (left_sc.sid, 0, *pair_left_offset),
+                (right_sc.sid, 1, *pair_right_offset),
+            ]
+            cluster = _build_cluster(
+                _make_cluster_name(f"{prefix}{stem}", "direction"),
+                "direction", by_sid, entries, is_critical=True,
+            )
+            if cluster is not None:
+                result.append(cluster)
+    return result
+
+
+def _key_direction_clusters(shortcuts, by_sid):
+    """Infer ordered pairs from matching modifier stacks and physical direction keys."""
+    key_pairs = (
+        (("left", "right"), ("Left", "Right"), (0.0, 0.0), (1.0, 0.0)),
+        (("up", "down"), ("Up", "Down"), (0.0, 0.0), (0.0, 1.0)),
+        (("home", "end"), ("Home", "End"), (0.0, 0.0), (1.0, 0.0)),
+        (("page_up", "page_down"), ("PageUp", "PageDown"), (0.0, 0.0), (0.0, 1.0)),
+        (("minus", "plus"), ("Minus", "Plus"), (0.0, 0.0), (1.0, 0.0)),
+        (("less_than", "greater_than"), ("LessThan", "GreaterThan"), (0.0, 0.0), (1.0, 0.0)),
+    )
+    aliases = {
+        "leftarrow": "Left", "left": "Left",
+        "rightarrow": "Right", "right": "Right",
+        "uparrow": "Up", "up": "Up",
+        "downarrow": "Down", "down": "Down",
+        "dash and underscore": "Minus", "equals and plus": "Plus",
+        "comma and lessthan": "LessThan", "period and greaterthan": "GreaterThan",
+    }
+    result = []
+
+    def actions_form_pair(first, second):
+        first_tokens = set(_tokenize(first.action))
+        second_tokens = set(_tokenize(second.action))
+        for (left, right), _, _ in _CURATED_DIRECTION_PAIRS:
+            if ((left in first_tokens and right in second_tokens)
+                    or (right in first_tokens and left in second_tokens)):
+                return True
+        return False
+
+    for pair_name, key_names, first_offset, second_offset in key_pairs:
+        buckets = {}
+        for sc in shortcuts:
+            if _skip_shortcut(sc) or _is_unmodified_arrow(sc):
+                continue
+            base = (sc.base_key or sc.keys.rsplit("+", 1)[-1]).strip()
+            normalized_base = aliases.get(base.lower(), base)
+            if normalized_base not in key_names:
+                continue
+            modifier = "+".join(sc.modifiers) if sc.modifiers else "base"
+            bucket = buckets.setdefault(modifier, {})
+            if normalized_base not in bucket or sc.importance > bucket[normalized_base].importance:
+                bucket[normalized_base] = sc
+        for modifier, pair in buckets.items():
+            first_key, second_key = key_names
+            if first_key not in pair or second_key not in pair:
+                continue
+            if pair_name != ("home", "end") and not actions_form_pair(
+                pair[first_key], pair[second_key],
+            ):
+                continue
+            entries = [
+                (pair[first_key].sid, 0, *first_offset),
+                (pair[second_key].sid, 1, *second_offset),
+            ]
+            name = f"key_{modifier}_{pair_name[0]}_{pair_name[1]}".replace("+", "_")
+            cluster = _build_cluster(name, "direction", by_sid, entries, is_critical=True)
+            if cluster is not None:
+                result.append(cluster)
+    return result
+
+
+def _keyword_direction_clusters(matched, family, by_sid):
+    """Make action-stem pairs restricted by a family's declared direction tokens."""
+    return _direction_clusters_for_tokens(
+        matched, by_sid, allowed=family.direction_tokens, prefix=f"{family.name}_",
+    )
 
 
 def _cross_app_exact_clusters(
@@ -571,34 +650,62 @@ def _key_pattern_clusters(
 
     # Modifier + number sequences (e.g. Ctrl+1..Ctrl+8, Win+1..Win+5).
     numeric_pattern = re.compile(r"^(Ctrl|Alt|Shift|Win)\+(\d+)$")
-    by_mod: Dict[str, List[Tuple[int, int, Shortcut]]] = {}
+    by_family: Dict[Tuple[str, str], List[Tuple[int, int, Shortcut]]] = {}
     for sc in shortcuts:
         if _skip_shortcut(sc):
             continue
         m = numeric_pattern.match(sc.keys)
         if m:
             mod, num = m.group(1), int(m.group(2))
-            by_mod.setdefault(mod, []).append((num, sc.sid, sc))
+            norm = _normalize_action(sc.action)
+            number_pattern = re.compile(r"\b" + str(num) + r"\b")
+            if number_pattern.search(norm):
+                stem = number_pattern.sub(" ", norm)
+                stem = re.sub(r"\s+", " ", stem).strip()
+            elif mod == "Ctrl" and num == 9 and "last tab" in norm:
+                stem = "switch to tab"
+            else:
+                # A modifier+digit alone is insufficient evidence for one
+                # semantic sequence: Ctrl+0 (zoom reset) must not join tabs.
+                continue
+            by_family.setdefault((mod, stem), []).append((num, sc.sid, sc))
 
-    for mod, items in by_mod.items():
+    for (mod, stem), items in by_family.items():
         if len(items) < 2:
             continue
         # Keep consecutive numeric runs of length >= 2.
         items_sorted = sorted(items, key=lambda x: x[0])
         run: List[Tuple[int, int, Shortcut]] = []
+
+        def _run_entries(run_items):
+            first_num = run_items[0][0]
+            entries = []
+            for num, sid, _ in run_items:
+                ordinal = num - first_num
+                if mod == "Ctrl" and stem == "switch to tab":
+                    # Browser tab shortcuts form an ordered 3x3 navigation grid;
+                    # a nine-position straight row does not fit the keywell.
+                    dx, dy = ordinal % 3, ordinal // 3
+                else:
+                    # Taskbar slots and other numeric sequences stay in numeric
+                    # order along a row.
+                    dx, dy = ordinal, 0
+                entries.append((sid, num, float(dx), float(dy)))
+            return entries
+
         for it in items_sorted:
             if not run or it[0] == run[-1][0] + 1:
                 run.append(it)
             else:
                 if len(run) >= 2:
-                    entries = [(sid, num, float(num), 0.0) for num, sid, _ in run]
-                    cluster = _build_cluster(f"pattern_{mod}_digits", "key_pattern", by_sid, entries)
+                    entries = _run_entries(run)
+                    cluster = _build_cluster(f"pattern_{mod}_{stem.replace(' ', '_')}", "key_pattern", by_sid, entries)
                     if cluster is not None:
                         clusters.append(cluster)
                 run = [it]
         if len(run) >= 2:
-            entries = [(sid, num, float(num), 0.0) for num, sid, _ in run]
-            cluster = _build_cluster(f"pattern_{mod}_digits", "key_pattern", by_sid, entries)
+            entries = _run_entries(run)
+            cluster = _build_cluster(f"pattern_{mod}_{stem.replace(' ', '_')}", "key_pattern", by_sid, entries)
             if cluster is not None:
                 clusters.append(cluster)
 
@@ -628,44 +735,36 @@ def _cluster_priority(cluster: SemanticCluster) -> float:
 
 
 def _deduplicate_clusters(clusters: List[SemanticCluster]) -> List[SemanticCluster]:
-    """Keep the highest-priority cluster for each SID.
-
-    If a cluster loses members during assignment and drops below two surviving
-    members, it is discarded.
-    """
-    clusters_sorted = sorted(clusters, key=_cluster_priority, reverse=True)
-
-    sid_to_best: Dict[int, SemanticCluster] = {}
-    for cluster in clusters_sorted:
-        for m in cluster.members:
-            existing = sid_to_best.get(m.sid)
-            if existing is None or _cluster_priority(cluster) > _cluster_priority(existing):
-                sid_to_best[m.sid] = cluster
-
-    # Rebuild clusters from surviving SIDs.
-    cluster_id_to_sids: Dict[int, List[int]] = {}
-    cluster_by_id: Dict[int, SemanticCluster] = {}
-    for sid, cluster in sid_to_best.items():
-        cid = id(cluster)
-        cluster_id_to_sids.setdefault(cid, []).append(sid)
-        cluster_by_id[cid] = cluster
-
-    final: List[SemanticCluster] = []
-    for cid, sids in cluster_id_to_sids.items():
-        if len(sids) < 2:
+    """Remove duplicate definitions while preserving overlapping subgroups."""
+    chosen = {}
+    for cluster in clusters:
+        if len(cluster.members) < 2:
             continue
-        cluster = cluster_by_id[cid]
-        surviving = [m for m in cluster.members if m.sid in sids]
-        if len(surviving) >= 2:
-            final.append(SemanticCluster(
-                name=cluster.name,
-                category=cluster.category,
-                members=surviving,
-                weight=cluster.weight,
-                is_critical=cluster.is_critical,
+        member_set = tuple(sorted({m.sid for m in cluster.members}))
+        has_relation = any(abs(m.dx) > 0.01 or abs(m.dy) > 0.01 for m in cluster.members)
+        rank = (has_relation, cluster.is_critical, _cluster_priority(cluster))
+        existing = chosen.get(member_set)
+        if existing is None:
+            chosen[member_set] = (rank, cluster)
+            continue
+        existing_cluster = existing[1]
+        candidate_is_physical = cluster.name.startswith("key_")
+        existing_is_physical = existing_cluster.name.startswith("key_")
+        if candidate_is_physical != existing_is_physical:
+            signature = lambda item: tuple(sorted(
+                (m.sid, round(m.dx, 3), round(m.dy, 3)) for m in item.members
             ))
-
-    return final
+            candidate_signature = signature(cluster)
+            existing_signature = signature(existing_cluster)
+            # Physical key placement overrides abstract action ordering only
+            # when the two infer different geometries. Preserve the clearer
+            # action-derived name when both agree (e.g. LeftArrow/RightArrow).
+            if candidate_is_physical and candidate_signature != existing_signature:
+                chosen[member_set] = (rank, cluster)
+            continue
+        if rank > existing[0]:
+            chosen[member_set] = (rank, cluster)
+    return sorted((item[1] for item in chosen.values()), key=lambda c: (c.name, tuple(c.member_sids)))
 
 
 # ---------------------------------------------------------------------------
@@ -690,9 +789,15 @@ def detect_semantic_clusters(shortcuts: List[Shortcut]) -> List[SemanticCluster]
 
     clusters: List[SemanticCluster] = []
     clusters.extend(_direction_and_sequence_clusters(shortcuts, by_sid))
-    clusters.extend(_keyword_family_clusters(shortcuts, by_sid))
+    clusters.extend(_key_direction_clusters(shortcuts, by_sid))
+    clusters.extend(_key_pattern_clusters(shortcuts, by_sid))
+    ordered_sids = set()
+    for cluster in clusters:
+        if any(abs(member.dx) > 0.01 or abs(member.dy) > 0.01
+               for member in cluster.members):
+            ordered_sids.update(member.sid for member in cluster.members)
+    clusters.extend(_keyword_family_clusters(shortcuts, by_sid, ordered_sids))
     clusters.extend(_cross_app_exact_clusters(shortcuts, by_sid))
     clusters.extend(_raw_key_clusters(shortcuts, by_sid))
-    clusters.extend(_key_pattern_clusters(shortcuts, by_sid))
 
     return _deduplicate_clusters(clusters)

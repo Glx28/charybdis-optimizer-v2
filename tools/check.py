@@ -59,7 +59,7 @@ def main():
     ckpt = load_checkpoint(ckpt_path)
     g = np.array(ckpt['best_genome'], dtype=np.int32)
     F, G = ev.model.evaluate_batch(g.reshape(1, -1))
-    gap = float(F[0].sum()) + 49.30
+    total = float(F[0].sum())
     adj = float(F[0, 1])
 
     # Layer BFS
@@ -91,7 +91,7 @@ def main():
     ml = max(mr, key=lambda lyr: len(mr[lyr])) if mr and max(len(v) for v in mr.values()) >= 2 else -1
 
     print(f'=== {os.path.basename(ckpt_path)} ===')
-    print(f'gap={gap:+.3f}  adj={adj:.3f}  G={[int(G[0, i]) for i in range(G.shape[1])]}')
+    print(f'raw_score={total:.3f}  adj={adj:.3f}  G={[int(G[0, i]) for i in range(G.shape[1])]}')
     print(f'Mouse L{ml}: all-hops={da.get(ml, "?")} hold-hops={dh.get(ml, "NONE")}')
     print()
 

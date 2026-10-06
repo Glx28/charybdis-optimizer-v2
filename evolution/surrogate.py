@@ -267,7 +267,7 @@ class SurrogateTrainer:
         pred = self.predict(layouts)
         mse = np.mean((pred - exact_scores) ** 2, axis=0)
         mae = np.mean(np.abs(pred - exact_scores), axis=0)
-        denom = np.sum((exact_scores - exact_scores.mean(axis=0)) ** 2) + 1e-6
+        denom = np.sum((exact_scores - exact_scores.mean(axis=0)) ** 2, axis=0) + 1e-6
         r2 = 1 - np.sum((pred - exact_scores) ** 2, axis=0) / denom
         return {"mse": mse, "mae": mae, "r2": r2}
 
@@ -312,6 +312,10 @@ class SurrogateManager:
         self.accuracy_history = []
         self._retrain_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self._retrain_future = None
+
+    def clear_exact_cache(self):
+        """Drop cached exact evaluations, e.g. when the fitness landscape changes."""
+        self.exact_cache = []
 
     def should_retrain(self) -> bool:
         return self.generation > 0 and self.generation % self.retrain_every == 0

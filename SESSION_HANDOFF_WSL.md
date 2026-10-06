@@ -42,10 +42,8 @@ Current policy:
   not an optimizer acceptance surface.
 - L7 access is checked separately from content: L7 must be reachable by both a
   momentary layer access capability and a toggle layer access capability.
-- Mutable raw arrows are lower value because L7 already provides fallback
-  arrows. If raw arrows appear outside L7, they must be all four arrows on one
-  layer in either one-row `Left Up Down Right` order or a two-row cluster with
-  `Left Down Right` on the bottom row and `Up` directly above `Down`.
+- Raw arrows have no mutable-layer placement requirement; frozen L7 provides
+  raw-arrow access.
 - At target generation, a run is invalid unless a generated non-L0/non-L7
   dynamic mouse layer has MB1-MB2-MB3-MB4-MB5 on the right side, right-hand
   non-thumb momentary Scroll, no mouse button on that layer's right-thumb area,
@@ -60,5 +58,5 @@ Current policy:
 Run discipline:
 
 - No trusted run is active unless explicitly reported in `SESSION_HANDOFF.md`.
-- Prefer bounded runs sized to the current scoring change.
+- Production runs use the configured generation cap; checkpoint trends are review evidence, not automatic stop/restart triggers.
 - Do not use old Windows paths or old nested run-directory sync instructions.

@@ -11,7 +11,6 @@ from fitness import FitnessFactor
 # ScrollUp/ScrollDown keys.
 ARROW_KEYS = ["LeftArrow", "RightArrow", "UpArrow", "DownArrow"]
 KEY_GROUPS = [
-    {"name": "arrows", "params": ARROW_KEYS, "protected": True, "base_only": True},
     {"name": "win_directions", "params": ARROW_KEYS, "mods_required": "win", "protected": True},
     {"name": "browser_nav", "params": ARROW_KEYS, "mods_required": "alt", "protected": True},
     {"name": "ctrl_word_nav", "params": ARROW_KEYS, "mods_required": "ctrl", "protected": True},
@@ -28,11 +27,11 @@ def shortcut_matches_group(shortcut, group):
     params = {p.upper() for p in group.get("params", [])}
     if shortcut.base_key.upper() not in params:
         return False
-    
+
     # base_only means the shortcut must have no modifiers (just the raw base key)
     if group.get("base_only") and shortcut.modifiers:
         return False
-    
+
     mods_req = group.get("mods_required", "")
     if mods_req and not any(mods_req.lower() in m.lower() for m in shortcut.modifiers):
         return False
@@ -53,43 +52,17 @@ def _novelty_cost(importance: float, support: float, is_mouse: bool = False) -> 
     return 0.15 + (1.0 - score) * (1.0 - score)
 
 
-def _allowed_raw_arrow_shape(type_positions: dict) -> bool:
-    if set(type_positions) != {"LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW"}:
-        return False
-    lx, ly = type_positions["LEFTARROW"]
-    rx, ry = type_positions["RIGHTARROW"]
-    ux, uy = type_positions["UPARROW"]
-    dx, dy = type_positions["DOWNARROW"]
-    same_line = (
-        abs(ly - uy) <= 0.25
-        and abs(uy - dy) <= 0.25
-        and abs(dy - ry) <= 0.25
-        and lx < ux < dx < rx
-        and (rx - lx) <= 4.5
-    )
-    split_cluster = (
-        abs(ly - dy) <= 0.25
-        and abs(dy - ry) <= 0.25
-        and lx < dx < rx
-        and uy < dy
-        and abs(ux - dx) <= 0.25
-        and (dy - uy) <= 2.0
-        and (rx - lx) <= 3.5
-    )
-    return same_line or split_cluster
-
-
 class ViolationFactor(FitnessFactor):
     """Aggregates constraint violations. Lower is better."""
     name = "violations"
-    
+
     def __init__(self, weights: dict = None, threshold: float = 6.0):
         defaults = DEFAULT_CONFIG["fitness"]["violation_sub_weights"]
         self.sub_weights = dict(defaults)
         if weights:
             self.sub_weights.update(weights)
         self.threshold = threshold
-    
+
     def compute(self, layout: Layout) -> float:
         total = 0.0
         total += self._duplicate_penalty(layout) * self.sub_weights["duplicate"]
@@ -106,7 +79,7 @@ class ViolationFactor(FitnessFactor):
         total += self._duplicate_value_gap(layout) * self.sub_weights["duplicate_value_gap"]
         total += self._access_layout(layout) * self.sub_weights["access_layout"]
         return total
-    
+
     def _duplicate_penalty(self, layout: Layout) -> float:
         from fitness.kernel import _shortcut_duplicate_support
 
@@ -121,7 +94,7 @@ class ViolationFactor(FitnessFactor):
                 continue
             layer = layout.positions[i].layer
             layer_base_keys[layer][sc.base_key.upper()].append((sid, i))
-        
+
         for layer, base_map in layer_base_keys.items():
             for base_key, placements in base_map.items():
                 if len(placements) > 1:
@@ -137,7 +110,7 @@ class ViolationFactor(FitnessFactor):
                         is_mouse = any(layout.shortcuts[int(sid)].category == "mouse" for sid, _ in placements)
                         penalty += (unsupported ** 2) * _novelty_cost(avg_value, support_sum, is_mouse=is_mouse) * (1.0 + avg_value * 0.1)
         return penalty
-    
+
     def _l0_displacement(self, layout: Layout) -> float:
         penalty = 0.0
         for i, sid in enumerate(layout.genome):
@@ -147,7 +120,7 @@ class ViolationFactor(FitnessFactor):
             if sc.is_l0_only and layout.positions[i].layer != 0:
                 penalty += 50.0 + sc.importance * 2.0
         return penalty
-    
+
     def _missing_important(self, layout: Layout) -> float:
         """Penalize missing high-importance shortcuts."""
         penalty = 0.0
@@ -157,7 +130,7 @@ class ViolationFactor(FitnessFactor):
                 continue
             penalty += sc.importance
         return penalty
-    
+
     def _cross_layer_duplicate(self, layout: Layout) -> float:
         from fitness.kernel import _shortcut_duplicate_support
 
@@ -169,7 +142,7 @@ class ViolationFactor(FitnessFactor):
             if layout.shortcuts[int(sid)].is_l0_only:
                 continue
             sid_layers[sid].add(layout.positions[i].layer)
-        
+
         penalty = 0.0
         for sid, layers in sid_layers.items():
             if len(layers) >= 2:
@@ -220,20 +193,20 @@ class ViolationFactor(FitnessFactor):
                         is_mouse=shortcut.category == "mouse",
                     )
         return penalty
-    
+
     def _group_split(self, layout: Layout) -> float:
         """Penalize same-layer group scatter, never cross-layer separation."""
         penalty = 0.0
-        
+
         all_groups = list(KEY_GROUPS) + list(layout.dynamic_groups)
-        
+
         for group in all_groups:
             if not group.get("protected"):
                 continue
-            
+
             group_layers = defaultdict(list)
             group_sids = set(group.get("sids", []))
-            
+
             for i, sid in enumerate(layout.genome):
                 if sid < 0:
                     continue
@@ -243,7 +216,7 @@ class ViolationFactor(FitnessFactor):
                     sc = layout.shortcuts[sid]
                     if shortcut_matches_group(sc, group):
                         group_layers[layout.positions[i].layer].append(i)
-            
+
             for indices in group_layers.values():
                 if len(indices) < 2:
                     continue
@@ -254,9 +227,9 @@ class ViolationFactor(FitnessFactor):
                     spread = ((pos.x - mean_x) ** 2 + (pos.y - mean_y) ** 2) ** 0.5
                     if spread > 1.5:
                         penalty += (spread - 1.5) * 20.0
-        
+
         return penalty
-    
+
     def _thumb_occupancy(self, layout: Layout) -> float:
         """Penalize thumb slots occupied by assigned momentary access paths."""
         penalty = 0.0
@@ -279,73 +252,12 @@ class ViolationFactor(FitnessFactor):
         return penalty
 
     def _arrow_order(self, layout: Layout) -> float:
-        """Penalize arrow keys that are out of spatial order on the same layer.
-        
-        When multiple arrow keys are on the same layer:
-        - LeftArrow should have lower x than RightArrow (left side)
-        - UpArrow and DownArrow should be between LeftArrow and RightArrow
-        """
-        ARROW_KEYS = {"LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW"}
-        
-        # Group assigned arrow keys by layer
-        layer_arrows = defaultdict(list)  # layer -> [(base_key, x, y)]
-        for i, sid in enumerate(layout.genome):
-            if sid < 0:
-                continue
-            sc = layout.shortcuts[sid]
-            if sc.base_key.upper() in ARROW_KEYS and not sc.modifiers and layout.positions[i].layer != 7:
-                pos = layout.positions[i]
-                layer_arrows[pos.layer].append((sc.base_key.upper(), pos.x, pos.y))
-        
-        penalty = 0.0
-        for layer, arrows in layer_arrows.items():
-            if len(arrows) < 2:
-                continue
-            
-            x_by_key = {k: x for k, x, _ in arrows}
-            y_by_key = {k: y for k, _, y in arrows}
-            
-            # LeftArrow must be to the left of RightArrow
-            if "LEFTARROW" in x_by_key and "RIGHTARROW" in x_by_key:
-                left_x = x_by_key["LEFTARROW"]
-                right_x = x_by_key["RIGHTARROW"]
-                if left_x >= right_x:
-                    penalty += (left_x - right_x + 1.0) * 100.0
-            
-            # UpArrow and DownArrow should be between LeftArrow and RightArrow
-            if "LEFTARROW" in x_by_key and "RIGHTARROW" in x_by_key:
-                left_x = x_by_key["LEFTARROW"]
-                right_x = x_by_key["RIGHTARROW"]
-                min_x = min(left_x, right_x)
-                max_x = max(left_x, right_x)
-                
-                for key in ("UPARROW", "DOWNARROW"):
-                    if key in x_by_key:
-                        x = x_by_key[key]
-                        if x < min_x:
-                            penalty += (min_x - x + 1.0) * 60.0
-                        elif x > max_x:
-                            penalty += (x - max_x + 1.0) * 60.0
-
-            if "UPARROW" in y_by_key and "DOWNARROW" in y_by_key:
-                up_y = y_by_key["UPARROW"]
-                down_y = y_by_key["DOWNARROW"]
-                if up_y >= down_y:
-                    penalty += (up_y - down_y + 1.0) * 100.0
-
-            if all(k in x_by_key for k in ("LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW")):
-                type_positions = {
-                    key: (x_by_key[key], y_by_key[key])
-                    for key in ("LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW")
-                }
-                if not _allowed_raw_arrow_shape(type_positions):
-                    penalty += 500.0
-        
-        return penalty
+        """Raw arrow placement is provided by frozen L7."""
+        return 0.0
 
     def _hand_bias(self, layout: Layout) -> float:
         """Penalize mouse-category shortcuts and preferred-hand shortcuts on the wrong hand.
-        
+
         Mouse category (MB1-MB5): 5x penalty for left-hand placement.
         Preferred_hand=right on left hand: 2x penalty.
         Preferred_hand=left on right hand: 2x penalty.
@@ -356,17 +268,17 @@ class ViolationFactor(FitnessFactor):
                 continue
             shortcut = layout.shortcuts[sid]
             pos = layout.positions[i]
-            
+
             if shortcut.category == "mouse":
                 if pos.is_left:
                     penalty += shortcut.importance * 5.0
                 continue
-            
+
             if shortcut.preferred_hand == "right" and pos.is_left:
                 penalty += shortcut.importance * 2.0
             elif shortcut.preferred_hand == "left" and pos.is_right:
                 penalty += shortcut.importance * 2.0
-        
+
         return penalty
 
     def _mouse_layer_access(self, layout: Layout) -> float:
@@ -386,59 +298,16 @@ class ViolationFactor(FitnessFactor):
             shortcut = layout.shortcuts[sid]
             if shortcut.category != "mouse":
                 continue
-            
+
             layer = layout.positions[i].layer
             if layer in right_required_layers:
                 penalty += shortcut.importance * 100.0
-        
+
         return penalty
 
     def _arrow_scattered(self, layout: Layout) -> float:
-        """Penalize arrows split across multiple non-L7 layers.
-        
-        L7 already owns frozen RPG/navigation arrows, so mutable raw arrows are
-        less important. If they appear outside L7, they should either form a
-        complete justified cluster or be absent.
-        """
-        ARROW_KEYS = {"LEFTARROW", "RIGHTARROW", "UPARROW", "DOWNARROW"}
-        layer_arrow_types = defaultdict(lambda: defaultdict(int))
-        for i, sid in enumerate(layout.genome):
-            if sid < 0:
-                continue
-            sc = layout.shortcuts[sid]
-            if sc.base_key.upper() in ARROW_KEYS and not sc.modifiers:
-                layer = layout.positions[i].layer
-                if layer != 7:
-                    layer_arrow_types[layer][sc.base_key.upper()] += 1
-        
-        penalty = 0.0
-        n_layers = len(layer_arrow_types)
-        if n_layers > 1:
-            penalty += float(n_layers - 1) * 100.0
-        for layer, type_counts in layer_arrow_types.items():
-            type_count = len(type_counts)
-            placement_count = sum(type_counts.values())
-            duplicate_count = sum(max(0, c - 1) for c in type_counts.values())
-            if type_count < 4:
-                penalty += float(4 - type_count) * 25.0
-                penalty += float(placement_count) * 10.0
-            elif placement_count == 4:
-                type_positions = {}
-                for i, sid in enumerate(layout.genome):
-                    if sid < 0:
-                        continue
-                    sc = layout.shortcuts[int(sid)]
-                    pos = layout.positions[i]
-                    key = sc.base_key.upper()
-                    if pos.layer == layer and key in ARROW_KEYS and not sc.modifiers:
-                        type_positions[key] = (pos.x, pos.y)
-                if not _allowed_raw_arrow_shape(type_positions):
-                    penalty += 500.0
-                # Even valid mutable raw arrows are less desirable than relying
-                # on frozen L7 unless workflow pressure clearly earns them.
-                penalty += 20.0
-            penalty += float(duplicate_count) * 20.0
-        return penalty
+        """Raw arrow placement is provided by frozen L7."""
+        return 0.0
 
     def _layer7_access(self, layout: Layout) -> float:
         """Penalize if frozen L7 lacks reachable momentary or toggle access."""
@@ -454,7 +323,7 @@ class ViolationFactor(FitnessFactor):
             target_layer = shortcut.access_target_layer
             access_rows.append((source_layer, target_layer, shortcut.access_is_momentary))
             access_graph.setdefault(source_layer, []).append(target_layer)
-        
+
         visited = {0}
         queue = [0]
         while queue:

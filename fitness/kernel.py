@@ -68,15 +68,22 @@ def _chain_rows(layout, source: dict, min_count: int, multiplier: float) -> np.n
     return np.asarray(rows, dtype=np.float32).reshape((-1, 3)) if rows else np.empty((0, 3), dtype=np.float32)
 
 
-def _semantic_workflow_rows(layout) -> np.ndarray:
+def _semantic_workflow_rows(layout, multiplier: float = 200.0,
+                            pair_boost: float = 1.0) -> np.ndarray:
     """Generate high-weight workflow rows that penalize semantic clusters split across layers.
 
     Semantic clusters (Copy/Paste, Undo/Redo, browser tabs, PowerToys, Excel navigation,
     etc.) should live on a single layer.  Unlike chain_rows, which are proximity-based
     and parity-inconsistent between Numba single-genome and CUDA batch evaluation,
     workflow_rows are handled identically by both kernels as a pure same-layer penalty.
+
+    The ``pair_boost`` factor is applied after the size/critical discounts so that
+    config ``semantic_cluster_multiplier`` values stay readable (hundreds to low
+    millions) while still producing enough scaled pressure to matter after the kernel
+    multiplies row weights by 10.0 and the workflow_coherence objective weight.
     """
-    rows = []
+    pair_weights = {}
+    pair_boost = float(pair_boost)
     for cluster in getattr(layout, "semantic_clusters", ()):
         members = list(cluster.get("members", []))
         weight = float(cluster.get("weight", 1.0))
@@ -84,25 +91,38 @@ def _semantic_workflow_rows(layout) -> np.ndarray:
             continue
         sids = [int(m.get("sid", -1)) for m in members]
         sids = [sid for sid in sids if 0 <= sid < layout.n_shortcuts]
-        if len(sids) < 2:
+        n_sids = len(sids)
+        if n_sids < 2:
             continue
-        # Pairwise pressure: every split pair pays.  The multiplier must be large
-        # enough to survive normalization by the violations IQR scale factor
-        # (~3e11) but not so large that it overrides hard constraints or the
-        # dynamic mouse layer.  A weight-15 cluster split pair contributes a
-        # normalized violation of ~15 * 5e7 * 10 * 20 / 3e11 ≈ 0.05 per pair,
-        # which adds up to tens of points when many clusters are split.
-        pair_weight = weight * 50_000_000.0
-        for i in range(len(sids)):
-            for j in range(i + 1, len(sids)):
-                rows.append((sids[i], sids[j], pair_weight))
+        # Size-discounted pairwise pressure: every split pair pays, but the per-pair
+        # weight is discounted by cluster size so huge clusters do not completely
+        # drown every other objective.  Unlike the previous 2/n discount, we use
+        # 1/sqrt(n) which still weakens huge clusters but leaves them with a
+        # meaningful total penalty when they fragment.  For a cluster of size n,
+        # the maximum possible split penalty is roughly weight * multiplier *
+        # pair_boost * sqrt(n) * (n-1), so large clusters still have a strong
+        # incentive to coalesce without overwhelming small critical clusters.
+        is_critical = bool(cluster.get("is_critical", False))
+        size_discount = 1.0 / math.sqrt(max(2.0, float(n_sids)))
+        # Critical sequence clusters (Undo/Redo, Copy/Paste, etc.) are the most
+        # obvious "related shortcuts on different layers" problem the user sees.
+        # Give them a strong extra multiplier so the optimizer prioritizes them.
+        critical_boost = 8.0 if is_critical else 1.0
+        pair_weight = weight * float(multiplier) * size_discount * critical_boost * pair_boost
+        for i in range(n_sids):
+            for j in range(i + 1, n_sids):
+                pair = (min(sids[i], sids[j]), max(sids[i], sids[j]))
+                pair_weights[pair] = max(pair_weights.get(pair, 0.0), pair_weight)
+    rows = [(a, b, weight) for (a, b), weight in sorted(pair_weights.items())]
     return np.asarray(rows, dtype=np.float32).reshape((-1, 3)) if rows else np.empty((0, 3), dtype=np.float32)
 
 
-def _workflow_rows_with_semantic(layout) -> np.ndarray:
+def _workflow_rows_with_semantic(layout, multiplier: float = 200.0,
+                                 pair_boost: float = 1.0) -> np.ndarray:
     """Usage workflow rows plus semantic-cluster same-layer rows."""
     usage_rows = _chain_rows(layout, layout.usage_data.workflows, 3, 2.0)
-    semantic_rows = _semantic_workflow_rows(layout)
+    semantic_rows = _semantic_workflow_rows(layout, multiplier=multiplier,
+                                            pair_boost=pair_boost)
     if semantic_rows.shape[0] == 0:
         return usage_rows
     if usage_rows.shape[0] == 0:
@@ -405,7 +425,9 @@ def _access_rows(layout) -> np.ndarray:
 def precompute(layout, weights: dict, violation_weights: dict, missing_important_threshold: float,
                scale_factors: np.ndarray, reference_genome: np.ndarray = None,
                hard_constraints=None, toggle_effort_multiplier: float = 2.5,
-               layer_access_thumb_params: dict = None):
+               layer_access_thumb_params: dict = None,
+               semantic_cluster_multiplier: float = 200.0,
+               semantic_cluster_pair_boost: float = 1.0):
     """Assemble all static arrays needed by the compiled kernels."""
     pos_effort = np.asarray([p.effort for p in layout.positions], dtype=np.float32)
     pos_layer = np.asarray([p.layer for p in layout.positions], dtype=np.int32)
@@ -430,13 +452,28 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
     shortcut_importance = np.asarray([s.importance for s in layout.shortcuts], dtype=np.float32)
     shortcut_app, app_map = _id_map([s.app for s in layout.shortcuts])
     shortcut_category, _ = _id_map([s.category for s in layout.shortcuts])
-    shortcut_base, _ = _id_map([s.base_key.upper() if s.base_key else "" for s in layout.shortcuts])
+    shortcut_scroll_mode_access = np.asarray([
+        s.is_layer_access and (
+            "scroll" in (s.keys or "").lower()
+            or "scroll" in (s.base_key or "").lower()
+            or "scroll" in (s.action or "").lower()
+        )
+        for s in layout.shortcuts
+    ], dtype=np.bool_)
+    shortcut_base, _ = _id_map([
+        "SCROLL_MODE" if shortcut_scroll_mode_access[i]
+        else (shortcut.base_key.upper() if shortcut.base_key else "")
+        for i, shortcut in enumerate(layout.shortcuts)
+    ])
     shortcut_base = shortcut_base.astype(np.int32)
     for i, shortcut in enumerate(layout.shortcuts):
-        if not shortcut.base_key:
+        if not shortcut.base_key and not shortcut_scroll_mode_access[i]:
             shortcut_base[i] = -1
 
-    key_ids, key_mapping = _id_map([s.keys for s in layout.shortcuts])
+    key_ids, key_mapping = _id_map([
+        "@scroll:mode" if shortcut_scroll_mode_access[s.sid] else s.keys
+        for s in layout.shortcuts
+    ])
     shortcut_key_group = key_ids.astype(np.int32)
     for i, shortcut in enumerate(layout.shortcuts):
         if not shortcut.keys:
@@ -449,15 +486,6 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         dtype=np.int32,
     )
     shortcut_access_momentary = np.asarray([s.access_is_momentary for s in layout.shortcuts], dtype=np.bool_)
-    shortcut_scroll_mode_access = np.asarray([
-        s.is_layer_access and (
-            "scroll" in (s.keys or "").lower()
-            or "scroll" in (s.base_key or "").lower()
-            or "scroll" in (s.action or "").lower()
-        )
-        for s in layout.shortcuts
-    ], dtype=np.bool_)
-
     if trackball_factor is not None:
         shortcut_trackball = np.asarray([trackball_factor._is_trackball_related(s) for s in layout.shortcuts], dtype=np.bool_)
     else:
@@ -477,6 +505,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         elif key == "MB5":
             shortcut_mouse_button[s.sid] = 5
     shortcut_usage_count = np.zeros(layout.n_shortcuts, dtype=np.float32)
+    scroll_access_count = max(1, int(shortcut_scroll_mode_access.sum()))
     for shortcut in layout.shortcuts:
         usage_entry = layout.usage_data.shortcuts.get(shortcut.keys, {})
         if isinstance(usage_entry, dict):
@@ -488,7 +517,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
             if isinstance(mouse_entry, dict):
                 shortcut_usage_count[shortcut.sid] += float(mouse_entry.get("count", 0.0))
         if shortcut_scroll_mode_access[shortcut.sid]:
-            shortcut_usage_count[shortcut.sid] += float(layout.usage_data.scroll_total or 0)
+            shortcut_usage_count[shortcut.sid] += float(layout.usage_data.scroll_total or 0) / scroll_access_count
         raw_entry = layout.usage_data.raw_completion_keys.get(shortcut.base_key, {})
         if isinstance(raw_entry, dict):
             shortcut_usage_count[shortcut.sid] += float(raw_entry.get("count", 0.0))
@@ -512,7 +541,7 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         "EQUALS AND PLUS": 2,
         "GRAVE ACCENT AND TILDE": 3,
         "RIGHT BRACE": 4,
-        "BACKSLASH AND PIPE": 5,
+        "NON-US BACKSLASH AND PIPE": 5,
     }
     for s in layout.shortcuts:
         key = (s.base_key or "").upper()
@@ -623,7 +652,8 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         app_usage_weight, _group_matrix(layout), _sequence_rows(layout), _app_workflow_rows(layout, app_map),
         _shortcut_duplicate_support(layout),
         _chain_rows(layout, layout.usage_data.chains, 2, 1.0),
-        _workflow_rows_with_semantic(layout),
+        _workflow_rows_with_semantic(layout, multiplier=semantic_cluster_multiplier,
+                                     pair_boost=semantic_cluster_pair_boost),
         _blind_rows(layout), reference_genome, objective_weights, violation_weight_arr,
         np.asarray(scale_factors, dtype=np.float32),
         np.float32(missing_important_threshold),
@@ -778,6 +808,8 @@ if NUMBA_AVAILABLE:
             else:
                 cost += 4.0
                 access_layout += 2.0 + shortcut_importance[sid] * 0.2
+            if not shortcut_access_momentary[sid]:
+                cost *= toggle_effort_multiplier
             if source != 0:
                 cost += 4.0
                 access_layout += 3.0
@@ -950,9 +982,9 @@ if NUMBA_AVAILABLE:
 
             imp = shortcut_importance[sid]
             # Dynamic mouse-layer importance boost: when a mouse button is on the
-            # candidate mouse layer, its importance is boosted 3x. This makes
+            # candidate mouse layer, its importance is boosted 5x. This makes
             # effort-ordering within the mouse layer critical — MB1 at effort=1.0
-            # is 3x as bad as MB1 elsewhere. On non-mouse layers the static
+            # is 5x as bad as MB1 elsewhere. On non-mouse layers the static
             # importance applies (lower signal, placement is less constrained).
             if shortcut_is_mouse[sid] and shortcut_mouse_button[sid] > 0 and layer == candidate_mouse_layer:
                 imp = imp * 5.0
@@ -1468,176 +1500,7 @@ if NUMBA_AVAILABLE:
             layer7_access += 25000.0
 
         arrow_order = 0.0
-        for layer in range(32):
-            if layer == 7:
-                continue
-            left_x = -1.0
-            left_y = -1.0
-            right_x = -1.0
-            right_y = -1.0
-            up_x = -1.0
-            up_y = -1.0
-            down_x = -1.0
-            down_y = -1.0
-            for i in range(n_pos):
-                sid = genome[i]
-                if sid < 0 or sid >= n_short:
-                    continue
-                atype = shortcut_arrow_type[sid]
-                if atype == 0:
-                    continue
-                if pos_layer[i] != layer:
-                    continue
-                if atype == 1:
-                    left_x = pos_x[i]
-                    left_y = pos_y[i]
-                elif atype == 2:
-                    right_x = pos_x[i]
-                    right_y = pos_y[i]
-                elif atype == 3:
-                    up_x = pos_x[i]
-                    up_y = pos_y[i]
-                elif atype == 4:
-                    down_x = pos_x[i]
-                    down_y = pos_y[i]
-            if left_x >= 0.0 and right_x >= 0.0:
-                if left_x >= right_x:
-                    arrow_order += (left_x - right_x + 1.0) * 100.0
-                min_x = min(left_x, right_x)
-                max_x = max(left_x, right_x)
-                if up_x >= 0.0:
-                    if up_x < min_x:
-                        arrow_order += (min_x - up_x + 1.0) * 60.0
-                    elif up_x > max_x:
-                        arrow_order += (up_x - max_x + 1.0) * 60.0
-                if down_x >= 0.0:
-                    if down_x < min_x:
-                        arrow_order += (min_x - down_x + 1.0) * 60.0
-                    elif down_x > max_x:
-                        arrow_order += (down_x - max_x + 1.0) * 60.0
-            if up_y >= 0.0 and down_y >= 0.0 and up_y >= down_y:
-                arrow_order += (up_y - down_y + 1.0) * 100.0
-            if left_x >= 0.0 and right_x >= 0.0 and up_x >= 0.0 and down_x >= 0.0:
-                same_line = (
-                    abs(left_y - up_y) <= 0.25
-                    and abs(up_y - down_y) <= 0.25
-                    and abs(down_y - right_y) <= 0.25
-                    and left_x < up_x
-                    and up_x < down_x
-                    and down_x < right_x
-                    and (right_x - left_x) <= 4.5
-                )
-                split_cluster = (
-                    abs(left_y - down_y) <= 0.25
-                    and abs(down_y - right_y) <= 0.25
-                    and left_x < down_x
-                    and down_x < right_x
-                    and up_y < down_y
-                    and abs(up_x - down_x) <= 0.25
-                    and (down_y - up_y) <= 2.0
-                    and (right_x - left_x) <= 3.5
-                )
-                if not same_line and not split_cluster:
-                    arrow_order += 500.0
-
         arrow_scattered = 0.0
-        arrow_layers = np.zeros(32, dtype=np.int32)
-        arrow_layer_type_counts = np.zeros((32, 5), dtype=np.int32)
-        arrow_layer_type_x = np.full((32, 5), -1.0, dtype=np.float32)
-        arrow_layer_type_y = np.full((32, 5), -1.0, dtype=np.float32)
-        non_l7_arrow_placements = 0
-        for i in range(n_pos):
-            sid = genome[i]
-            if sid < 0 or sid >= n_short:
-                continue
-            atype = shortcut_arrow_type[sid]
-            if atype != 0:
-                layer = pos_layer[i]
-                if 0 <= layer < 32:
-                    if layer != 7:
-                        non_l7_arrow_placements += 1
-                        arrow_layers[layer] = 1
-                        arrow_layer_type_counts[layer, atype] += 1
-                        if arrow_layer_type_x[layer, atype] < 0.0:
-                            arrow_layer_type_x[layer, atype] = pos_x[i]
-                            arrow_layer_type_y[layer, atype] = pos_y[i]
-        n_arrow_layers = 0
-        best_arrow_layer = -1
-        best_arrow_layer_count = 0
-        best_arrow_layer_types = 0
-        for layer in range(32):
-            n_arrow_layers += arrow_layers[layer]
-            placement_count = 0
-            type_count = 0
-            for atype in range(1, 5):
-                if arrow_layer_type_counts[layer, atype] > 0:
-                    type_count += 1
-                    placement_count += arrow_layer_type_counts[layer, atype]
-            if placement_count > best_arrow_layer_count:
-                best_arrow_layer = layer
-                best_arrow_layer_count = placement_count
-                best_arrow_layer_types = type_count
-        if n_arrow_layers > 1:
-            arrow_scattered += float(n_arrow_layers - 1) * 10000.0
-        if non_l7_arrow_placements > 0:
-            # Mutable raw arrows are useful only as a complete ordered cluster.
-            # L7 frozen arrows are the fallback; partial non-L7 fragments are noise.
-            if not (n_arrow_layers == 1 and best_arrow_layer_count == 4 and best_arrow_layer_types == 4):
-                arrow_scattered += 50000.0 + float(non_l7_arrow_placements) * 10000.0
-                arrow_scattered += float(4 - best_arrow_layer_types) * 15000.0
-                arrow_scattered += float(n_arrow_layers) * 15000.0
-            else:
-                left_x = arrow_layer_type_x[best_arrow_layer, 1]
-                right_x = arrow_layer_type_x[best_arrow_layer, 2]
-                up_x = arrow_layer_type_x[best_arrow_layer, 3]
-                down_x = arrow_layer_type_x[best_arrow_layer, 4]
-                left_y = arrow_layer_type_y[best_arrow_layer, 1]
-                right_y = arrow_layer_type_y[best_arrow_layer, 2]
-                up_y = arrow_layer_type_y[best_arrow_layer, 3]
-                down_y = arrow_layer_type_y[best_arrow_layer, 4]
-                same_line = (
-                    abs(left_y - up_y) <= 0.25
-                    and abs(up_y - down_y) <= 0.25
-                    and abs(down_y - right_y) <= 0.25
-                    and left_x < up_x
-                    and up_x < down_x
-                    and down_x < right_x
-                    and (right_x - left_x) <= 4.5
-                )
-                split_cluster = (
-                    abs(left_y - down_y) <= 0.25
-                    and abs(down_y - right_y) <= 0.25
-                    and left_x < down_x
-                    and down_x < right_x
-                    and up_y < down_y
-                    and abs(up_x - down_x) <= 0.25
-                    and (down_y - up_y) <= 2.0
-                    and (right_x - left_x) <= 3.5
-                )
-                if not same_line and not split_cluster:
-                    arrow_scattered += 50000.0
-                # Valid mutable raw arrows are still lower value than the
-                # frozen L7 fallback unless workflow pressure earns them.
-                arrow_scattered += float(non_l7_arrow_placements) * 2000.0
-        for layer in range(32):
-            type_count = 0
-            placement_count = 0
-            duplicate_count = 0
-            for atype in range(1, 5):
-                c = arrow_layer_type_counts[layer, atype]
-                if c > 0:
-                    type_count += 1
-                    placement_count += c
-                    if c > 1:
-                        duplicate_count += c - 1
-            if placement_count == 0:
-                continue
-            if type_count < 4:
-                arrow_scattered += float(4 - type_count) * 5000.0
-                arrow_scattered += float(placement_count) * 5000.0
-            if duplicate_count > 0:
-                arrow_scattered += float(duplicate_count) * 5000.0
-
         raw_keyboard_completion_norwegian = 0.0
         raw_layer_counts = np.zeros(32, dtype=np.int32)
         raw_layer_order_counts = np.zeros((32, 6), dtype=np.int32)
@@ -2066,7 +1929,15 @@ if NUMBA_AVAILABLE:
         for layer in range(32):
             if layer == 7:
                 continue
+            scroll_access_copies = 0
             for sid in range(n_short):
+                if shortcut_scroll_mode_access[sid]:
+                    scroll_access_copies += int(layer_sid_counts[layer, sid])
+            if scroll_access_copies > 1:
+                same_layer_duplicate += float(scroll_access_copies - 1)
+            for sid in range(n_short):
+                if shortcut_scroll_mode_access[sid]:
+                    continue
                 c = layer_sid_counts[layer, sid]
                 if c <= 1:
                     continue
@@ -2215,6 +2086,10 @@ if NUMBA_AVAILABLE:
         # drowned by the violation scale factor (2.3e12 vs effort scale ~39k).
         # Soft sigmoid gate peaks at effort=0 (home row) and falls sharply;
         # multiplier 5.0 makes each empty prime slot cost ~15 effort units.
+        _layer_occupancy = np.zeros(32, dtype=np.int32)
+        for i in range(n_pos):
+            if genome[i] >= 0 and pos_layer[i] < 32:
+                _layer_occupancy[pos_layer[i]] += 1
         for i in range(n_pos):
             if genome[i] >= 0:
                 continue
@@ -2336,24 +2211,36 @@ if NUMBA_AVAILABLE:
             if not shortcut_access_momentary[sid]:
                 continue
             target = shortcut_access_target[sid]
-            if target <= 0 or target >= 32:
+            if target < 0 or target >= 32:
+                continue
+            # Scroll is a pointer mode switch and intentionally belongs on a
+            # finger key. Ordinary momentary layer access must use a thumb.
+            if shortcut_scroll_mode_access[sid]:
                 continue
             layer = pos_layer[i]
             if layer < 0 or layer >= 32:
                 continue
             imp = shortcut_importance[sid]
-            demand = layer_demand[target]
-            if pos_is_thumb[i]:
-                layer_access_thumb_preference -= imp * lat_params[0] * (1.0 + math.log1p(demand))
-            else:
+            if not pos_is_thumb[i]:
                 layer_access_thumb_preference += imp * lat_params[1] + lat_params[2]
-            if pos_is_thumb[i]:
-                inc = incoming_thumb_hand[layer]
-                if inc >= 0:
-                    if pos_hand[i] == inc:
-                        same_side_hold_flow += imp * lat_params[3]
-                    else:
-                        same_side_hold_flow -= imp * lat_params[4]
+
+        # Prefer nested momentary access on the thumb opposite the shortest
+        # incoming momentary thumb path. This remains soft scoring pressure.
+        for i in range(n_pos):
+            sid = genome[i]
+            if sid < 0 or sid >= n_short or not shortcut_access_momentary[sid]:
+                continue
+            source = pos_layer[i]
+            if source < 0 or source >= 32 or not pos_is_thumb[i]:
+                continue
+            incoming_hand = incoming_thumb_hand[source]
+            if incoming_hand < 0:
+                continue
+            imp = shortcut_importance[sid]
+            if pos_hand[i] == incoming_hand:
+                same_side_hold_flow += imp * lat_params[3]
+            else:
+                same_side_hold_flow -= imp * lat_params[4]
 
         raw_scores = np.empty(26, dtype=np.float32)
         raw_scores[0] = duplicate
@@ -2362,10 +2249,10 @@ if NUMBA_AVAILABLE:
         raw_scores[3] = cross_dup
         raw_scores[4] = group_split
         raw_scores[5] = thumb_occ
-        raw_scores[6] = arrow_order
+        raw_scores[6] = 0.0
         raw_scores[7] = hand_bias
         raw_scores[8] = mouse_layer_access
-        raw_scores[9] = arrow_scattered
+        raw_scores[9] = 0.0
         raw_scores[10] = mouse_scattered
         raw_scores[11] = layer7_access
         raw_scores[12] = duplicate_value_gap

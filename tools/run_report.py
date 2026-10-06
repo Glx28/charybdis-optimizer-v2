@@ -49,8 +49,6 @@ def main():
         pop_exact = ckpt.get("population_best_exact", {})
         best_total = float(best_exact.get("total_score", 0.0))
         pop_total = float(pop_exact.get("total_score", 0.0))
-        best_gap = best_total + 49.30
-        pop_gap = pop_total + 49.30
         best_pass = bool(best_exact.get("optimizer_side_pass", False))
         pop_pass = bool(pop_exact.get("optimizer_side_pass", False))
         best_constraints = best_exact.get("constraints", [])
@@ -58,8 +56,6 @@ def main():
         rows.append({
             "gen": gen,
             "path": path,
-            "best_gap": best_gap,
-            "pop_gap": pop_gap,
             "best_total": best_total,
             "pop_total": pop_total,
             "best_pass": best_pass,
@@ -91,16 +87,15 @@ def main():
     lines.append("## Best Result")
     lines.append("")
     lines.append(f"- Generation: {best_row['gen']}")
-    lines.append(f"- Total score: {best_row['best_total']:.4f}")
-    lines.append(f"- Gap: {best_row['best_gap']:+.2f}")
+    lines.append(f"- Raw total score: {best_row['best_total']:.4f}")
     lines.append(f"- Optimizer-side pass: {best_row['best_pass']}")
     lines.append(f"- Constraints: [{_format_constraints(best_row['best_constraints'])}]")
     lines.append("")
     lines.append("## Latest Population")
     lines.append("")
     lines.append(f"- Generation: {latest['gen']}")
-    lines.append(f"- Population best total: {latest['pop_total']:.4f} (gap {latest['pop_gap']:+.2f})")
-    lines.append(f"- Archive best total: {latest['best_total']:.4f} (gap {latest['best_gap']:+.2f})")
+    lines.append(f"- Population best raw total: {latest['pop_total']:.4f}")
+    lines.append(f"- Archive best raw total: {latest['best_total']:.4f}")
     lines.append(f"- Population pass: {latest['pop_pass']}")
     lines.append(f"- Constraints: [{_format_constraints(latest['pop_constraints'])}]")
     lines.append("")
@@ -127,11 +122,11 @@ def main():
     lines.append("")
     lines.append("## Score Trajectory")
     lines.append("")
-    lines.append("| Gen | Archive Gap | Pop Gap | Archive Pass | Pop Pass | Archive CV | Pop CV |")
-    lines.append("|-----|-------------|---------|--------------|----------|------------|--------|")
+    lines.append("| Gen | Archive raw score | Population raw score | Archive Pass | Pop Pass | Archive CV | Pop CV |")
+    lines.append("|-----|-------------------|----------------------|--------------|----------|------------|--------|")
     for r in rows:
         lines.append(
-            f"| {r['gen']:>5} | {r['best_gap']:>+11.2f} | {r['pop_gap']:>+7.2f} | "
+            f"| {r['gen']:>5} | {r['best_total']:>17.2f} | {r['pop_total']:>20.2f} | "
             f"{str(r['best_pass']):>12} | {str(r['pop_pass']):>8} | "
             f"{r['best_cv']:>10.0f} | {r['pop_cv']:>6.0f} |"
         )

@@ -233,6 +233,5 @@ PY build/runs/<run>/v2_checkpoint_gen500.json
 - Do not revive CPU-primary production training. The code now fails fast; keep it that way.
 - Do not reduce `mini_eval_fraction` below `0.1` to chase speed — it removes exact training signal from the surrogate cache.
 - Do not judge 50-gen quality as final; this optimizer typically needs thousands of generations.
-- Do not trust old analyzer output for raw arrows unless the empty-slot fallback bug is fixed.
 - Do not hardcode a mouse layer, scroll layer, or layer numbers other than L0/L7.
 - If exported CSV and standalone analyzer disagree, fix the decoder source first.

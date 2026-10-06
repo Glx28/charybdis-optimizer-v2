@@ -53,6 +53,9 @@ def generate_random_layouts(layout, n, warmstart_genome=None):
     # as complete groups at valid anchors so initial genomes are never scattered.
     groups = build_group_placements(layout)
     group_sids_all = {sid for sid_tuple, _ in groups for sid in sid_tuple}
+    layer_access_sids = {
+        shortcut.sid for shortcut in layout.shortcuts if shortcut.is_layer_access
+    }
 
     available_sids = [
         sid for sid in range(n_shortcuts)
@@ -84,9 +87,24 @@ def generate_random_layouts(layout, n, warmstart_genome=None):
         assigned = random.sample(available_sids, n_assign)
         layouts[i, mutable[:n_assign]] = assigned
 
-        # Place each group at a random valid anchor.
+        # Place groups without clobbering members placed for earlier groups.
+        # Group definitions can overlap in shortcut IDs and geometry. The
+        # complete Norwegian shape and explicit relative groups appear first;
+        # later overlapping groups must not scatter those assignments.
+        placed_group_sids = set()
+        placed_group_positions = set()
         for sid_tuple, anchor_list in groups:
-            anchor = list(random.choice(anchor_list))
+            group_sid_set = set(sid_tuple)
+            if group_sid_set & placed_group_sids:
+                continue
+            compatible_anchors = [
+                anchor for anchor in anchor_list
+                if not (set(anchor) & placed_group_positions)
+                and not any(int(layouts[i, pos]) in layer_access_sids for pos in anchor)
+            ]
+            if not compatible_anchors:
+                continue
+            anchor = list(random.choice(compatible_anchors))
             anchor_set = set(anchor)
             # Read what's at the anchor positions now (to displace them).
             displaced = [int(layouts[i, pos]) for pos in anchor]
@@ -101,6 +119,22 @@ def generate_random_layouts(layout, n, warmstart_genome=None):
             ]
             for pos, sid in zip(free_slots, fill_sids):
                 layouts[i, pos] = sid
+            placed_group_sids.update(group_sid_set)
+            placed_group_positions.update(anchor_set)
+
+        # Groups skipped because of shared members or unavailable nonoverlap
+        # anchors still need assignable instances. Fill unclaimed positions
+        # after all protected group placements are complete.
+        assigned_group_sids = {
+            int(sid) for sid in layouts[i, mutable]
+            if int(sid) in group_sids_all
+        }
+        missing_group_sids = sorted(
+            group_sids_all - frozen_assigned - assigned_group_sids
+        )
+        free_slots = [pos for pos in mutable if int(layouts[i, pos]) < 0]
+        for pos, sid in zip(free_slots, missing_group_sids):
+            layouts[i, pos] = sid
 
     return layouts
 
@@ -158,6 +192,10 @@ def maybe_validate_exact_evaluator(config, layout, evaluator):
 
 
 def build_evaluator(config, layout, scale_factors=None):
+    multiplier = float(config.get("fitness.semantic_cluster_multiplier", 200.0))
+    for generation, value in config.get("fitness.semantic_cluster_multiplier_schedule", []) or []:
+        if generation <= 0:
+            multiplier = float(value)
     return FitnessEvaluator(
         weights=config.get("fitness.weights", {}),
         reference_layout=layout,
@@ -166,7 +204,15 @@ def build_evaluator(config, layout, scale_factors=None):
         missing_important_threshold=config.get("fitness.missing_important_threshold", 6.0),
         hard_constraints=config.get("fitness.hard_constraints", []),
         toggle_effort_multiplier=float(config.get("fitness.toggle_effort_multiplier", 2.5)),
+        layer_access_thumb_params=config.get("fitness.layer_access_thumb", {}),
         require_cuda=bool(config.get("training.require_cuda", True)),
+        semantic_cluster_multiplier=multiplier,
+        semantic_cluster_pair_boost=float(config.get("fitness.semantic_cluster_pair_boost", 1.0)),
+        semantic_contract_penalty=float(config.get("fitness.semantic_contract_penalty", 0.0)),
+        semantic_position_penalty=float(config.get("fitness.semantic_position_penalty", 0.0)),
+        sparse_layer_base_penalty=float(config.get("fitness.sparse_layer_base_penalty", 0.0)),
+        sparse_layer_gap_penalty=float(config.get("fitness.sparse_layer_gap_penalty", 0.0)),
+        right_alt_l0_penalty=float(config.get("fitness.right_alt_l0_penalty", 5000.0)),
     )
 
 
@@ -337,6 +383,7 @@ class ExactEvalCallback(Callback):
         checkpoint_every=100,
         perf=None,
         surrogate_manager=None,
+        semantic_multiplier_schedule=None,
     ):
         super().__init__()
         self.layout = layout
@@ -345,6 +392,7 @@ class ExactEvalCallback(Callback):
         self.checkpoint_every = checkpoint_every
         self.perf = perf
         self.surrogate_manager = surrogate_manager
+        self.semantic_multiplier_schedule = list(semantic_multiplier_schedule or [])
         self.exact_history = []
         self.evolved_accuracy_history = []
         self.best_exact = None
@@ -410,11 +458,10 @@ class ExactEvalCallback(Callback):
         return "dynamic_mouse_layer_present" in failed
 
     @classmethod
-    def _display_gap(cls, exact_entry, target=-49.30):
-        gap = float(exact_entry["total_score"]) - float(target)
+    def _display_gap(cls, exact_entry, target=None):
         if cls._dynamic_mouse_failed(exact_entry):
-            return max(gap, 5.0)
-        return gap
+            return 5.0
+        return None if target is None else float(exact_entry["total_score"]) - float(target)
 
     def _exact_entry(self, exact_result, gen):
         return {
@@ -436,6 +483,14 @@ class ExactEvalCallback(Callback):
         inc_mouse_fail = self._dynamic_mouse_failed(incumbent_entry)
         if cand_mouse_fail != inc_mouse_fail:
             return not cand_mouse_fail
+        cand_completion = "norwegian_completion_cluster" not in candidate_entry.get(
+            "acceptance_failed_checks", []
+        )
+        inc_completion = "norwegian_completion_cluster" not in incumbent_entry.get(
+            "acceptance_failed_checks", []
+        )
+        if cand_completion != inc_completion:
+            return cand_completion
         cand_accept = bool(candidate_entry.get("optimizer_side_pass", False))
         inc_accept = bool(incumbent_entry.get("optimizer_side_pass", False))
         if cand_accept != inc_accept:
@@ -475,6 +530,30 @@ class ExactEvalCallback(Callback):
         entry["optimizer_side_pass"] = bool(acceptance.get("optimizer_side_pass", False))
         entry["acceptance_failed_checks"] = failed
         return entry
+
+    def _apply_semantic_multiplier_schedule(self, gen):
+        """Ramp semantic-cluster pressure according to the configured schedule."""
+        if not self.semantic_multiplier_schedule:
+            return
+        # Schedule is a list of [generation, multiplier]; apply the last entry
+        # whose generation is <= current gen.
+        target = None
+        for sched_gen, sched_mult in self.semantic_multiplier_schedule:
+            if gen >= sched_gen:
+                target = float(sched_mult)
+        if target is None:
+            return
+        current = getattr(self.evaluator.model, "semantic_cluster_multiplier", None)
+        if current is None or abs(current - target) > 1e-9:
+            print(
+                f"  Gen {gen}: ramping semantic_cluster_multiplier from {current} to {target}",
+                flush=True,
+            )
+            self.evaluator.set_semantic_cluster_multiplier(target)
+            if self.surrogate_manager is not None:
+                # Old exact-eval cache is on the previous fitness landscape; clear it
+                # so the surrogate retrains on the new objective.
+                self.surrogate_manager.clear_exact_cache()
 
     def _adjust_mutation_rate(self, algorithm, gen):
         mutation = self._get_mutation(algorithm)
@@ -680,6 +759,7 @@ class ExactEvalCallback(Callback):
     def notify(self, algorithm):
         gen = algorithm.n_iter
 
+        self._apply_semantic_multiplier_schedule(gen)
         self._adjust_mutation_rate(algorithm, gen)
         self._inject_diversity_on_stagnation(algorithm, gen)
         if self.surrogate_manager is not None:
@@ -784,10 +864,22 @@ def main(argv=None):
 
     hard_constraints = config.get("fitness.hard_constraints", [])
 
-    # Try to warmstart from local search result
+    # Try to warmstart from local search result.
+    # Prefer an explicit copy in the run directory, but fall back to the project-wide
+    # warmstart so we do not accidentally launch from a random population.
     warmstart_genome = None
-    warmstart_path = os.path.join(args.output_dir, 'v2_local_search_result.json')
-    if os.path.exists(warmstart_path):
+    if not inject_seed:
+        print("  Warmstart disabled by --no-inject-seed; starting from random population.", flush=True)
+    warmstart_candidates = [
+        os.path.join(args.output_dir, 'v2_local_search_result.json'),
+        os.path.join(os.path.dirname(__file__), 'build', 'v2_local_search_result.json'),
+        os.path.join(args.data_dir, 'default_layout_genome.json'),
+    ]
+    for warmstart_path in warmstart_candidates:
+        if not inject_seed:
+            break
+        if not os.path.exists(warmstart_path):
+            continue
         try:
             with open(warmstart_path) as f:
                 ws = json.load(f)
@@ -798,13 +890,16 @@ def main(argv=None):
             if ws_score is not None:
                 ws_exact = dict(ws.get("best_exact", {}))
                 ws_exact.setdefault("total_score", float(ws_score))
-                ws_gap = ExactEvalCallback._display_gap(ws_exact)
-                score_str = f"score={ws_score:.4f}, gap={ws_gap:+.2f}"
+                ws_signal = ExactEvalCallback._display_gap(ws_exact)
+                score_str = f"raw_score={ws_score:.4f}"
+                if ws_signal is not None:
+                    score_str += f", contract_failure_signal={ws_signal:+.2f}"
             else:
                 score_str = "score=N/A"
             print(f"  Warmstart genome loaded from {warmstart_path} ({score_str})", flush=True)
+            break
         except Exception as e:
-            print(f"  Warmstart load failed: {e}", flush=True)
+            print(f"  Warmstart load failed for {warmstart_path}: {e}", flush=True)
 
     surrogate_enabled = bool(config.get("surrogate.enabled", False))
     evaluator = build_evaluator(config, layout)
@@ -836,17 +931,22 @@ def main(argv=None):
         # Use a fresh layout (no warmstart) so IQR reflects the true random distribution.
         # Problem: generate_random_layouts perturbs the warmstart genome, so as the warmstart
         # improves, the IQR shrinks — biasing scale factors each run. Fix: compute from fresh.
+        # Also disable semantic-cluster pressure while sampling: otherwise ramping cluster
+        # pressure inflates the violations IQR and cancels out its own normalized effect.
         _data_dir = str(config.get("data_dir", "data"))
         fresh_layout = build_layout(_data_dir, config.get("fitness.weights", {}))
         n_sample = 200  # more samples for stable IQR
         sample_layouts = generate_random_layouts(fresh_layout, n_sample)
+        scale_evaluator = build_evaluator(config, fresh_layout)
+        scale_evaluator.set_semantic_cluster_multiplier(0.0)
         sample_scores, _ = evaluate_exact_batch(
-            sample_layouts, fresh_layout, evaluator, perf=perf, label="scale_sample_eval",
+            sample_layouts, fresh_layout, scale_evaluator, perf=perf, label="scale_sample_eval",
         )
         q25 = np.percentile(sample_scores, 25, axis=0)
         q75 = np.percentile(sample_scores, 75, axis=0)
         iqr = q75 - q25
-        seed_scores = np.abs(seed_result.objectives)
+        seed_result_scale = scale_evaluator.evaluate(fresh_layout)
+        seed_scores = np.abs(seed_result_scale.objectives)
         scale_factors = np.maximum(iqr, seed_scores * 0.1)
         scale_factors = np.maximum(scale_factors, 1.0)
         os.makedirs("build", exist_ok=True)
@@ -956,6 +1056,15 @@ def main(argv=None):
 
     mini_eval_fraction = float(config.get("surrogate.mini_eval_fraction", 0.1))
     mini_eval_count = max(1, int(round(pop_size * mini_eval_fraction)))
+
+    # Parse semantic-cluster multiplier schedule if present.
+    # Format: list of [generation, multiplier] entries, e.g.
+    #   [[0, 200], [2000, 10000], [5000, 1000000]]
+    semantic_schedule = config.get("fitness.semantic_cluster_multiplier_schedule", None)
+    if semantic_schedule is None:
+        # No explicit schedule: use the fixed multiplier from the start.
+        semantic_schedule = []
+
     runner = CustomGARunner(
         layout=layout,
         evaluator=evaluator,
@@ -972,6 +1081,8 @@ def main(argv=None):
         hard_constraints=hard_constraints,
         mini_eval_count=mini_eval_count,
         n_constraints=n_constraints,
+        semantic_multiplier_schedule=semantic_schedule,
+        cluster_score_tolerance=float(config.get("evolution.cluster_score_tolerance", 0.15)),
     )
     ga_result = runner.run(n_gen, initial_pop_X=initial_pop_X)
 

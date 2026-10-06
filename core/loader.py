@@ -465,6 +465,7 @@ def load_shortcuts(path: str, layout_data: Optional[dict] = None) -> List[Shortc
     # unmodified PageUp/Home/End/etc.  Without these base shortcuts the
     # completion cluster cannot form because there is nothing to cluster.
     _ensure_raw_completion_shortcuts(shortcuts)
+    _ensure_norwegian_modifier_shortcuts(shortcuts)
 
     return shortcuts
 
@@ -483,7 +484,7 @@ def _ensure_raw_completion_shortcuts(shortcuts: List[Shortcut]):
         "Equals and Plus",
         "Grave Accent and Tilde",
         "Right Brace",
-        "Backslash and Pipe",
+        "Non-US Backslash and Pipe",
     }
     present_params = {
         sc.base_key for sc in shortcuts
@@ -496,7 +497,7 @@ def _ensure_raw_completion_shortcuts(shortcuts: List[Shortcut]):
         "Equals and Plus": "=",
         "Grave Accent and Tilde": "`",
         "Right Brace": "]",
-        "Backslash and Pipe": "\\",
+        "Non-US Backslash and Pipe": "<",
     }
     # Synthesise ALL missing family members (not just those with demand) so the
     # 5-key group always has complete coverage for the atomic group mutation.
@@ -533,6 +534,23 @@ def _append_raw_completion_shortcut(shortcuts: List[Shortcut], keys: str, param:
         complexity=1,
         preferred_hand="either",
     ))
+
+
+def _ensure_norwegian_modifier_shortcuts(shortcuts: List[Shortcut]):
+    """Keep LeftAlt for shortcuts and RightAlt/AltGr in the key pool."""
+    required = (
+        ("LeftAlt", "Hold Alt for application shortcuts.", 20.0, "left"),
+        ("RightAlt", "Hold AltGr for Norwegian third-level characters.", 12.0, "right"),
+    )
+    for key, action, importance, hand in required:
+        if any(sc.base_key == key and not sc.modifiers for sc in shortcuts):
+            continue
+        shortcuts.append(Shortcut(
+            sid=len(shortcuts), keys=key, action=action,
+            app="Modifier Keys", importance=importance, category="modifier_access",
+            modifiers=tuple(), base_key=key, is_capability=True,
+            complexity=1, preferred_hand=hand,
+        ))
 
 
 def load_usage_stats(path: str) -> Optional[UsageData]:
@@ -725,8 +743,10 @@ def build_layout(data_dir: str, config: dict = None) -> Layout:
     semantic_cluster_dicts = [
         {
             "name": c.name,
+            "category": c.category,
             "sids": c.member_sids,
             "weight": c.weight,
+            "is_critical": c.is_critical,
             "protected": True,
             "semantic": True,
             "members": [
@@ -744,8 +764,10 @@ def build_layout(data_dir: str, config: dict = None) -> Layout:
     for c in semantic_clusters:
         group_dict = {
             "name": c.name,
+            "category": c.category,
             "sids": c.member_sids,
             "weight": c.weight,
+            "is_critical": c.is_critical,
             "protected": True,
             "semantic": True,
             "members": [

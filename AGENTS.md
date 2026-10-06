@@ -107,6 +107,11 @@ lower than a workflow, it belongs on a lower-priority layer than that workflow;
 if usage is higher, it should beat less-used workflows to a more accessible
 layer.
 
+Modifier placement is an owner contract: keep bare LeftAlt directly on L0 for
+frequent application shortcuts; keep bare RightAlt (Norwegian AltGr) on a
+reachable non-L0 layer. Do not place both Alt keys on L0. Score RightAlt on L0
+as a major violation while preserving the AltGr key in the layout.
+
 At target generation, the whole run is invalid unless a generated non-L0/non-L7
 dynamic mouse workflow layer exists. That layer must contain every core mouse
 button, MB1-MB2-MB3-MB4-MB5, accessible on the right side of that same dynamic
@@ -223,24 +228,21 @@ layer has reachable toggle access or momentary thumb access from both left and
 right sides. If either freeing condition is lost later, keys in the newly
 restricted thumb area make the layout invalid until moved.
 
-L7 affects generated layers only in two ways: Bluetooth/output/keyboard-system
-keys are removed from the mutable genome because L7 owns them, and frozen L7
-arrows make mutable raw arrows lower value unless a workflow genuinely earns
-them. Mutable raw arrows, when present outside L7, must be complete on one
-layer and use exactly one of two shapes: one row ordered `Left Up Down Right`,
-or two rows with `Left Down Right` on the bottom row and `Up` directly above
-`Down`.
+L7 affects generated layers by owning Bluetooth/output/keyboard-system keys
+and the frozen raw-arrow fallback. Raw arrows have no mutable-layer placement
+requirement or special score.
 
 ## Run-Length Expectations
 
-Do not treat `evolution.n_generations: 500000` as a normal target. It is an absolute ceiling for an overnight run.
+Do not treat `evolution.n_generations: 500000` as a normal target. It is an absolute ceiling for an overnight run. A generation cap limits work; it is never a minimum acceptance generation.
 
 - **Short diagnostic / sanity run:** a few hundred generations.
-- **Normal production run:** up to ~30 000 generations. By this point the optimizer should have settled on a feasible, well-clustered layout.
-- **Long production run:** 30 000–50 000 generations only when a specific, verifiable issue (e.g. stubborn mouse-layer acceptance) remains.
+- **Normal production run:** cap at 30 000 generations. Review the best exact archive at any generation; accept it when the named hard checks pass and required layout review is complete.
+- Do not stop/restart a run for a score plateau, sparse occupancy, or soft cluster trend. Record those as diagnostics while the run proceeds.
+- At the scheduled 5,000-generation reviews, stop and preserve a run only when its exact-best archive still fails a named hard contract at two consecutive reviews with no corrective progress. Fix the cause before restarting. A passing archive continues to the configured cap unless the user accepts it earlier.
 - **Overnight ceiling:** 500 000 generations must only be used for an unattended overnight run, and the user must be told it is an overnight ceiling, not a standard target.
 
-If a layout still fails acceptance or clustering after 30 000 generations, the correct response is to fix the scoring/weights/groups and restart, not to extend the run indefinitely.
+If the best archive fails a named hard check, use the scheduled reviews to determine whether acceptance, hard constraints, or required relative placement are correcting. Do not turn an unapproved clustering or occupancy target into a new failure gate.
 
 ## Agent Tooling Rules
 

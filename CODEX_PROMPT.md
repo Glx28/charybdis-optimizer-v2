@@ -92,13 +92,6 @@ L7 access is checked separately from L7 content. Frozen L7 must be reachable by
 both a momentary layer access capability and a toggle layer access capability.
 The optimizer must not inspect or fail L7 because of its frozen key contents.
 
-Mutable raw arrows are no longer strongly desirable because frozen L7 already
-provides fallback arrows. If workflow evidence earns raw arrows on a generated
-layer, they must be all four arrows on one layer in exactly one of two shapes:
-one row ordered `Left Up Down Right`, or two rows with `Left Down Right` on the
-bottom row and `Up` directly above `Down`. Partial or differently shaped raw
-arrow fragments should be penalized or cleared.
-
 Momentary Scroll is part of the core mouse group. It is highly important
 because scrolling is a major trackball/mouse action. Toggle Scroll may exist,
 but it does not satisfy the generated dynamic mouse-layer condition; the

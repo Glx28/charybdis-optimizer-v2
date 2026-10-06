@@ -138,7 +138,7 @@ Focused report:
 - Non-L7 arrow placements.
 - Allowed shape check (`Left Up Down Right` single row, or `Left Down Right` + `Up` above `Down`).
 - Scattered penalty contributors.
-- Acceptance `mutable_raw_arrows_ok` status.
+- Raw-arrow placement is informational only and has no acceptance status.
 
 #### `tools/completion_cluster_report.py <checkpoint>`
 - Anchor layer for Norwegian/raw completion keys.

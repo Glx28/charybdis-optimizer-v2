@@ -80,7 +80,9 @@ Required scoring behavior:
   workflow shortcuts. Logged usage determines access priority relative to
   workflows: lower usage means lower-priority access; higher usage can outrank
   less-used workflows
-- thumb access is preferred over finger access
+- non-scroll momentary layer access must be on a thumb position
+- Scroll-mode access is exempt: it remains a finger-operated pointer mode
+  switch
 - direct L0 thumb access is preferred for high-traffic layers
 - nested access is expensive
 - momentary-into-momentary access is very expensive
@@ -125,14 +127,6 @@ Required scoring behavior:
   surface.
 - L7 access is the only L7 acceptance check: L7 must be reachable by both a
   momentary layer access capability and a toggle layer access capability
-- L7 affects generated layers only by owning Bluetooth/output/keyboard-system
-  keys and by making mutable raw arrows less important because frozen L7 arrows
-  already exist
-- mutable raw arrows are lower value than before. If a workflow/layer uses raw
-  arrows enough to earn them outside L7, all four arrows must be on one layer
-  in one of two shapes only: a single row ordered `Left Up Down Right`, or a
-  two-row cluster with `Left Down Right` on the bottom row and `Up` directly
-  above `Down`
 - thumb clearance is strict and dynamic. For any non-L0/non-L7 layer, thumb
   positions on a side are restricted if that layer is accessed by a momentary
   thumb key from that side. The restricted side must be empty on the target

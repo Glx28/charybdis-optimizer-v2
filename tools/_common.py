@@ -22,9 +22,18 @@ from core.loader import build_layout
 from fitness.evaluator import FitnessEvaluator
 
 
-def load_layout(data_dir: str = "data") -> object:
-    """Load the base Layout object from data_dir."""
-    return build_layout(data_dir, config=None)
+def load_layout(data_dir: str = "data", config_path: str = "config_v2.yaml") -> object:
+    """Load the base Layout object from data_dir.
+
+    Uses the fitness section of ``config_path`` so importance overrides and
+    semantic cluster membership match the evolution run.
+    """
+    import yaml
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    fitness_cfg = cfg.get("fitness", {}) if cfg else None
+    return build_layout(data_dir, config=fitness_cfg)
 
 
 def load_evaluator(
@@ -32,6 +41,8 @@ def load_evaluator(
     data_dir: str = "data",
     build_dir: str = "build",
     require_cuda: bool = False,
+    use_cuda: Optional[bool] = None,
+    generation: Optional[int] = None,
 ) -> FitnessEvaluator:
     """Load a FitnessEvaluator using production config and cached scale factors."""
     import yaml
@@ -39,6 +50,11 @@ def load_evaluator(
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     fitness_cfg = cfg.get("fitness", {})
+    multiplier = float(fitness_cfg.get("semantic_cluster_multiplier", 200.0))
+    if generation is not None:
+        for stage, value in fitness_cfg.get("semantic_cluster_multiplier_schedule", []) or []:
+            if generation >= stage:
+                multiplier = float(value)
 
     layout = build_layout(data_dir, config=fitness_cfg)
 
@@ -57,7 +73,16 @@ def load_evaluator(
         missing_important_threshold=fitness_cfg.get("missing_important_threshold", 6.0),
         hard_constraints=fitness_cfg.get("hard_constraints", []),
         toggle_effort_multiplier=float(fitness_cfg.get("toggle_effort_multiplier", 2.5)),
+        layer_access_thumb_params=fitness_cfg.get("layer_access_thumb", {}),
         require_cuda=require_cuda,
+        use_cuda=use_cuda,
+        semantic_cluster_multiplier=multiplier,
+        semantic_cluster_pair_boost=float(fitness_cfg.get("semantic_cluster_pair_boost", 1.0)),
+        semantic_contract_penalty=float(fitness_cfg.get("semantic_contract_penalty", 0.0)),
+        semantic_position_penalty=float(fitness_cfg.get("semantic_position_penalty", 0.0)),
+        sparse_layer_base_penalty=float(fitness_cfg.get("sparse_layer_base_penalty", 0.0)),
+        sparse_layer_gap_penalty=float(fitness_cfg.get("sparse_layer_gap_penalty", 0.0)),
+        right_alt_l0_penalty=float(fitness_cfg.get("right_alt_l0_penalty", 5000.0)),
     )
 
 

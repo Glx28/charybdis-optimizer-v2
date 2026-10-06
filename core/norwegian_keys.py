@@ -8,7 +8,8 @@ NORWEGIAN_HID_DISPLAY = {
     "Left Brace": "å",
     "SemiColon and Colon": "ø",
     "Left Apos and Double": "æ",
-    "Backslash and Pipe": "\\",
+    "Backslash and Pipe": "' / *",
+    "Non-US Backslash and Pipe": "< / > / |",
     "Dash and Underscore": "+/?",
     "Equals and Plus": "\\`/´",
     "Grave Accent and Tilde": "|/§",
@@ -34,16 +35,16 @@ LITERAL_TO_HID_PARAMETER = {
     "~": "Grave Accent and Tilde",
     "[": "Left Brace",
     "]": "Right Brace",
-    "\\": "Backslash and Pipe",
-    "|": "Backslash and Pipe",
+    "\\": "Equals and Plus",
+    "|": "Grave Accent and Tilde",
     ";": "SemiColon and Colon",
     ":": "SemiColon and Colon",
-    "'": "Left Apos and Double",
-    '"': "Left Apos and Double",
+    "'": "Backslash and Pipe",
+    '"': "2 and At",
     ",": "Comma and LessThan",
-    "<": "Comma and LessThan",
+    "<": "Non-US Backslash and Pipe",
     ".": "Period and GreaterThan",
-    ">": "Period and GreaterThan",
+    ">": "Non-US Backslash and Pipe",
     "/": "ForwardSlash and QuestionMark",
     "?": "ForwardSlash and QuestionMark",
 }
@@ -78,6 +79,7 @@ MULTIWORD_BASE_KEYS = (
     "Equals and Plus",
     "Grave Accent and Tilde",
     "Backslash and Pipe",
+    "Non-US Backslash and Pipe",
     "SemiColon and Colon",
     "Left Apos and Double",
     "Comma and LessThan",
@@ -90,7 +92,7 @@ RAW_COMPLETION_NORWEGIAN = (
     "Equals and Plus",
     "Grave Accent and Tilde",
     "Right Brace",
-    "Backslash and Pipe",
+    "Non-US Backslash and Pipe",
 )
 
 RAW_COMPLETION_ORDER = {key.upper(): i for i, key in enumerate(RAW_COMPLETION_NORWEGIAN)}
@@ -128,4 +130,3 @@ def parse_shortcut_keys_norwegian(keys: str):
     if len(parts) <= 1:
         return [], canonical_hid_parameter(text)
     return parts[:-1], canonical_hid_parameter(parts[-1])
-

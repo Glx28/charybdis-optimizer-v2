@@ -35,8 +35,6 @@ def main():
 
     total_a = float(F_a[0].sum())
     total_b = float(F_b[0].sum())
-    gap_a = total_a + 49.30
-    gap_b = total_b + 49.30
 
     diff_count = int(np.sum(layout_a.genome != layout_b.genome))
 
@@ -47,9 +45,9 @@ def main():
     print(f"A: {os.path.basename(path_a)} (gen {ckpt_a.get('generation', 0)})")
     print(f"B: {os.path.basename(path_b)} (gen {ckpt_b.get('generation', 0)})")
     print()
-    print(f"A total: {total_a:.4f} (gap {gap_a:+.2f}) pass={pass_a}")
-    print(f"B total: {total_b:.4f} (gap {gap_b:+.2f}) pass={pass_b}")
-    print(f"Δ total: {total_b - total_a:+.4f}  Δ gap: {gap_b - gap_a:+.2f}")
+    print(f"A total: {total_a:.4f} pass={pass_a}")
+    print(f"B total: {total_b:.4f} pass={pass_b}")
+    print(f"Δ total: {total_b - total_a:+.4f}")
     print(f"Positions changed: {diff_count}")
     print()
 

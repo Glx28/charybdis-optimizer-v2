@@ -1,6 +1,6 @@
 {
-  "eval_genomes_per_sec": 6973.544749663964,
-  "mutation_individuals_per_sec": 55313.16099218195,
-  "recorded_at": "2026-08-31T09:39:25Z",
-  "reason": "WSL migration to new drive plus accumulated kernel changes (thumb-aware scoring, semantic workflow rows) on current hardware. CPU mutation throughput is ~3x higher than the old baseline, confirming the environment changed; GPU eval is now ~47% slower. Re-baselining to current code+environment so future regressions are measured against today's reference."
+  "eval_genomes_per_sec": 6358.635086728129,
+  "mutation_individuals_per_sec": 33487.614195111346,
+  "recorded_at": "2026-10-05T08:13:41Z",
+  "reason": "Re-baseline CPU mutation throughput for this shared 8-vCPU WSL session: an active music-processing pipeline and local assistant consume CPU concurrently. The Aug 31 baseline was measured under a different load profile. Correctness tests pass; record this as shared-load throughput and remeasure on an idle host before making idle-performance comparisons."
 }

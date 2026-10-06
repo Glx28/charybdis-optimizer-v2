@@ -53,7 +53,7 @@ def main():
     ckpt = load_checkpoint(ckpt_path)
     g = np.array(ckpt['best_genome'], dtype=np.int32)
     F, G = ev.model.evaluate_batch(g.reshape(1, -1))
-    gap = float(F[0].sum()) + 49.30
+    total = float(F[0].sum())
 
     # Build lookup: keys -> list of (pos, layer, effort, hand, is_thumb)
     key_positions = defaultdict(list)
@@ -88,7 +88,7 @@ def main():
 
     issues = []
     print(f'=== HUMAN AUDIT: {os.path.basename(ckpt_path)} ===')
-    print(f'gap={gap:+.3f}  G={[int(G[0,i]) for i in range(G.shape[1])]}')
+    print(f'raw_score={total:.3f}  G={[int(G[0,i]) for i in range(G.shape[1])]}')
     print()
 
     # 1. Mouse layer access
@@ -237,7 +237,7 @@ def main():
 
     # Summary
     print('=== SUMMARY ===')
-    print(f'gap={gap:+.3f}  issues={len(issues)}')
+    print(f'raw_score={total:.3f}  issues={len(issues)}')
     for iss in issues:
         print(f'  ✗ {iss}')
     if not issues:

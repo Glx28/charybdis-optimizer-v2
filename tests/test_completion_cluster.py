@@ -29,6 +29,15 @@ class TestCompletionCluster(unittest.TestCase):
             base_key=base_key,
         )
 
+    def test_angle_brackets_are_the_non_us_backslash_raw_key(self):
+        from core.norwegian_keys import canonical_hid_parameter, RAW_COMPLETION_NORWEGIAN
+
+        expected = "Non-US Backslash and Pipe"
+        self.assertEqual(canonical_hid_parameter("<"), expected)
+        self.assertEqual(canonical_hid_parameter(">"), expected)
+        self.assertIn(expected, RAW_COMPLETION_NORWEGIAN)
+        self.assertNotIn("Backslash and Pipe", RAW_COMPLETION_NORWEGIAN)
+
     def test_family_membership(self):
         dash = self._make_shortcut(0, "-", "Dash and Underscore")
         ctrl_dash = self._make_shortcut(1, "Ctrl+-", "Dash and Underscore", ["Ctrl"])
@@ -55,7 +64,7 @@ class TestCompletionCluster(unittest.TestCase):
             self._make_shortcut(1, "=", "Equals and Plus"),
             self._make_shortcut(2, "`", "Grave Accent and Tilde"),
             self._make_shortcut(3, "]", "Right Brace"),
-            self._make_shortcut(4, "Ctrl+\\", "Backslash and Pipe", ["Ctrl"]),
+            self._make_shortcut(4, "Ctrl+<", "Non-US Backslash and Pipe", ["Ctrl"]),
         )
         genome = np.array([0, 1, 2, 3, 4], dtype=np.int32)
         frozen = np.array([False] * 5)
@@ -65,7 +74,7 @@ class TestCompletionCluster(unittest.TestCase):
         self.assertEqual(report["anchor_layer"], 1)
         self.assertEqual(set(report["raw_base_keys_present"]), {"Dash and Underscore", "Equals and Plus", "Grave Accent and Tilde"})
         self.assertIn("Right Brace", report["raw_base_keys_missing"])
-        self.assertIn("Backslash and Pipe", report["modified_variants_demand"])
+        self.assertIn("Non-US Backslash and Pipe", report["modified_variants_demand"])
         self.assertEqual(report["raw_base_layers_used"], 2)
 
     def test_compactness_score_penalises_inversions(self):
@@ -101,7 +110,7 @@ class TestCompletionCluster(unittest.TestCase):
             self._make_shortcut(1, "=", "Equals and Plus"),
             self._make_shortcut(2, "`", "Grave Accent and Tilde"),
             self._make_shortcut(3, "]", "Right Brace"),
-            self._make_shortcut(4, "\\", "Backslash and Pipe"),
+            self._make_shortcut(4, "<", "Non-US Backslash and Pipe"),
         )
         frozen = np.array([False] * 5)
         # Equals is the anchor at x=10,y=1. Required offsets are:

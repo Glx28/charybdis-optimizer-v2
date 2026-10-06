@@ -163,13 +163,12 @@ def main():
     ckpt = load_checkpoint(ckpt_path)
     gen = ckpt.get("generation", 0)
 
-    ev = load_evaluator()
+    ev = load_evaluator(generation=gen)
     layout = checkpoint_to_layout(ckpt, ev.model.layout)
     arrays = ev.model.arrays
 
     F, G = ev.model.evaluate_batch(layout.genome.reshape(1, -1))
     total = float(F[0].sum())
-    gap = total + 49.30
 
     best_exact = ckpt.get("best_exact", {})
     pop_exact = ckpt.get("population_best_exact", {})
@@ -187,8 +186,8 @@ def main():
     print(f"Generation: {gen}")
     archive_total = best_exact.get("total_score", total)
     pop_total = pop_exact.get("total_score", 0.0)
-    print(f"Archive best total: {archive_total:.4f} (gap {archive_total + 49.30:+.2f})")
-    print(f"Population best total: {pop_total:.4f} (gap {pop_total + 49.30:+.2f})")
+    print(f"Archive best total: {archive_total:.4f}")
+    print(f"Population best total: {pop_total:.4f}")
     print(f"Objectives (recomputed): effort={F[0,0]:.4f} adj={F[0,1]:.4f} viol={F[0,2]:.4f}")
     print(f"Constraints: {[int(c) for c in G[0]]}")
     optimizer_side_pass = bool(acc.get("optimizer_side_pass", False)) and all(int(c) == 0 for c in G[0])
@@ -233,7 +232,7 @@ def main():
     print(f"  Mouse layer present: {checks.get('dynamic_mouse_layer_present', False)}")
     print(f"  Scroll mode access: {checks.get('scroll_mode_access_present', False)}")
     print(f"  L7 access: {checks.get('layer7_momentary_and_toggle_access', False)}")
-    print(f"  Raw arrows OK: {checks.get('mutable_raw_arrows_ok', False)}")
+    print("  Raw arrow placement: diagnostic only (L7 frozen fallback)")
     print(f"  Norwegian cluster: {checks.get('norwegian_completion_cluster', False)}")
     print(f"  Thumb side clear: {checks.get('momentary_only_thumb_side_clear', False)}")
     print()
@@ -273,7 +272,7 @@ def main():
             print(f"  L{lyr} pos{pos:3d} effort={eff:.2f}")
         print()
 
-    print(f"Re-evaluated total score: {total:.4f} (gap {gap:+.2f})")
+    print(f"Re-evaluated raw total score: {total:.4f}")
 
 
 if __name__ == "__main__":

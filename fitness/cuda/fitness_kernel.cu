@@ -319,7 +319,6 @@ __device__ void evaluate_single(
             s->layer_has_mutable[layer] = true;
         }
     }
-
     for (int i = 0; i < n_pos; i++) {
         int sid = genome[i];
         if (sid < 0 || sid >= n_short) continue;
@@ -362,6 +361,9 @@ __device__ void evaluate_single(
         } else {
             cost += 4.0f;
             access_layout += 2.0f + shortcut_importance[sid] * 0.2f;
+        }
+        if (!shortcut_access_momentary[sid]) {
+            cost *= toggle_effort_multiplier;
         }
         if (source != 0) {
             cost += 4.0f;
@@ -541,7 +543,7 @@ __device__ void evaluate_single(
 
         float imp = shortcut_importance[sid];
         if (shortcut_is_mouse[sid] && shortcut_mouse_button[sid] > 0 && layer == candidate_mouse_layer) {
-            imp = imp * 3.0f;
+            imp = imp * 5.0f;
         }
         float access_cost = (layer >= 0 && layer < MAX_LAYERS) ? s->layer_access_cost[layer] : 0.0f;
         if (access_cost >= 999999.0f) {
@@ -1120,189 +1122,7 @@ __device__ void evaluate_single(
     // Arrow order
     // -------------------------------------------------------------------------
     float arrow_order = 0.0f;
-    for (int layer = 0; layer < MAX_LAYERS; layer++) {
-        if (layer == 7) continue;
-        float left_x = -1.0f, left_y = -1.0f;
-        float right_x = -1.0f, right_y = -1.0f;
-        float up_x = -1.0f, up_y = -1.0f;
-        float down_x = -1.0f, down_y = -1.0f;
-        for (int i = 0; i < n_pos; i++) {
-            int sid = genome[i];
-            if (sid < 0 || sid >= n_short) continue;
-            int atype = shortcut_arrow_type[sid];
-            if (atype == 0) continue;
-            if (pos_layer[i] != layer) continue;
-            if (atype == 1) { left_x = pos_x[i]; left_y = pos_y[i]; }
-            else if (atype == 2) { right_x = pos_x[i]; right_y = pos_y[i]; }
-            else if (atype == 3) { up_x = pos_x[i]; up_y = pos_y[i]; }
-            else if (atype == 4) { down_x = pos_x[i]; down_y = pos_y[i]; }
-        }
-        if (left_x >= 0.0f && right_x >= 0.0f) {
-            if (left_x >= right_x) {
-                arrow_order += (left_x - right_x + 1.0f) * 100.0f;
-            }
-            float min_x = min_f(left_x, right_x);
-            float max_x = max_f(left_x, right_x);
-            if (up_x >= 0.0f) {
-                if (up_x < min_x) arrow_order += (min_x - up_x + 1.0f) * 60.0f;
-                else if (up_x > max_x) arrow_order += (up_x - max_x + 1.0f) * 60.0f;
-            }
-            if (down_x >= 0.0f) {
-                if (down_x < min_x) arrow_order += (min_x - down_x + 1.0f) * 60.0f;
-                else if (down_x > max_x) arrow_order += (down_x - max_x + 1.0f) * 60.0f;
-            }
-        }
-        if (up_y >= 0.0f && down_y >= 0.0f && up_y >= down_y) {
-            arrow_order += (up_y - down_y + 1.0f) * 100.0f;
-        }
-        if (left_x >= 0.0f && right_x >= 0.0f && up_x >= 0.0f && down_x >= 0.0f) {
-            bool same_line = (
-                fabsf(left_y - up_y) <= 0.25f
-                && fabsf(up_y - down_y) <= 0.25f
-                && fabsf(down_y - right_y) <= 0.25f
-                && left_x < up_x
-                && up_x < down_x
-                && down_x < right_x
-                && (right_x - left_x) <= 4.5f
-            );
-            bool split_cluster = (
-                fabsf(left_y - down_y) <= 0.25f
-                && fabsf(down_y - right_y) <= 0.25f
-                && left_x < down_x
-                && down_x < right_x
-                && up_y < down_y
-                && fabsf(up_x - down_x) <= 0.25f
-                && (down_y - up_y) <= 2.0f
-                && (right_x - left_x) <= 3.5f
-            );
-            if (!same_line && !split_cluster) {
-                arrow_order += 500.0f;
-            }
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // Arrow scattered
-    // -------------------------------------------------------------------------
     float arrow_scattered = 0.0f;
-    int arrow_layers[MAX_LAYERS];
-    for (int l = 0; l < MAX_LAYERS; l++) {
-        arrow_layers[l] = 0;
-        for (int at = 0; at < 5; at++) {
-            s->arrow_layer_type_counts[l][at] = 0;
-            s->arrow_layer_type_x[l][at] = -1.0f;
-            s->arrow_layer_type_y[l][at] = -1.0f;
-        }
-    }
-    int non_l7_arrow_placements = 0;
-    for (int i = 0; i < n_pos; i++) {
-        int sid = genome[i];
-        if (sid < 0 || sid >= n_short) continue;
-        int atype = shortcut_arrow_type[sid];
-        if (atype == 0) continue;
-        int layer = pos_layer[i];
-        if (layer >= 0 && layer < MAX_LAYERS) {
-            if (layer != 7) {
-                non_l7_arrow_placements++;
-                arrow_layers[layer] = 1;
-            }
-            if (atype >= 1 && atype < 5) {
-                s->arrow_layer_type_counts[layer][atype]++;
-                if (s->arrow_layer_type_x[layer][atype] < 0.0f) {
-                    s->arrow_layer_type_x[layer][atype] = pos_x[i];
-                    s->arrow_layer_type_y[layer][atype] = pos_y[i];
-                }
-            }
-        }
-    }
-    int n_arrow_layers = 0;
-    int best_arrow_layer = -1;
-    int best_arrow_layer_count = 0;
-    int best_arrow_layer_types = 0;
-    for (int layer = 0; layer < MAX_LAYERS; layer++) {
-        n_arrow_layers += arrow_layers[layer];
-        int placement_count = 0;
-        int type_count = 0;
-        for (int atype = 1; atype < 5; atype++) {
-            if (s->arrow_layer_type_counts[layer][atype] > 0) {
-                type_count++;
-                placement_count += s->arrow_layer_type_counts[layer][atype];
-            }
-        }
-        if (placement_count > best_arrow_layer_count) {
-            best_arrow_layer = layer;
-            best_arrow_layer_count = placement_count;
-            best_arrow_layer_types = type_count;
-        }
-    }
-    if (n_arrow_layers > 1) {
-        arrow_scattered += (float)(n_arrow_layers - 1) * 10000.0f;
-    }
-    if (non_l7_arrow_placements > 0) {
-        if (!(n_arrow_layers == 1 && best_arrow_layer_count == 4 && best_arrow_layer_types == 4)) {
-            arrow_scattered += 50000.0f + (float)non_l7_arrow_placements * 10000.0f;
-            arrow_scattered += (float)(4 - best_arrow_layer_types) * 15000.0f;
-            arrow_scattered += (float)n_arrow_layers * 15000.0f;
-        } else {
-            float left_x = s->arrow_layer_type_x[best_arrow_layer][1];
-            float right_x = s->arrow_layer_type_x[best_arrow_layer][2];
-            float up_x = s->arrow_layer_type_x[best_arrow_layer][3];
-            float down_x = s->arrow_layer_type_x[best_arrow_layer][4];
-            float left_y = s->arrow_layer_type_y[best_arrow_layer][1];
-            float right_y = s->arrow_layer_type_y[best_arrow_layer][2];
-            float up_y = s->arrow_layer_type_y[best_arrow_layer][3];
-            float down_y = s->arrow_layer_type_y[best_arrow_layer][4];
-            bool same_line = (
-                fabsf(left_y - up_y) <= 0.25f
-                && fabsf(up_y - down_y) <= 0.25f
-                && fabsf(down_y - right_y) <= 0.25f
-                && left_x < up_x
-                && up_x < down_x
-                && down_x < right_x
-                && (right_x - left_x) <= 4.5f
-            );
-            bool split_cluster = (
-                fabsf(left_y - down_y) <= 0.25f
-                && fabsf(down_y - right_y) <= 0.25f
-                && left_x < down_x
-                && down_x < right_x
-                && up_y < down_y
-                && fabsf(up_x - down_x) <= 0.25f
-                && (down_y - up_y) <= 2.0f
-                && (right_x - left_x) <= 3.5f
-            );
-            if (!same_line && !split_cluster) {
-                arrow_scattered += 50000.0f;
-            }
-            arrow_scattered += (float)non_l7_arrow_placements * 2000.0f;
-        }
-    }
-    for (int layer = 0; layer < MAX_LAYERS; layer++) {
-        int type_count = 0;
-        int placement_count = 0;
-        int duplicate_count = 0;
-        for (int atype = 1; atype < 5; atype++) {
-            int c = s->arrow_layer_type_counts[layer][atype];
-            if (c > 0) {
-                type_count++;
-                placement_count += c;
-                if (c > 1) duplicate_count += c - 1;
-            }
-        }
-        if (placement_count == 0) continue;
-        if (type_count < 4) {
-            arrow_scattered += (float)(4 - type_count) * 5000.0f;
-            arrow_scattered += (float)placement_count * 5000.0f;
-        }
-        if (duplicate_count > 0) {
-            arrow_scattered += (float)duplicate_count * 5000.0f;
-        }
-    }
-
-
-    // -------------------------------------------------------------------------
-    // Raw keyboard completion (Norwegian extra keys)
-    // -------------------------------------------------------------------------
     float raw_keyboard_completion_norwegian = 0.0f;
     for (int i = 0; i < n_pos; i++) {
         int sid = genome[i];
@@ -1618,7 +1438,7 @@ __device__ void evaluate_single(
             }
         }
         int missing_buttons = 5 - button_count;
-        float candidate_penalty = (float)missing_buttons * 50000.0f;
+        float candidate_penalty = (float)missing_buttons * 200000.0f;
         // Duplicate mouse-button policy: a second copy of the same button on
         // this layer is only acceptable as one left-side + one right-side
         // pair, and only when this layer is the actual, currently-recognized
@@ -1786,7 +1606,17 @@ __device__ void evaluate_single(
     float same_layer_duplicate = 0.0f;
     for (int layer = 0; layer < MAX_LAYERS; layer++) {
         if (layer == 7) continue;
+        int scroll_access_copies = 0;
         for (int sid = 0; sid < n_short; sid++) {
+            if (shortcut_scroll_mode_access[sid]) {
+                scroll_access_copies += s->layer_sid_counts[layer][sid];
+            }
+        }
+        if (scroll_access_copies > 1) {
+            same_layer_duplicate += (float)(scroll_access_copies - 1);
+        }
+        for (int sid = 0; sid < n_short; sid++) {
+            if (shortcut_scroll_mode_access[sid]) continue;
             int c = s->layer_sid_counts[layer][sid];
             if (c <= 1) continue;
             int cap = 1;
@@ -1914,6 +1744,13 @@ __device__ void evaluate_single(
     // -------------------------------------------------------------------------
     // Empty position penalty (added to effort)
     // -------------------------------------------------------------------------
+    int layer_occupancy[MAX_LAYERS] = {0};
+    for (int i = 0; i < n_pos; i++) {
+        int layer = pos_layer[i];
+        if (genome[i] >= 0 && layer >= 0 && layer < MAX_LAYERS) {
+            layer_occupancy[layer]++;
+        }
+    }
     for (int i = 0; i < n_pos; i++) {
         if (genome[i] >= 0) continue;
         if (pos_is_frozen[i]) continue;
@@ -2045,25 +1882,31 @@ __device__ void evaluate_single(
         if (sid < 0 || sid >= n_short) continue;
         if (!shortcut_access_momentary[sid]) continue;
         int target = shortcut_access_target[sid];
-        if (target <= 0 || target >= MAX_LAYERS) continue;
+        if (target < 0 || target >= MAX_LAYERS) continue;
+        // Scroll is a pointer mode switch and intentionally belongs on a
+        // finger key. Ordinary momentary layer access must use a thumb.
+        if (shortcut_scroll_mode_access[sid]) continue;
         int layer = pos_layer[i];
         if (layer < 0 || layer >= MAX_LAYERS) continue;
         float imp = shortcut_importance[sid];
-        float demand = s->layer_demand[target];
-        if (pos_is_thumb[i]) {
-            layer_access_thumb_preference -= imp * lat_params[0] * (1.0f + log1pf(demand));
-        } else {
+        if (!pos_is_thumb[i]) {
             layer_access_thumb_preference += imp * lat_params[1] + lat_params[2];
         }
-        if (pos_is_thumb[i]) {
-            int inc = s->incoming_thumb_hand[layer];
-            if (inc >= 0) {
-                if (pos_hand[i] == inc) {
-                    same_side_hold_flow += imp * lat_params[3];
-                } else {
-                    same_side_hold_flow -= imp * lat_params[4];
-                }
-            }
+    }
+    // Prefer nested momentary access on the thumb opposite the shortest
+    // incoming momentary thumb path. This is soft pressure, not a constraint.
+    for (int i = 0; i < n_pos; i++) {
+        int sid = genome[i];
+        if (sid < 0 || sid >= n_short || !shortcut_access_momentary[sid]) continue;
+        int layer = pos_layer[i];
+        if (layer < 0 || layer >= MAX_LAYERS || !pos_is_thumb[i]) continue;
+        int incoming_hand = s->incoming_thumb_hand[layer];
+        if (incoming_hand < 0) continue;
+        float imp = shortcut_importance[sid];
+        if (pos_hand[i] == incoming_hand) {
+            same_side_hold_flow += imp * lat_params[3];
+        } else {
+            same_side_hold_flow -= imp * lat_params[4];
         }
     }
 
@@ -2077,10 +1920,10 @@ __device__ void evaluate_single(
     raw_scores[3] = cross_dup;
     raw_scores[4] = group_split;
     raw_scores[5] = thumb_occ;
-    raw_scores[6] = arrow_order;
+    raw_scores[6] = 0.0f;
     raw_scores[7] = hand_bias;
     raw_scores[8] = mouse_layer_access;
-    raw_scores[9] = arrow_scattered;
+    raw_scores[9] = 0.0f;
     raw_scores[10] = mouse_scattered;
     raw_scores[11] = layer7_access;
     raw_scores[12] = duplicate_value_gap;

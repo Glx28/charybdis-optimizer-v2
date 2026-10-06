@@ -19,7 +19,7 @@ from fitness.factors.same_finger import SameFingerFactor
 from fitness.factors.violation import ViolationFactor
 from fitness.kernel import DEFAULT_FITNESS_WEIGHTS, DEFAULT_VIOLATION_WEIGHTS
 from evolution.surrogate import LayoutSurrogate, SurrogateTrainer, SurrogateManager
-from evolution.custom_ga import _select_feasibility_first_scalar
+from evolution.custom_ga import _select_feasibility_first_scalar, _survivor_indices
 from evolution import StructuralGenomeSanitizer, PermutationSampling, SwapMutation
 from evolution.arrow_cluster import analyze_arrows
 from evolution.acceptance import (
@@ -516,10 +516,28 @@ class TestFitnessFactors(unittest.TestCase):
         l7_only = Layout(np.array([-1, -1, 0, 1, 2, 3], dtype=np.int32), positions, shortcuts, frozen)
         factor = ViolationFactor()
 
-        self.assertGreaterEqual(factor._arrow_scattered(scattered), 100.0)
+        self.assertEqual(factor._arrow_scattered(scattered), 0.0)
         self.assertEqual(factor._arrow_scattered(l7_only), 0.0)
 
-    def test_raw_arrow_clusters_allow_only_two_shapes(self):
+    def test_missing_mutable_raw_arrows_are_not_an_acceptance_failure(self):
+        from evolution.arrow_cluster import analyze_arrows
+
+        positions = tuple(
+            Position(i, 1, float(i), 0.0, "left", 1, 1.0) for i in range(4)
+        )
+        shortcuts = tuple(
+            Shortcut(i, key, action, "Mouse", 8.0, "navigation", base_key=key)
+            for i, (key, action) in enumerate((
+                ("LeftArrow", "Left"), ("RightArrow", "Right"),
+                ("UpArrow", "Up"), ("DownArrow", "Down"),
+            ))
+        )
+        missing = Layout(np.array([-1, -1, -1, -1], dtype=np.int32), positions,
+                         shortcuts, np.array([False] * 4))
+        self.assertTrue(analyze_arrows(missing)["review_only"])
+        self.assertEqual(ViolationFactor()._arrow_scattered(missing), 0.0)
+
+    def test_raw_arrow_geometry_is_not_an_acceptance_rule(self):
         shortcuts = (
             Shortcut(0, "LeftArrow", "Left", "Mouse", 3.0, "navigation", base_key="LeftArrow"),
             Shortcut(1, "RightArrow", "Right", "Mouse", 3.0, "navigation", base_key="RightArrow"),
@@ -527,35 +545,34 @@ class TestFitnessFactors(unittest.TestCase):
             Shortcut(3, "DownArrow", "Down", "Mouse", 3.0, "navigation", base_key="DownArrow"),
         )
         frozen = np.array([False] * 4)
-        same_line_positions = (
+        adjacent_pair_positions = (
             Position(0, 1, 0.0, 0.0, "left", 1, 1.0),
             Position(1, 1, 1.0, 0.0, "left", 1, 1.0),
-            Position(2, 1, 2.0, 0.0, "left", 1, 1.0),
-            Position(3, 1, 3.0, 0.0, "left", 1, 1.0),
+            Position(2, 1, 0.0, 1.0, "left", 1, 1.0),
+            Position(3, 1, 0.0, 2.0, "left", 1, 1.0),
         )
-        split_positions = (
+        stacked_pairs_positions = (
             Position(0, 1, 0.0, 1.0, "left", 1, 1.0),
-            Position(1, 1, 1.0, 1.0, "left", 1, 1.0),
-            Position(2, 1, 2.0, 1.0, "left", 1, 1.0),
-            Position(3, 1, 1.0, 0.0, "left", 1, 1.0),
+            Position(1, 1, 2.0, 1.0, "left", 1, 1.0),
+            Position(2, 1, 1.0, 0.0, "left", 1, 1.0),
+            Position(3, 1, 1.0, 1.0, "left", 1, 1.0),
         )
-        old_inverted_t_positions = (
+        separated_left_right_positions = (
             Position(0, 1, 0.0, 0.0, "left", 1, 1.0),
-            Position(1, 1, 1.0, 0.0, "left", 1, 1.0),
-            Position(2, 1, 2.0, 0.0, "left", 1, 1.0),
+            Position(1, 1, 2.0, 0.0, "left", 1, 1.0),
+            Position(2, 1, 1.0, 0.0, "left", 1, 1.0),
             Position(3, 1, 1.0, 1.0, "left", 1, 1.0),
         )
 
-        same_line = Layout(np.array([0, 2, 3, 1], dtype=np.int32), same_line_positions, shortcuts, frozen)
-        split = Layout(np.array([0, 3, 1, 2], dtype=np.int32), split_positions, shortcuts, frozen)
-        old_shape = Layout(np.array([0, 2, 1, 3], dtype=np.int32), old_inverted_t_positions, shortcuts, frozen)
+        adjacent = Layout(np.array([0, 1, 2, 3], dtype=np.int32), adjacent_pair_positions, shortcuts, frozen)
+        stacked = Layout(np.array([0, 1, 2, 3], dtype=np.int32), stacked_pairs_positions, shortcuts, frozen)
+        separated = Layout(np.array([0, 1, 2, 3], dtype=np.int32), separated_left_right_positions, shortcuts, frozen)
         factor = ViolationFactor()
 
-        self.assertTrue(analyze_arrows(same_line)["acceptance_pass"])
-        self.assertTrue(analyze_arrows(split)["acceptance_pass"])
-        self.assertFalse(analyze_arrows(old_shape)["acceptance_pass"])
-        self.assertLess(factor._arrow_scattered(same_line), factor._arrow_scattered(old_shape))
-        self.assertLess(factor._arrow_scattered(split), factor._arrow_scattered(old_shape))
+        self.assertTrue(analyze_arrows(adjacent)["review_only"])
+        self.assertTrue(analyze_arrows(stacked)["review_only"])
+        self.assertTrue(analyze_arrows(separated)["review_only"])
+        self.assertEqual(factor._arrow_scattered(adjacent), factor._arrow_scattered(separated))
 
     def test_group_scoring_only_compacts_same_layer_members(self):
         shortcuts = (
@@ -612,6 +629,19 @@ class TestSurrogate(unittest.TestCase):
         trainer.train(layouts, scores, epochs=10, batch_size=16)
         pred = trainer.predict(layouts[:10])
         self.assertEqual(pred.shape, (10, 3))
+
+    def test_r2_is_normalized_per_output(self):
+        surrogate = LayoutSurrogate(n_positions=2, n_shortcuts=2, n_factors=2, hidden_dim=8)
+        trainer = SurrogateTrainer(surrogate, device="cpu")
+        exact = np.array([[0.0, 100.0], [1.0, 200.0], [2.0, 300.0]], dtype=np.float32)
+        predicted = exact.copy()
+        predicted[0, 0] += 1.0
+        predicted[2, 0] -= 1.0
+        trainer.predict = lambda layouts: predicted
+
+        result = trainer.evaluate(np.zeros((3, 2), dtype=np.int32), exact)
+
+        np.testing.assert_allclose(result["r2"], [0.0, 1.0], atol=1e-5)
 
     def test_forward_with_constraints(self):
         surrogate = LayoutSurrogate(
@@ -675,6 +705,20 @@ class TestSurrogate(unittest.TestCase):
         # Feasible indices are 1, 2, 4. Top 3 must be exactly those.
         self.assertEqual(set(survivors.tolist()), {1, 2, 4})
 
+    def test_feasibility_beacons_rank_infeasible_by_violation_before_score(self):
+        scalar = np.array([0.0, 10.0, 20.0, 30.0])
+        cv = np.array([[2.0, 0.0], [0.0, 0.0], [1.0, 0.0], [0.0, 0.0]])
+        survivors = _select_feasibility_first_scalar(scalar, cv, 3)
+        self.assertEqual(set(survivors.tolist()), {1, 2, 3})
+
+    def test_survivor_selection_always_retains_exact_archive(self):
+        scalar = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 100.0], dtype=np.float32)
+        cv = np.zeros((len(scalar), 2), dtype=np.float32)
+        for relaxed in (False, True):
+            survivors = _survivor_indices(scalar, cv, 4, forced_indices=[5], relaxed=relaxed)
+            self.assertEqual(len(survivors), 4)
+            self.assertIn(5, survivors.tolist())
+
     def test_sampling_excludes_frozen_assigned_shortcuts(self):
         seed = np.array([0, -1, 1, -1], dtype=np.int32)
         frozen = np.array([True, False, True, False])
@@ -700,29 +744,26 @@ class TestSurrogate(unittest.TestCase):
         self.assertEqual(cleaned[0, 1], -1)
         self.assertEqual(cleaned[0, 3], -1)
 
-    def test_group_mutation_moves_arrow_group_as_unit(self):
+    def test_raw_arrows_are_not_a_special_mutation_group(self):
         random.seed(100)
         positions = tuple(
             Position(i, 1, float(i % 6), float(i // 6), "left", 1, 1.0)
-            for i in range(12)
+            for i in range(18)
         )
         shortcuts = tuple([
             Shortcut(0, "LeftArrow", "Left", "Nav", 1.0, base_key="LeftArrow"),
             Shortcut(1, "UpArrow", "Up", "Nav", 1.0, base_key="UpArrow"),
             Shortcut(2, "DownArrow", "Down", "Nav", 1.0, base_key="DownArrow"),
             Shortcut(3, "RightArrow", "Right", "Nav", 1.0, base_key="RightArrow"),
-            *[Shortcut(i, f"K{i}", "", "App", 1.0) for i in range(4, 12)],
+            *[Shortcut(i, f"K{i}", "", "App", 1.0) for i in range(4, 18)],
         ])
-        genome = np.arange(12, dtype=np.int32)
-        layout = Layout(genome.copy(), positions, shortcuts, np.zeros(12, dtype=np.bool_))
+        # Keep an ordinary complete sample genome; raw arrows receive no special group handling.
+        genome = np.full(18, -1, dtype=np.int32)
+        genome[[0, 1, 6, 12]] = [0, 3, 1, 2]
+        genome[[i for i in range(18) if i not in {0, 1, 6, 12}]] = np.arange(4, 18)
+        layout = Layout(genome.copy(), positions, shortcuts, np.zeros(18, dtype=np.bool_))
         mutation = SwapMutation(prob=0.0, frozen_mask=layout.frozen_mask, layout=layout, group_move_prob=1.0)
-        X = mutation._do(None, genome.reshape(1, -1).copy())
-        moved = X[0]
-        arrow_positions = [int(np.where(moved == sid)[0][0]) for sid in range(4)]
-        self.assertEqual(len(set(arrow_positions)), 4)
-        self.assertNotEqual(set(arrow_positions), {0, 1, 2, 3})
-        self.assertTrue(set(arrow_positions).isdisjoint({0, 1, 2, 3}))
-        self.assertFalse(any(int(moved[pos]) in {0, 1, 2, 3} for pos in range(4)))
+        self.assertEqual(mutation.raw_arrow_group_index, -1)
 
     def test_group_mutation_moves_completion_group_as_unit(self):
         random.seed(200)
@@ -736,7 +777,7 @@ class TestSurrogate(unittest.TestCase):
         )
         bases = [
             "Dash and Underscore", "Equals and Plus", "Grave Accent and Tilde",
-            "Right Brace", "Backslash and Pipe",
+            "Right Brace", "Non-US Backslash and Pipe",
         ]
         shortcuts = tuple([
             *(Shortcut(i, bases[i], "", "Raw", 1.0, base_key=bases[i]) for i in range(5)),
@@ -768,7 +809,7 @@ class TestSurrogate(unittest.TestCase):
         )
         bases = [
             "Dash and Underscore", "Equals and Plus", "Grave Accent and Tilde",
-            "Right Brace", "Backslash and Pipe",
+            "Right Brace", "Non-US Backslash and Pipe",
         ]
         shortcuts = tuple([
             *(Shortcut(i, bases[i], "", "Raw", 1.0, base_key=bases[i]) for i in range(5)),
@@ -1043,7 +1084,7 @@ class TestSurrogate(unittest.TestCase):
             changed_any = changed_any or not np.array_equal(moved, genome)
         self.assertTrue(changed_any)
 
-    def test_optional_arrow_drop_mutation_removes_mutable_raw_arrows(self):
+    def test_raw_arrow_mutation_is_disabled(self):
         random.seed(502)
         positions = tuple(Position(i, 1, float(i), 0.0, "left", 1, 0.5) for i in range(8))
         shortcuts = tuple([
@@ -1070,8 +1111,9 @@ class TestSurrogate(unittest.TestCase):
             optional_arrow_drop_prob=1.0,
         )
         moved = mutation._do(None, genome.reshape(1, -1).copy())[0]
-        self.assertIn(0, set(int(sid) for sid in moved))
-        self.assertFalse(any(int(sid) in {1, 2, 3, 4} for sid in moved))
+        self.assertEqual(mutation.optional_arrow_drop_prob, 0.0)
+        self.assertEqual(mutation.raw_arrow_group_index, -1)
+        self.assertEqual(sorted(moved.tolist()), sorted(genome.tolist()))
 
 
 class TestEvaluator(unittest.TestCase):
@@ -3467,12 +3509,29 @@ class TestStagnationMetric(unittest.TestCase):
         incumbent = {
             "constraints": [0.0],
             "optimizer_side_pass": False,
-            "acceptance_failed_checks": ["mutable_raw_arrows_ok", "norwegian_completion_cluster"],
+            "acceptance_failed_checks": ["dynamic_mouse_layer_present", "norwegian_completion_cluster"],
             "total_score": -50.0,
         }
-        self.assertFalse(cb._is_better_exact(candidate, incumbent))
-        self.assertTrue(cb._is_better_exact(incumbent, candidate))
+        self.assertTrue(cb._is_better_exact(candidate, incumbent))
+        self.assertFalse(cb._is_better_exact(incumbent, candidate))
         self.assertEqual(ExactEvalCallback._display_gap(candidate), 5.0)
+
+    def test_exact_eval_archive_prioritizes_norwegian_cluster(self):
+        from run_evolution import ExactEvalCallback
+
+        cb = object.__new__(ExactEvalCallback)
+        candidate = {
+            "constraints": [0.0], "total_score": -45.0,
+            "optimizer_side_pass": False,
+            "acceptance_failed_checks": ["left_alt_directly_available_on_l0"],
+        }
+        incumbent = {
+            "constraints": [0.0], "total_score": -50.0,
+            "optimizer_side_pass": False,
+            "acceptance_failed_checks": ["norwegian_completion_cluster"],
+        }
+        self.assertTrue(cb._is_better_exact(candidate, incumbent))
+        self.assertFalse(cb._is_better_exact(incumbent, candidate))
 
     def test_custom_ga_uses_same_dynamic_mouse_archive_tier(self):
         """Custom GPU GA archive ranking follows the same hard mouse tier."""
@@ -3487,18 +3546,116 @@ class TestStagnationMetric(unittest.TestCase):
         incumbent = {
             "constraints": [0.0],
             "optimizer_side_pass": False,
-            "acceptance_failed_checks": ["mutable_raw_arrows_ok"],
+            "acceptance_failed_checks": ["dynamic_mouse_layer_present"],
             "total_score": -50.0,
         }
         runner = object.__new__(CustomGARunner)
-        self.assertFalse(runner._is_better(candidate, incumbent))
-        self.assertTrue(runner._is_better(incumbent, candidate))
+        self.assertTrue(runner._is_better(candidate, incumbent))
+        self.assertFalse(runner._is_better(incumbent, candidate))
         self.assertEqual(_display_gap(candidate), 5.0)
 
         pop = self._make_pop([[-60.0, 0.0, 0.0], [-50.0, 0.0, 0.0]])
         constraints = np.array([[1.0], [0.0]])
         quality = _scalar(pop, constraints)
         self.assertAlmostEqual(float(quality[0]), -58.0)
+
+    def test_custom_ga_does_not_trade_semantic_quality_for_fewer_failures(self):
+        from evolution.custom_ga import CustomGARunner
+
+        candidate = {
+            "constraints": [0.0], "optimizer_side_pass": False,
+            "acceptance_failed_checks": ["no_same_layer_duplicates"],
+            "clusters_together": 32, "clusters_total": 65,
+            "clusters_order_ok": 12, "clusters_ordered_total": 28,
+            "total_score": -100.0,
+        }
+        incumbent = {
+            "constraints": [0.0], "optimizer_side_pass": False,
+            "acceptance_failed_checks": ["mouse", "arrows", "completion", "duplicates"],
+            "clusters_together": 38, "clusters_total": 65,
+            "clusters_order_ok": 14, "clusters_ordered_total": 30,
+            "total_score": -50.0,
+        }
+        runner = object.__new__(CustomGARunner)
+        self.assertFalse(runner._is_better(candidate, incumbent))
+
+        candidate.update(clusters_together=38, clusters_total=65,
+                         clusters_order_ok=14, clusters_ordered_total=30)
+        self.assertTrue(runner._is_better(candidate, incumbent))
+
+    def test_custom_ga_archive_prioritizes_completion_cluster_pass(self):
+        """A valid Norwegian cluster must replace an otherwise better invalid archive."""
+        from evolution.custom_ga import CustomGARunner
+
+        runner = object.__new__(CustomGARunner)
+        candidate = {
+            "constraints": [0.0], "total_score": -45.0,
+            "optimizer_side_pass": False,
+            "acceptance_failed_checks": ["left_alt_directly_available_on_l0"],
+            "norwegian_completion_cluster_pass": True,
+            "clusters_together": 5, "clusters_total": 10,
+        }
+        incumbent = {
+            "constraints": [0.0], "total_score": -50.0,
+            "optimizer_side_pass": False,
+            "acceptance_failed_checks": ["norwegian_completion_cluster"],
+            "norwegian_completion_cluster_pass": False,
+            "clusters_together": 6, "clusters_total": 10,
+        }
+        self.assertTrue(runner._is_better(candidate, incumbent))
+        self.assertFalse(runner._is_better(incumbent, candidate))
+
+    def test_custom_ga_l0_alt_pass_outranks_one_optional_modifier_cluster_split(self):
+        """Direct L0 Alt must outrank the optional LeftAlt/RightAlt family cluster."""
+        from evolution.custom_ga import CustomGARunner
+
+        runner = object.__new__(CustomGARunner)
+        candidate = {
+            "constraints": [0.0], "optimizer_side_pass": True,
+            "acceptance_failed_checks": [], "total_score": 86000.0,
+            "clusters_together": 58, "clusters_total": 59,
+            "clusters_order_ok": 29, "clusters_ordered_total": 29,
+        }
+        incumbent = {
+            "constraints": [0.0], "optimizer_side_pass": False,
+            "acceptance_failed_checks": ["left_alt_directly_available_on_l0"],
+            "total_score": 83900.0, "clusters_together": 59, "clusters_total": 59,
+            "clusters_order_ok": 29, "clusters_ordered_total": 29,
+        }
+
+        self.assertTrue(runner._is_better(candidate, incumbent))
+
+    def test_custom_ga_l0_alt_tier_does_not_allow_multiple_cluster_losses(self):
+        from evolution.custom_ga import CustomGARunner
+
+        runner = object.__new__(CustomGARunner)
+        candidate = {
+            "constraints": [0.0], "optimizer_side_pass": True,
+            "acceptance_failed_checks": [], "total_score": 86000.0,
+            "clusters_together": 57, "clusters_total": 59,
+            "clusters_order_ok": 29, "clusters_ordered_total": 29,
+        }
+        incumbent = {
+            "constraints": [0.0], "optimizer_side_pass": False,
+            "acceptance_failed_checks": ["left_alt_directly_available_on_l0"],
+            "total_score": 83900.0, "clusters_together": 59, "clusters_total": 59,
+            "clusters_order_ok": 29, "clusters_ordered_total": 29,
+        }
+
+        self.assertFalse(runner._is_better(candidate, incumbent))
+
+    def test_l0_alt_candidates_are_reserved_for_exact_mini_eval(self):
+        from evolution.custom_ga import _prioritize_exact_eval_indices
+
+        children = np.array([
+            [0, 2], [1, 2], [9, 2], [1, 2], [9, 2],
+        ], dtype=np.int32)
+        sampled = np.array([0, 1], dtype=np.int32)
+        alt_l0 = np.flatnonzero(np.any(children[:, [0]] == 9, axis=1))
+
+        selected = _prioritize_exact_eval_indices(sampled, alt_l0, 2)
+
+        self.assertEqual(set(selected.tolist()), {2, 4})
 
 
 class TestMouseLayerAcceptanceTier(unittest.TestCase):
@@ -3630,12 +3787,122 @@ class TestMouseLayerAcceptanceTier(unittest.TestCase):
                          "L7 must not satisfy the mouse layer check even with MB1-5 on it")
 
 
+class TestL0ToggleAltMutation(unittest.TestCase):
+    def _mutation(self, layout):
+        from evolution import SwapMutation
+
+        mutation = SwapMutation(prob=0.0, frozen_mask=layout.frozen_mask, layout=layout)
+        mutation.l0_toggle_deeper_thumb_swap_prob = 1.0
+        mutation.mouse_workflow_prob = 0.0
+        mutation.l7_access_prob = 0.0
+        mutation.group_overwrite_prob = 0.0
+        mutation.cluster_app_prob = 0.0
+        mutation.random_assign_prob = 0.0
+        mutation.effort_swap_prob = 0.0
+        mutation.smart_duplicate_prob = 0.0
+        mutation.toggle_own_layer_bias_prob = 0.0
+        mutation.access_thumb_bias_prob = 0.0
+        mutation.return_toggle_repair_prob = 0.0
+        return mutation
+
+    def test_mutation_swaps_l0_toggle_for_alt_on_deeper_thumb(self):
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.5, is_thumb=True),
+            Position(1, 9, 4.0, 4.0, "left", 0, 0.5, is_thumb=True),
+        )
+        shortcuts = (
+            Shortcut(0, "@access:L4:toggle", "L4 toggle", "Layer Access", 1.0,
+                     "layer_access", is_layer_access=True, access_target_layer=4,
+                     access_is_momentary=False),
+            Shortcut(1, "LeftAlt", "Alt", "Raw Keys", 5.0, base_key="LeftAlt"),
+        )
+        genome = np.array([0, 1], dtype=np.int32)
+        frozen = np.array([False, False], dtype=np.bool_)
+        layout = Layout(genome, positions, shortcuts, frozen)
+        mutation = self._mutation(layout)
+
+        result = mutation._do(None, genome.reshape(1, -1).copy())[0]
+
+        self.assertEqual(result.tolist(), [1, 0])
+        self.assertEqual(positions[0].layer, 0)
+        self.assertEqual(shortcuts[int(result[0])].keys, "LeftAlt")
+        self.assertEqual(shortcuts[int(result[1])].keys, "@access:L4:toggle")
+
+    def test_mutation_swaps_normal_l0_binding_for_alt_from_non_thumb_layer(self):
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.5, is_thumb=True),
+            Position(1, 9, 7.0, 3.0, "right", 1, 0.5),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+B", "Bold", "Editor", 4.0),
+            Shortcut(1, "LeftAlt", "Alt", "Raw Keys", 20.0, base_key="LeftAlt"),
+        )
+        genome = np.array([0, 1], dtype=np.int32)
+        frozen = np.array([False, False], dtype=np.bool_)
+        layout = Layout(genome, positions, shortcuts, frozen)
+        mutation = self._mutation(layout)
+
+        result = mutation._do(None, genome.reshape(1, -1).copy())[0]
+
+        self.assertEqual(result.tolist(), [1, 0])
+        self.assertEqual(shortcuts[int(result[0])].keys, "LeftAlt")
+        self.assertEqual(shortcuts[int(result[1])].keys, "Ctrl+B")
+
+    def test_mutation_swaps_l0_toggle_for_matching_deeper_hold(self):
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.5, is_thumb=True),
+            Position(1, 0, 4.0, 4.0, "left", 0, 0.5, is_thumb=True),
+            Position(2, 9, 4.0, 4.0, "left", 0, 0.5, is_thumb=True),
+        )
+        shortcuts = (
+            Shortcut(0, "@access:L4:toggle", "L4 toggle", "Layer Access", 1.0,
+                     "layer_access", is_layer_access=True, access_target_layer=4,
+                     access_is_momentary=False),
+            Shortcut(1, "LeftAlt", "Alt", "Raw Keys", 5.0, base_key="LeftAlt"),
+            Shortcut(2, "@access:L4:hold", "L4 hold", "Layer Access", 1.0,
+                     "layer_access", is_layer_access=True, access_target_layer=4,
+                     access_is_momentary=True),
+        )
+        genome = np.array([0, 1, 2], dtype=np.int32)
+        frozen = np.array([False, False, False], dtype=np.bool_)
+        layout = Layout(genome, positions, shortcuts, frozen)
+        mutation = self._mutation(layout)
+
+        result = mutation._do(None, genome.reshape(1, -1).copy())[0]
+
+        self.assertEqual(result.tolist(), [2, 1, 0])
+        self.assertTrue(shortcuts[int(result[0])].access_is_momentary)
+        self.assertFalse(shortcuts[int(result[2])].access_is_momentary)
+
+    def test_mutation_leaves_l0_toggle_when_no_safe_thumb_exchange_exists(self):
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.5, is_thumb=True),
+            Position(1, 0, 4.0, 4.0, "left", 0, 0.5, is_thumb=True),
+            Position(2, 9, 4.0, 1.0, "left", 0, 0.5),
+        )
+        shortcuts = (
+            Shortcut(0, "@access:L4:toggle", "L4 toggle", "Layer Access", 1.0,
+                     "layer_access", is_layer_access=True, access_target_layer=4,
+                     access_is_momentary=False),
+            Shortcut(1, "LeftAlt", "Alt", "Raw Keys", 5.0, base_key="LeftAlt"),
+            Shortcut(2, "Ctrl+C", "Copy", "App", 1.0),
+        )
+        genome = np.array([0, 1, 2], dtype=np.int32)
+        frozen = np.array([False, False, False], dtype=np.bool_)
+        layout = Layout(genome, positions, shortcuts, frozen)
+        mutation = self._mutation(layout)
+
+        result = mutation._do(None, genome.reshape(1, -1).copy())[0]
+
+        self.assertEqual(result.tolist(), genome.tolist())
+
+
 class TestSwapMutationNumba(unittest.TestCase):
     def _build_simple_mutation_layout(self):
         """Layout with frozen positions, a group, and mutable positions."""
         positions = tuple(
             Position(i, 1, float(i % 6), float(i // 6), "left" if i < 6 else "right", 1, 1.0)
-            for i in range(12)
+            for i in range(18)
         )
         shortcuts = tuple([
             Shortcut(0, "LeftArrow", "Left", "Nav", 1.0, base_key="LeftArrow"),
@@ -3650,9 +3917,10 @@ class TestSwapMutationNumba(unittest.TestCase):
                      is_layer_access=True, access_target_layer=0, access_is_momentary=False),
             *[Shortcut(i, f"K{i}", "", "App", 1.0) for i in range(7, 12)],
         ])
-        frozen = np.array([False] * 12, dtype=np.bool_)
+        frozen = np.array([False] * 18, dtype=np.bool_)
         frozen[0] = True
-        genome = np.arange(12, dtype=np.int32)
+        genome = np.full(18, -1, dtype=np.int32)
+        genome[:12] = np.arange(12, dtype=np.int32)
         layout = Layout(genome, positions, shortcuts, frozen)
         return layout
 
@@ -3770,12 +4038,9 @@ class TestSwapMutationNumba(unittest.TestCase):
 
         # Frozen position 0 must be unchanged.
         self.assertTrue(np.all(out[:, 0] == layout.genome[0]))
-        # Arrow group sids 0-3 must still occupy only positions 0-3 (group overwrite disabled).
-        for sid in range(4):
-            for row in out:
-                pos = int(np.where(row == sid)[0][0]) if sid in row else -1
-                if pos >= 0:
-                    self.assertIn(pos, [0, 1, 2, 3])
+        # Raw arrows have no mutable-layer shape restriction; mutation output
+        # must still use valid shortcut IDs (or the empty-slot sentinel).
+        self.assertTrue(np.all((out >= -1) & (out < len(layout.shortcuts))))
 
     def test_numba_and_python_fallback_similar_mutation_rates(self):
         """Numba path and pure-Python fallback should mutate a similar fraction."""
@@ -3967,6 +4232,12 @@ class TestCudaExactEvalParity(unittest.TestCase):
             missing_important_threshold=config.get("fitness.missing_important_threshold", 6.0),
             hard_constraints=config.get("fitness.hard_constraints", []),
             toggle_effort_multiplier=float(config.get("fitness.toggle_effort_multiplier", 2.5)),
+            semantic_cluster_multiplier=float(config.get("fitness.semantic_cluster_multiplier", 200.0)),
+            semantic_cluster_pair_boost=float(config.get("fitness.semantic_cluster_pair_boost", 1.0)),
+            semantic_contract_penalty=float(config.get("fitness.semantic_contract_penalty", 0.0)),
+            semantic_position_penalty=float(config.get("fitness.semantic_position_penalty", 0.0)),
+            sparse_layer_base_penalty=float(config.get("fitness.sparse_layer_base_penalty", 0.0)),
+            sparse_layer_gap_penalty=float(config.get("fitness.sparse_layer_gap_penalty", 0.0)),
         )
 
     def test_cuda_parity_seed_and_random(self):

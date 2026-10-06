@@ -20,52 +20,74 @@ from tools._common import load_checkpoint, load_layout, resolve_checkpoint_path
 def _cluster_quality(layout, cluster):
     members = list(cluster.get("members", []))
     sids = [int(m.get("sid", -1)) for m in members]
-    orders = [int(m.get("order", 0)) for m in members]
     offsets = [(float(m.get("dx", 0.0)), float(m.get("dy", 0.0))) for m in members]
+    relative_required = any(abs(dx) > 0.01 or abs(dy) > 0.01 for dx, dy in offsets)
 
-    # Find positions.
-    placements = []
-    for sid in sids:
-        idx = layout.get_position_of(sid)
-        if idx is None:
-            placements.append(None)
-        else:
+    # Collect all assigned positions for each member (shortcuts may be duplicated
+    # across layers for accessibility).  For cluster-quality purposes a group is
+    # "together" if a single layer contains at least one copy of every member.
+    positions_by_sid = {sid: [] for sid in sids}
+    for idx, sid in enumerate(layout.genome):
+        if sid in positions_by_sid:
             pos = layout.positions[idx]
-            placements.append({
-                "idx": idx,
+            positions_by_sid[sid].append({
+                "idx": int(idx),
                 "layer": int(pos.layer),
                 "x": float(pos.x),
                 "y": float(pos.y),
                 "hand": pos.hand,
             })
 
-    # Layer distribution.
-    layer_counts = defaultdict(int)
-    for p in placements:
-        if p is not None:
-            layer_counts[p["layer"]] += 1
+    # Layer distribution using unique members per layer (permissive w.r.t. duplicates).
+    layer_member_sets = defaultdict(set)
+    for sid, places in positions_by_sid.items():
+        for p in places:
+            layer_member_sets[p["layer"]].add(sid)
 
-    if not layer_counts:
+    if not layer_member_sets:
         return {"name": cluster.get("name"), "status": "unassigned"}
 
-    dominant_layer = max(layer_counts, key=lambda k: layer_counts[k])
-    total_assigned = sum(layer_counts.values())
-    split = total_assigned - layer_counts[dominant_layer]
-    fully_together = split == 0 and len(members) == total_assigned
+    # Dominant layer: one that contains all members if possible, otherwise most members.
+    full_layers = [layer for layer, sid_set in layer_member_sets.items()
+                   if len(sid_set) == len(sids)]
+    if full_layers:
+        dominant_layer = full_layers[0]
+        # Prefer the layer with the most physical placements (most copies) for reporting.
+        dominant_layer = max(full_layers, key=lambda l: len(layer_member_sets[l]))
+    else:
+        dominant_layer = max(layer_member_sets, key=lambda l: len(layer_member_sets[l]))
+
+    total_assigned = sum(len(s) for s in layer_member_sets.values())
+    split = total_assigned - len(layer_member_sets[dominant_layer])
+    fully_together = len(full_layers) > 0
+
+    # Primary placements for reporting: prefer the dominant layer when a shortcut
+    # appears there, otherwise fall back to its first assigned position.
+    placements = []
+    for sid in sids:
+        places = positions_by_sid[sid]
+        dom_place = next((p for p in places if p["layer"] == dominant_layer), None)
+        if dom_place is not None:
+            placements.append(dom_place)
+        elif places:
+            placements.append(places[0])
+        else:
+            placements.append(None)
 
     # Relative position check on dominant layer.
-    anchor_pos = None
-    for sid, order, placement in zip(sids, orders, placements):
-        if placement is not None and order == 0 and placement["layer"] == dominant_layer:
-            anchor_pos = placement
-            break
+    anchor_index = None
+    if relative_required:
+        anchor_index = next((i for i, (off, placement) in enumerate(zip(offsets, placements))
+                             if placement is not None and placement["layer"] == dominant_layer
+                             and abs(off[0]) <= 0.01 and abs(off[1]) <= 0.01), None)
 
     order_errors = 0
     total_order_error = 0.0
-    if anchor_pos is not None:
+    if anchor_index is not None:
+        anchor_pos = placements[anchor_index]
         ax, ay = anchor_pos["x"], anchor_pos["y"]
-        for sid, order, off, placement in zip(sids, orders, offsets, placements):
-            if placement is None or order <= 0:
+        for i, (off, placement) in enumerate(zip(offsets, placements)):
+            if placement is None or i == anchor_index:
                 continue
             if placement["layer"] != dominant_layer:
                 continue
@@ -88,15 +110,23 @@ def _cluster_quality(layout, cluster):
             label += " → unassigned"
         shortcut_labels.append(label)
 
+    # Report layer counts as member counts per layer.
+    layer_counts_report = {layer: len(sid_set) for layer, sid_set in layer_member_sets.items()}
     return {
         "name": cluster.get("name"),
+        "category": cluster.get("category"),
         "weight": float(cluster.get("weight", 1.0)),
         "dominant_layer": dominant_layer,
-        "layer_counts": dict(layer_counts),
+        "layer_counts": layer_counts_report,
         "split": split,
         "fully_together": fully_together,
         "order_errors": order_errors,
         "total_order_error": total_order_error,
+        "relative_layout_required": relative_required,
+        "relative_layout_pass": bool(
+            fully_together and order_errors == 0
+            and any(abs(dx) > 0.01 or abs(dy) > 0.01 for dx, dy in offsets)
+        ),
         "shortcuts": shortcut_labels,
     }
 

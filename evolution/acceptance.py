@@ -7,6 +7,8 @@ Three acceptance tiers:
 
 This module intentionally does not claim export success.
 """
+import math
+from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple
 
 from core import Layout
@@ -15,6 +17,126 @@ from core import Layout
 FAKE_SCROLL_KEYS = {"ScrollUp", "ScrollDown"}
 MOUSE_BUTTON_KEYS = {"MB1", "MB2", "MB3", "MB4", "MB5"}
 UNCOMFORTABLE_SCROLL_X = {7.0, 8.0}
+REQUIRED_WINDOWS_SHORTCUTS = ("Win+H", "Win+Tab", "Alt+Tab", "Win+Alt+Space")
+
+
+def _required_relative_layout_report(layout: Layout) -> Dict:
+    """Check each semantic group with declared offsets against its layout."""
+    rows = []
+    failures = []
+    for cluster in layout.semantic_clusters:
+        members = list(cluster.get("members", []))
+        offsets = [(float(m.get("dx", 0.0)), float(m.get("dy", 0.0))) for m in members]
+        required = any(abs(dx) > 0.01 or abs(dy) > 0.01 for dx, dy in offsets)
+        if not required:
+            continue
+
+        sids = [int(m.get("sid", -1)) for m in members]
+        positions_by_sid = {sid: [] for sid in sids}
+        for idx, sid in enumerate(layout.genome):
+            sid = int(sid)
+            if sid in positions_by_sid:
+                pos = layout.positions[idx]
+                positions_by_sid[sid].append((int(pos.layer), float(pos.x), float(pos.y)))
+
+        layer_member_sets = defaultdict(set)
+        for sid, places in positions_by_sid.items():
+            for layer, _, _ in places:
+                layer_member_sets[layer].add(sid)
+        full_layers = [layer for layer, found in layer_member_sets.items() if len(found) == len(sids)]
+        if full_layers:
+            dominant_layer = max(full_layers, key=lambda layer: len(layer_member_sets[layer]))
+        elif layer_member_sets:
+            dominant_layer = max(layer_member_sets, key=lambda layer: len(layer_member_sets[layer]))
+        else:
+            dominant_layer = None
+
+        placements = []
+        for sid in sids:
+            places = positions_by_sid[sid]
+            dominant = next((p for p in places if p[0] == dominant_layer), None)
+            placements.append(dominant if dominant is not None else (places[0] if places else None))
+
+        anchor_idx = next((i for i, (offset, placement) in enumerate(zip(offsets, placements))
+                           if placement is not None and placement[0] == dominant_layer
+                           and abs(offset[0]) <= 0.01 and abs(offset[1]) <= 0.01), None)
+        errors = []
+        if anchor_idx is not None:
+            anchor = placements[anchor_idx]
+            for i, (offset, placement) in enumerate(zip(offsets, placements)):
+                if i == anchor_idx or placement is None or placement[0] != dominant_layer:
+                    continue
+                distance = math.hypot(placement[1] - (anchor[1] + offset[0]),
+                                      placement[2] - (anchor[2] + offset[1]))
+                if distance > 0.5:
+                    errors.append({"sid": sids[i], "distance": round(distance, 3)})
+        passed = bool(full_layers) and anchor_idx is not None and not errors
+        row = {"name": cluster.get("name"), "pass": passed,
+               "fully_together": bool(full_layers), "order_errors": errors}
+        rows.append(row)
+        if not passed:
+            failures.append(row)
+
+    return {"acceptance_pass": not failures, "required_count": len(rows),
+            "passed_count": len(rows) - len(failures), "failures": failures,
+            "clusters": rows}
+
+
+def _l0_toggle_hold_report(layout: Layout) -> Dict:
+    """Require L0 layer access to use holds; place toggles in deeper layers."""
+    holds = set()
+    toggles = []
+    for idx, sid in enumerate(layout.genome):
+        pos = layout.positions[idx]
+        if pos.layer != 0 or pos.is_frozen:
+            continue
+        sid = int(sid)
+        if sid < 0 or sid >= layout.n_shortcuts:
+            continue
+        shortcut = layout.shortcuts[sid]
+        if not shortcut.is_layer_access or shortcut.access_target_layer < 0:
+            continue
+        if shortcut.access_is_momentary and pos.is_thumb:
+            holds.add(int(shortcut.access_target_layer))
+        elif not shortcut.access_is_momentary:
+            toggles.append({"idx": int(idx), "keys": shortcut.keys,
+                            "target_layer": int(shortcut.access_target_layer)})
+    without_hold = [row for row in toggles if row["target_layer"] not in holds]
+    return {"preference_satisfied": not without_hold,
+            "direct_l0_thumb_hold_targets": sorted(holds),
+            "direct_l0_toggles": toggles,
+            "toggles_without_direct_hold": without_hold}
+
+
+def _nested_hold_side_report(layout: Layout) -> Dict:
+    """Check that each reachable ordinary hold continuation can alternate thumbs."""
+    incoming = [set() for _ in range(32)]
+    outgoing = []
+    for idx, pos, shortcut in _assigned_shortcuts(layout):
+        if (not shortcut.is_layer_access or not shortcut.access_is_momentary
+                or pos.is_frozen or not pos.is_thumb):
+            continue
+        text = f"{shortcut.keys} {shortcut.action} {shortcut.base_key}".lower()
+        if "scroll" in text:
+            continue
+        source, target = int(pos.layer), int(shortcut.access_target_layer)
+        if not (0 <= source < 32 and 0 <= target < 32) or source == target:
+            continue
+        side = 0 if pos.hand == "left" else 1
+        incoming[target].add(side)
+        outgoing.append({"idx": int(idx), "keys": shortcut.keys, "source_layer": source,
+                         "target_layer": target, "side": side})
+
+    failures = []
+    for edge in outgoing:
+        sides = incoming[edge["source_layer"]]
+        if sides and (1 - edge["side"]) not in sides:
+            failures.append({**edge, "incoming_thumb_sides": sorted(sides)})
+    return {"preference_satisfied": not failures, "review_only": True, "failures": failures,
+            "nested_hold_edges_checked": len(failures) + sum(
+                1 for edge in outgoing if incoming[edge["source_layer"]]
+                and (1 - edge["side"]) in incoming[edge["source_layer"]]
+            )}
 
 
 def _assigned_shortcuts(layout: Layout):
@@ -111,6 +233,62 @@ def _reachable_layers_from_access_rows(access_rows: List[Dict]) -> Set[int]:
         if not changed:
             break
     return reachable_layers
+
+
+def _windows_shortcut_report(layout: Layout) -> Dict:
+    """Report requested bindings and shortest live-genome access paths."""
+    access_rows = _layer_access_assignments(layout)
+    paths = {0: []}
+    frontier = [0]
+    for source in frontier:
+        for row in access_rows:
+            target = row["target_layer"]
+            if row["source_layer"] == source and 0 <= target < 32 and target not in paths:
+                paths[target] = paths[source] + [row]
+                frontier.append(target)
+    placements = {}
+    for keys in REQUIRED_WINDOWS_SHORTCUTS:
+        rows = _find_assigned_keys(layout, keys)
+        for row in rows:
+            row["reachable"] = row["layer"] in paths
+            row["access_path"] = paths.get(row["layer"])
+        placements[keys] = rows
+    missing = [keys for keys, rows in placements.items() if not any(row["reachable"] for row in rows)]
+    return {"acceptance_pass": not missing, "missing_or_unreachable": missing, "placements": placements}
+
+
+def _always_available_alt_report(layout: Layout) -> Dict:
+    """Require a dedicated, unmodified Alt key directly on L0."""
+    placements = []
+    for idx, sid in enumerate(layout.genome):
+        if sid < 0 or sid >= layout.n_shortcuts:
+            continue
+        shortcut = layout.shortcuts[int(sid)]
+        if shortcut.base_key == "LeftAlt" and not shortcut.modifiers:
+            pos = layout.positions[idx]
+            placements.append({"layer": int(pos.layer), "x": float(pos.x), "y": float(pos.y)})
+    return {"acceptance_pass": any(row["layer"] == 0 for row in placements),
+            "placements": placements}
+
+
+def _norwegian_altgr_report(layout: Layout) -> Dict:
+    """Require reachable RightAlt (AltGr), kept off L0 beside shortcut LeftAlt."""
+    reachable = _reachable_layers_from_access_rows(_layer_access_assignments(layout))
+    placements = []
+    for idx, sid in enumerate(layout.genome):
+        if sid < 0 or sid >= layout.n_shortcuts:
+            continue
+        shortcut = layout.shortcuts[int(sid)]
+        if shortcut.base_key == "RightAlt" and not shortcut.modifiers:
+            pos = layout.positions[idx]
+            placements.append({"layer": int(pos.layer), "x": float(pos.x), "y": float(pos.y),
+                               "reachable": int(pos.layer) in reachable})
+    l0_placements = [row for row in placements if row["layer"] == 0]
+    return {"acceptance_pass": any(row["reachable"] for row in placements) and not l0_placements,
+            "reachable": any(row["reachable"] for row in placements),
+            "right_alt_off_l0": not l0_placements,
+            "l0_placements": l0_placements,
+            "placements": placements}
 
 
 def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
@@ -352,8 +530,17 @@ def _no_same_layer_duplicates_report(layout: Layout) -> Dict:
     natural_layer = dynamic_mouse.get("mouse_layer")
 
     counts: Dict[Tuple[int, int], List[Dict]] = {}
+    scroll_access_counts: Dict[int, List[Dict]] = {}
     for idx, pos, shortcut in _assigned_shortcuts(layout):
         if pos.layer == 7:
+            continue
+        is_scroll_access = shortcut.is_layer_access and "scroll" in (
+            f"{shortcut.keys} {shortcut.action} {shortcut.base_key}"
+        ).lower()
+        if is_scroll_access:
+            scroll_access_counts.setdefault(int(pos.layer), []).append({
+                "idx": int(idx), "keys": shortcut.keys, "hand": pos.hand,
+            })
             continue
         key = (int(pos.layer), int(shortcut.sid))
         counts.setdefault(key, []).append({
@@ -363,6 +550,12 @@ def _no_same_layer_duplicates_report(layout: Layout) -> Dict:
         })
 
     offenders = []
+    for layer, rows in scroll_access_counts.items():
+        if len(rows) > 1:
+            offenders.append({
+                "layer": layer, "sid": "scroll_mode_family", "keys": "Scroll mode access",
+                "count": len(rows), "positions": rows,
+            })
     for (layer, sid), rows in counts.items():
         if len(rows) <= 1:
             continue
@@ -707,8 +900,17 @@ def build_acceptance_report(
     layer7_access = _layer7_access_report(layout)
     transparent = _transparent_keys_report(layout)
     no_same_layer_dup = _no_same_layer_duplicates_report(layout)
+    windows_shortcuts = _windows_shortcut_report(layout)
+    always_available_alt = _always_available_alt_report(layout)
+    norwegian_altgr = _norwegian_altgr_report(layout)
+    relative_layouts = _required_relative_layout_report(layout)
+    l0_toggle_hold = _l0_toggle_hold_report(layout)
 
     optimizer_side_checks = {
+        "requested_windows_shortcuts_reachable": windows_shortcuts["acceptance_pass"],
+        "left_alt_directly_available_on_l0": always_available_alt["acceptance_pass"],
+        "norwegian_altgr_reachable": norwegian_altgr["reachable"],
+        "right_alt_off_l0": norwegian_altgr["right_alt_off_l0"],
         "norwegian_completion_cluster": bool(completion_cluster_report.get("acceptance_pass")),
         "unsupported_duplicates_near_zero": len(unsupported) == 0,
         "no_fake_scroll_keypresses": len(fake_scroll) == 0,
@@ -719,8 +921,9 @@ def build_acceptance_report(
         "layer7_momentary_and_toggle_access": bool(layer7_access.get("acceptance_pass")),
         "no_mutable_bluetooth_or_output_keys": len(mutable_bt) == 0,
         "win_s_present": len(win_s) > 0,
-        "mutable_raw_arrows_ok": bool(arrow_report.get("acceptance_pass")),
         "no_same_layer_duplicates": bool(no_same_layer_dup.get("acceptance_pass")),
+        "required_relative_layouts": bool(relative_layouts["acceptance_pass"]),
+        "l0_toggles_have_direct_hold_alternative": l0_toggle_hold["preference_satisfied"],
     }
     # Export check is always False during training; set externally after export.
     export_checks = {
@@ -759,6 +962,8 @@ def build_acceptance_report(
         numeric_distances["l7_toggle_access_count"] = len(layer7_access.get("reachable_toggle_access", []))
     if not optimizer_side_checks["no_same_layer_duplicates"]:
         numeric_distances["same_layer_duplicate_offenders"] = len(no_same_layer_dup.get("offenders", []))
+    if not optimizer_side_checks["required_relative_layouts"]:
+        numeric_distances["required_relative_layout_failures"] = len(relative_layouts["failures"])
 
     failure_guidance = list(dynamic_mouse.get("failure_guidance", []))
     if not optimizer_side_checks["no_mouse_buttons_on_right_thumb_area_global"]:
@@ -770,7 +975,13 @@ def build_acceptance_report(
             "Remove same-layer duplicate shortcuts (only the dynamic mouse layer's "
             f"MB1-MB5 may have one left+one right copy): {preview}"
         )
-
+    if not optimizer_side_checks["required_relative_layouts"]:
+        names = ", ".join(str(row["name"]) for row in relative_layouts["failures"])
+        failure_guidance.append(f"Restore declared relative placement for semantic groups: {names}.")
+    if not optimizer_side_checks["right_alt_off_l0"]:
+        failure_guidance.append("Keep LeftAlt on L0 for shortcuts; place RightAlt/AltGr on a reachable deeper layer.")
+    if not optimizer_side_checks["l0_toggles_have_direct_hold_alternative"]:
+        failure_guidance.append("Give every direct L0 layer toggle a direct thumb hold alternative; place toggles in deeper layers.")
     return {
         "checks": checks,
         "optimizer_side_checks": optimizer_side_checks,
@@ -785,6 +996,9 @@ def build_acceptance_report(
         "numeric_distances": numeric_distances,
         "failure_guidance": failure_guidance,
         "details": {
+            "requested_windows_shortcuts": windows_shortcuts,
+            "always_available_left_alt": always_available_alt,
+            "norwegian_altgr": norwegian_altgr,
             "win_s_positions": win_s,
             "fake_scroll_assignments": fake_scroll,
             "scroll_mode_access": scroll_access,
@@ -795,5 +1009,8 @@ def build_acceptance_report(
             "mutable_bluetooth_or_output_assignments": mutable_bt,
             "transparent_keys": transparent,
             "no_same_layer_duplicates": no_same_layer_dup,
+            "required_relative_layouts": relative_layouts,
+            "l0_toggle_hold_alternative": l0_toggle_hold,
+            "nested_hold_thumb_side_review": _nested_hold_side_report(layout),
         },
     }

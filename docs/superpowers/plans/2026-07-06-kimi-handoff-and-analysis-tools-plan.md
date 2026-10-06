@@ -529,8 +529,8 @@ CLI: `python3 tools/arrow_cluster_report.py <checkpoint_path>`
 
 Behavior:
 1. Run `evolution.arrow_cluster.analyze_arrows` on the layout.
-2. Report non-L7 arrow placements, shape compliance, and scattered penalty contributors.
-3. Print acceptance `mutable_raw_arrows_ok` status.
+2. Report non-L7 raw-arrow placements as diagnostic inventory only.
+3. Do not report an arrow-shape rule, score, or acceptance status.
 
 - [ ] **Step 2: Implement `tools/completion_cluster_report.py`**
 

@@ -8,7 +8,7 @@ evolution:
   l7_access_prob: 0.03
   random_assign_prob: 0.08
   bulk_assign_prob: 0.04
-  optional_arrow_drop_prob: 0.04
+  optional_arrow_drop_prob: 0.0
   cluster_app_prob: 0.20
   effort_swap_prob: 0.06
   smart_duplicate_prob: 0.20
@@ -42,13 +42,17 @@ fitness:
     finger_balance: 0.8
     same_finger: 2.0
     violations: 120.0
-    workflow_coherence: 20.0
+    workflow_coherence: 60.0
     trackball_proximity: 5.0
     app_coherence: 5.0
     familiarity: 6.0
     layer_similarity: 4.0
     everything_layer: 4.0
   shortcut_importance_overrides:
+    Win+H: 6.0
+    Win+Tab: 6.0
+    Alt+Tab: 10.0  # preserve the corpus's existing constant-use importance
+    Win+Alt+Space: 6.0  # Command Palette must survive missing_important selection
     Win+S: 12.0
     LeftArrow: 4.0
     RightArrow: 4.0
@@ -65,8 +69,35 @@ fitness:
     # Keep at 10.0 (already set by app data) — optimizer needs to find it a home-row slot
     # Scroll: no L10 hardcode — kernel tracks scroll_right_momentary dynamically by placement layer.
     # Effort penalty (coeff 15000) pushes whichever scroll key lands on the mouse layer to eff=0.
+  # Semantic cluster same-layer pressure. Higher values pull cluster members onto one layer more
+  # strongly. Tuned against the violations IQR scale factor; start near 200 and raise cautiously.
+  semantic_cluster_multiplier: 200.0
+  # Pair-level boost applied after size/critical discounts in the kernel. This keeps the staged
+  # multiplier values readable (hundreds to low millions) while the effective pressure
+  # (multiplier * pair_boost) reaches ~1e10 at peak.
+  semantic_cluster_pair_boost: 50000.0
+  # Direct objective deltas bypass violation normalization; calibration based on
+  # the 30k checkpoint where normalized violations were ~80k and these checks
+  # were effectively invisible after a 323B scale factor.
+  semantic_contract_penalty: 2000.0
+  semantic_position_penalty: 120.0
+  sparse_layer_base_penalty: 0.0
+  sparse_layer_gap_penalty: 0.0
+  right_alt_l0_penalty: 5000.0
+  # Start with enough pressure to move ordered groups; no zero-pressure warmup.
+  semantic_cluster_multiplier_schedule:
+    - [0, 5000.0]
+    - [5000, 5000.0]
+    - [10000, 20000.0]
+    - [15000, 100000.0]
   missing_important_threshold: 6.0
   toggle_effort_multiplier: 4.0
+  layer_access_thumb:
+    thumb_bonus: 0.8
+    non_thumb_penalty: 1.0
+    non_thumb_base: 2.0
+    same_side_penalty: 1.0
+    opposite_side_reward: 0.7
   violation_sub_weights:
     duplicate: 35.0
     l0_displacement: 50.0
@@ -74,10 +105,10 @@ fitness:
     cross_layer_duplicate: 40000.0
     group_split: 2000000.0
     thumb_occupancy: 30000.0
-    arrow_order: 10000.0
+    arrow_order: 0.0
     hand_bias: 25000.0
     mouse_layer_access: 5000000.0
-    arrow_scattered: 50000.0
+    arrow_scattered: 0.0
     mouse_scattered: 500000.0
     layer7_access: 50000.0
     duplicate_value_gap: 45000.0
@@ -92,6 +123,9 @@ fitness:
     mouse_hold_position_conflict: 150000000000.0
     mouse_layer_depth_penalty: 150000000000.0
     same_layer_duplicate: 200000.0
+    # The violations objective is divided by a ~323B IQR scale; use a large
+    # sub-weight so opposite-thumb rewards and same-side penalties remain visible.
+    same_side_hold_flow: 5000000000.0
   hard_constraints:
     - missing_important
     - layer7_access
@@ -99,6 +133,7 @@ fitness:
     - layer_reachability
     - toggle_back_to_l0
     - same_layer_duplicate
+    - layer_access_thumb_preference
 output:
   checkpoint_interval: 500
   verbose: true

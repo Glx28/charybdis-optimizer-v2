@@ -20,7 +20,16 @@ class FitnessEvaluator:
                  missing_important_threshold: float = 6.0,
                  hard_constraints: Optional[List[str]] = None,
                  toggle_effort_multiplier: float = 2.5,
-                 require_cuda: bool = False):
+                 layer_access_thumb_params: Optional[Dict] = None,
+                 require_cuda: bool = False,
+                 use_cuda: Optional[bool] = None,
+                 semantic_cluster_multiplier: float = None,
+                 semantic_cluster_pair_boost: float = None,
+                 semantic_contract_penalty: float = None,
+                 semantic_position_penalty: float = None,
+                 sparse_layer_base_penalty: float = None,
+                 sparse_layer_gap_penalty: float = None,
+                 right_alt_l0_penalty: float = None):
         self.weights = dict(DEFAULT_CONFIG["fitness"]["weights"]) if weights is None else dict(weights)
         self.reference_layout = reference_layout
         self.scale_factors = scale_factors if scale_factors is not None else np.ones(3, dtype=np.float32)
@@ -29,7 +38,39 @@ class FitnessEvaluator:
         self.hard_constraints = hard_constraints or []
         self.toggle_effort_multiplier = toggle_effort_multiplier
         self.require_cuda = require_cuda
-        self.layer_access_thumb_params = DEFAULT_CONFIG["fitness"].get("layer_access_thumb", {})
+        self.use_cuda = use_cuda
+        self.layer_access_thumb_params = (
+            DEFAULT_CONFIG["fitness"].get("layer_access_thumb", {})
+            if layer_access_thumb_params is None else dict(layer_access_thumb_params)
+        )
+        self.semantic_cluster_multiplier = (
+            DEFAULT_CONFIG["fitness"].get("semantic_cluster_multiplier", 200.0)
+            if semantic_cluster_multiplier is None else float(semantic_cluster_multiplier)
+        )
+        self.semantic_cluster_pair_boost = (
+            DEFAULT_CONFIG["fitness"].get("semantic_cluster_pair_boost", 1.0)
+            if semantic_cluster_pair_boost is None else float(semantic_cluster_pair_boost)
+        )
+        self.semantic_contract_penalty = float(
+            DEFAULT_CONFIG["fitness"].get("semantic_contract_penalty", 0.0)
+            if semantic_contract_penalty is None else semantic_contract_penalty
+        )
+        self.semantic_position_penalty = float(
+            DEFAULT_CONFIG["fitness"].get("semantic_position_penalty", 0.0)
+            if semantic_position_penalty is None else semantic_position_penalty
+        )
+        self.sparse_layer_base_penalty = float(
+            DEFAULT_CONFIG["fitness"].get("sparse_layer_base_penalty", 0.0)
+            if sparse_layer_base_penalty is None else sparse_layer_base_penalty
+        )
+        self.sparse_layer_gap_penalty = float(
+            DEFAULT_CONFIG["fitness"].get("sparse_layer_gap_penalty", 0.0)
+            if sparse_layer_gap_penalty is None else sparse_layer_gap_penalty
+        )
+        self.right_alt_l0_penalty = float(
+            DEFAULT_CONFIG["fitness"].get("right_alt_l0_penalty", 5000.0)
+            if right_alt_l0_penalty is None else right_alt_l0_penalty
+        )
 
         if reference_layout is not None:
             self.model = FitnessModel(
@@ -42,10 +83,27 @@ class FitnessEvaluator:
                 hard_constraints=self.hard_constraints,
                 toggle_effort_multiplier=toggle_effort_multiplier,
                 require_cuda=require_cuda,
+                use_cuda=use_cuda,
                 layer_access_thumb_params=self.layer_access_thumb_params,
+                semantic_cluster_multiplier=self.semantic_cluster_multiplier,
+                semantic_cluster_pair_boost=self.semantic_cluster_pair_boost,
+                semantic_contract_penalty=self.semantic_contract_penalty,
+                semantic_position_penalty=self.semantic_position_penalty,
+                sparse_layer_base_penalty=self.sparse_layer_base_penalty,
+                sparse_layer_gap_penalty=self.sparse_layer_gap_penalty,
+                right_alt_l0_penalty=self.right_alt_l0_penalty,
             )
         else:
             self.model = None
+
+    def set_semantic_cluster_multiplier(self, multiplier: float):
+        """Update the semantic-cluster multiplier in the compiled model.
+
+        Supports staged schedules that ramp cluster pressure during training.
+        """
+        self.semantic_cluster_multiplier = float(multiplier)
+        if self.model is not None:
+            self.model.set_semantic_cluster_multiplier(self.semantic_cluster_multiplier)
 
     def _factor_scores_from_objectives(self, objectives: np.ndarray) -> Dict[str, float]:
         """Approximate raw factor scores from normalized objectives.
@@ -86,7 +144,14 @@ class FitnessEvaluator:
                 hard_constraints=self.hard_constraints,
                 toggle_effort_multiplier=self.toggle_effort_multiplier,
                 require_cuda=self.require_cuda,
+                use_cuda=self.use_cuda,
                 layer_access_thumb_params=self.layer_access_thumb_params,
+                semantic_cluster_multiplier=self.semantic_cluster_multiplier,
+                semantic_cluster_pair_boost=self.semantic_cluster_pair_boost,
+                semantic_contract_penalty=self.semantic_contract_penalty,
+                semantic_position_penalty=self.semantic_position_penalty,
+                sparse_layer_base_penalty=self.sparse_layer_base_penalty,
+                sparse_layer_gap_penalty=self.sparse_layer_gap_penalty,
             )
             objectives, constraints = model.evaluate(layout.genome)
         else:

@@ -1,8 +1,4 @@
-"""Unit and parity tests for thumb-aware layer access scoring.
-
-Covers both behavioral directionality of the new thumb-preference terms
-and CUDA/Numba numerical parity on real and synthetic layouts.
-"""
+"""Unit and parity tests for thumb-aware layer access scoring."""
 import os
 import sys
 import unittest
@@ -139,17 +135,6 @@ class TestLayerAccessThumb(unittest.TestCase):
         raw_cuda, raw_numba = self._isolated_raw_score("layer_access_thumb_preference", weight=1.0)
         np.testing.assert_allclose(raw_cuda, raw_numba, rtol=1e-4, atol=1e-3)
 
-    def test_same_side_hold_flow_raw_score_parity(self):
-        try:
-            from fitness.cuda_kernel import cuda_available
-        except Exception:
-            self.skipTest("CUDA kernel not importable")
-        if not cuda_available():
-            self.skipTest("CUDA not available")
-
-        raw_cuda, raw_numba = self._isolated_raw_score("same_side_hold_flow", weight=1.0)
-        np.testing.assert_allclose(raw_cuda, raw_numba, rtol=1e-4, atol=1e-3)
-
     def test_layer_access_thumb_preference(self):
         positions, shortcuts, layer_to_indices, frozen_mask = self._make_minimal_layout()
 
@@ -167,21 +152,39 @@ class TestLayerAccessThumb(unittest.TestCase):
         score_bad = ev.evaluate(layout_bad).total_score
         self.assertGreater(score_bad, score_good, "non-thumb layer access should score worse")
 
-    def test_same_side_hold_flow(self):
+    def test_nested_momentary_holds_score_opposite_thumb_sides_better(self):
         positions, shortcuts, layer_to_indices, frozen_mask = self._make_minimal_layout()
+        base = Layout(np.full(6, -1, dtype=np.int32), positions, shortcuts, frozen_mask,
+                      layer_to_indices)
+        weights = {key: 0.0 for key in DEFAULT_CONFIG["fitness"]["weights"]}
+        weights["violations"] = 1.0
+        violations = {key: 0.0 for key in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
+        violations["same_side_hold_flow"] = 1.0
+        genomes = np.asarray([
+            [0, -1, -1, 1, -1, -1],  # L0 left -> L1 left: same-side penalty
+            [0, -1, -1, -1, 1, -1],  # L0 left -> L1 right: opposite-side reward
+        ], dtype=np.int32)
 
-        # L0 left thumb -> L1, L1 left thumb -> L2 (same side, bad)
-        genome_same = np.array([0, -1, -1, 1, -1, -1], dtype=np.int32)
-        # L0 left thumb -> L1, L1 right thumb -> L2 (opposite, good)
-        genome_opp = np.array([0, -1, -1, -1, 1, -1], dtype=np.int32)
+        evaluator = FitnessEvaluator(
+            weights=weights, reference_layout=base, scale_factors=np.ones(3, dtype=np.float32),
+            violation_weights=violations, hard_constraints=["same_side_hold_flow"],
+            layer_access_thumb_params=DEFAULT_CONFIG["fitness"]["layer_access_thumb"],
+            use_cuda=False,
+        )
+        cpu_obj, cpu_constraints = evaluator.evaluate_batch(genomes)
+        self.assertGreater(cpu_constraints[0, 0], 0.0)
+        self.assertLess(cpu_constraints[1, 0], 0.0)
 
-        layout_same = Layout(genome_same, positions, shortcuts, frozen_mask, layer_to_indices)
-        layout_opp = Layout(genome_opp, positions, shortcuts, frozen_mask, layer_to_indices)
-
-        ev = FitnessEvaluator()
-        score_same = ev.evaluate(layout_same).total_score
-        score_opp = ev.evaluate(layout_opp).total_score
-        self.assertGreater(score_same, score_opp, "same-side hold chain should score worse")
+        try:
+            from fitness.cuda_kernel import cuda_available
+        except Exception:
+            self.skipTest("CUDA kernel not importable")
+        if not cuda_available():
+            self.skipTest("CUDA not available")
+        evaluator.model._use_cuda = True
+        cuda_obj, cuda_constraints = evaluator.evaluate_batch(genomes)
+        np.testing.assert_allclose(cuda_obj, cpu_obj, rtol=1e-5, atol=1e-4)
+        np.testing.assert_array_equal(cuda_constraints, cpu_constraints)
 
 
 if __name__ == "__main__":

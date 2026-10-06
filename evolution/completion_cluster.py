@@ -23,7 +23,7 @@ RAW_COMPLETION_FAMILY = {
     "EQUALS AND PLUS": 2,
     "GRAVE ACCENT AND TILDE": 3,
     "RIGHT BRACE": 4,
-    "BACKSLASH AND PIPE": 5,
+    "NON-US BACKSLASH AND PIPE": 5,
 }
 
 _ORDER_TO_DISPLAY_NAME = {
@@ -31,7 +31,7 @@ _ORDER_TO_DISPLAY_NAME = {
     2: "Equals and Plus",
     3: "Grave Accent and Tilde",
     4: "Right Brace",
-    5: "Backslash and Pipe",
+    5: "Non-US Backslash and Pipe",
 }
 
 
