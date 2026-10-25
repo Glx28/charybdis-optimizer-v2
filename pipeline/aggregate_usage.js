@@ -13,6 +13,13 @@ const EVENTS_LOG_CANDIDATES = [
 const USAGE_LOG = USAGE_LOG_CANDIDATES.find((p) => fs.existsSync(p)) || USAGE_LOG_CANDIDATES[0];
 const EVENTS_LOG = EVENTS_LOG_CANDIDATES.find((p) => fs.existsSync(p)) || EVENTS_LOG_CANDIDATES[0];
 const SCORES_PATH = path.join(BUILD, "app_shortcut_scores.json");
+const DEFAULT_USAGE_STATS_PATH = path.join(BUILD, "usage_stats.json");
+
+function writeUsageStats(outputPath, value) {
+  const resolved = path.resolve(outputPath);
+  fs.mkdirSync(path.dirname(resolved), { recursive: true });
+  fs.writeFileSync(resolved, JSON.stringify(value, null, 2), "utf-8");
+}
 
 /**
  * Normalize AHK key notation to human-readable format matching app_shortcut_scores.json.
@@ -42,10 +49,23 @@ function normalizeKeys(ahk) {
   return [...mods, rest].join("+");
 }
 
-function run(config) {
+function run(config = {}) {
+  config = config || {};
+  const explicitUsageLog = config.usageLogPath || process.env.CHARYBDIS_USAGE_LOG;
+  const usageLog = explicitUsageLog || USAGE_LOG;
+  const outputPath = config.outputPath || process.env.CHARYBDIS_USAGE_STATS_OUT || DEFAULT_USAGE_STATS_PATH;
+  const usageSince = config.since || process.env.CHARYBDIS_USAGE_SINCE || null;
   const errors = [], warnings = [];
 
-  if (!fs.existsSync(USAGE_LOG)) {
+  if (!fs.existsSync(usageLog)) {
+    if (explicitUsageLog) {
+      return {
+        success: false,
+        output: { summary: `Explicit usage log not found: ${usageLog}` },
+        errors: [`Explicit usage log not found: ${usageLog}`],
+        warnings,
+      };
+    }
     const empty = {
       timestamp: new Date().toISOString(),
       total_events: 0, period_days: 0,
@@ -55,13 +75,32 @@ function run(config) {
       raw_completion_keys: {}, raw_completion_total: 0,
       note: "No usage data yet. Start charybdis_helpers.ahk to begin collecting.",
     };
-    writeBuild("usage_stats.json", empty);
+    writeUsageStats(outputPath, empty);
     return { success: true, output: { summary: "No usage data (shortcut_usage.jsonl not found)" }, errors, warnings };
   }
 
-  let raw = fs.readFileSync(USAGE_LOG, "utf-8");
+  let raw = fs.readFileSync(usageLog, "utf-8");
   if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
-  const lines = raw.split(/\r?\n/).filter(Boolean);
+  let lines = raw.split(/\r?\n/).filter(Boolean);
+  if (usageSince) {
+    const sinceMs = Date.parse(usageSince);
+    if (!Number.isFinite(sinceMs)) {
+      return {
+        success: false,
+        output: { summary: `Invalid usage cutoff timestamp: ${usageSince}` },
+        errors: [`Invalid usage cutoff timestamp: ${usageSince}`],
+        warnings,
+      };
+    }
+    lines = lines.filter((line) => {
+      try {
+        const ts = Date.parse(JSON.parse(line).ts);
+        return Number.isFinite(ts) && ts >= sinceMs;
+      } catch {
+        return false;
+      }
+    });
+  }
   const shortcuts = {};
   const sequences = {};
   const byApp = {};
@@ -727,6 +766,9 @@ function run(config) {
     timestamp: new Date().toISOString(),
     total_events: lines.length,
     period_days: periodDays,
+    usage_since_ts: usageSince,
+    first_event_ts: earliest,
+    last_event_ts: latest,
     shortcuts,
     sequences,
     shortcut_sequences: shortcutSequences,
@@ -768,7 +810,7 @@ function run(config) {
     shortcut_confidence: shortcutConfidence,
   };
 
-  writeBuild("usage_stats.json", output);
+  writeUsageStats(outputPath, output);
 
   const nBlind = blindSpots.length;
   return {
@@ -921,4 +963,5 @@ module.exports = { run, normalizeKeys };
 if (require.main === module) {
   const result = run({});
   console.log("Usage aggregation:", result.output.summary);
+  if (!result.success) process.exitCode = 1;
 }

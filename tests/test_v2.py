@@ -4424,5 +4424,124 @@ class TestSemanticMutationNumba(unittest.TestCase):
         self.assertLess(abs(changed_numba - changed_py) / n, 0.25)
 
 
+class TestLayerUsagePreferences(unittest.TestCase):
+    def test_modifier_shortcuts_follow_confident_observed_layer_use(self):
+        from fitness.model import _build_layer_usage_preferences, _layer_usage_mismatch_batch
+
+        positions = (
+            Position(0, 0, 0.0, 0.0, "left", 1, 1.0),
+            Position(1, 2, 1.0, 0.0, "right", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+C", "Copy", "app", 8.0, modifiers=("Ctrl",)),
+            Shortcut(1, "Space", "Typing", "app", 5.0),
+        )
+        layout = Layout(
+            np.asarray([0, 1], dtype=np.int32), positions, shortcuts,
+            np.asarray([False, False]),
+            usage_data=UsageData(by_layer_shortcut={
+                "Ctrl+C": {"0": 8, "2": 2},
+                "Space": {"0": 100},
+            }),
+        )
+        preference_index, weights = _build_layer_usage_preferences(layout)
+        self.assertEqual(int(preference_index[0, 0]), 0)
+        self.assertEqual(int(preference_index[0, 2]), -1)
+        self.assertTrue(np.all(preference_index[1] == -1))
+        self.assertAlmostEqual(float(weights.sum()), 1.0)
+
+        scores = _layer_usage_mismatch_batch(
+            np.asarray([[0, 1], [1, 0]], dtype=np.int32),
+            np.asarray([0, 2], dtype=np.int32), preference_index, weights,
+        )
+        self.assertEqual(float(scores[0]), 0.0)
+        self.assertEqual(float(scores[1]), 1.0)
+
+    def test_l0_toggle_is_a_hard_model_constraint(self):
+        from fitness.model import FitnessModel
+
+        positions = (
+            Position(0, 0, 0.0, 0.0, "left", 0, 0.5, is_thumb=True),
+            Position(1, 0, 1.0, 0.0, "right", 0, 0.5, is_thumb=True),
+        )
+        shortcuts = (
+            Shortcut(0, "@access:L0->L1:toggle", "Toggle L1", "Layer Access", 10.0,
+                     is_layer_access=True, access_target_layer=1, access_is_momentary=False),
+            Shortcut(1, "@access:L0->L1:hold", "Hold L1", "Layer Access", 10.0,
+                     is_layer_access=True, access_target_layer=1, access_is_momentary=True),
+        )
+        layout = Layout(
+            np.asarray([0, -1], dtype=np.int32), positions, shortcuts,
+            np.asarray([False, False]),
+        )
+        fitness = DEFAULT_CONFIG["fitness"]
+        model = FitnessModel(
+            layout, weights=fitness["weights"],
+            violation_weights=fitness["violation_sub_weights"],
+            missing_important_threshold=fitness["missing_important_threshold"],
+            hard_constraints=["l0_toggle_access"], use_cuda=False,
+        )
+        _objectives, toggle_constraints = model.evaluate(layout.genome)
+        _objectives, hold_constraints = model.evaluate(np.asarray([-1, 1], dtype=np.int32))
+        self.assertEqual(model.n_constraints, 1)
+        self.assertEqual(float(toggle_constraints[0]), 1.0)
+        self.assertEqual(float(hold_constraints[0]), 0.0)
+
+    def test_mouse_session_shortcuts_are_rewarded_on_dynamic_mouse_layer_by_effort(self):
+        from fitness.model import _mouse_layer_shortcut_penalty_batch
+
+        # Five right-hand mouse buttons on L2, with L0 scroll and toggle access.
+        layers = np.asarray([2, 2, 2, 2, 2, 2, 2, 0, 0], dtype=np.int32)
+        x = np.asarray([0, 1, 2, 3, 4, 5, 6, 1, 2], dtype=np.float32)
+        effort = np.asarray([1, 1, 1, 1, 1, 0, 1, 1, 1], dtype=np.float32)
+        hand = np.asarray([1, 1, 1, 1, 1, 1, 1, 0, 0], dtype=np.int32)
+        thumb = np.asarray([False] * 8 + [True], dtype=np.bool_)
+        access_targets = np.asarray([-1, -1, -1, -1, -1, -1, 2, 2, 2], dtype=np.int32)
+        access_momentary = np.asarray([False] * 8 + [True], dtype=np.bool_)
+        is_mouse = np.asarray([True] * 5 + [False] * 4, dtype=np.bool_)
+        buttons = np.asarray([1, 2, 3, 4, 5, 0, 0, 0, 0], dtype=np.int32)
+        scroll = np.asarray([False] * 6 + [True, False, False], dtype=np.bool_)
+        preference = np.full((9, 32), -1, dtype=np.int32)
+        preference[5, :] = 0
+        weights = np.asarray([1.0], dtype=np.float32)
+        genomes = np.asarray([
+            [0, 1, 2, 3, 4, -1, 6, 7, 8],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        ], dtype=np.int32)
+        scores = _mouse_layer_shortcut_penalty_batch(
+            genomes, layers, x, effort, hand, thumb, access_targets,
+            access_momentary, is_mouse, buttons, scroll, preference, weights, 2.0,
+        )
+        self.assertGreater(float(scores[0]), float(scores[1]))
+        self.assertAlmostEqual(float(scores[0]), 1.0)
+        self.assertAlmostEqual(float(scores[1]), 0.0)
+
+    def test_right_alt_off_l0_is_a_hard_model_constraint(self):
+        from fitness.model import FitnessModel
+
+        positions = (
+            Position(0, 0, 0.0, 0.0, "left", 1, 1.0),
+            Position(1, 1, 1.0, 0.0, "right", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "RightAlt", "Right Alt / AltGr", "system", 8.0,
+                     base_key="RightAlt"),
+        )
+        layout = Layout(np.asarray([0, -1], dtype=np.int32), positions, shortcuts,
+                        np.asarray([False, False]))
+        fitness = DEFAULT_CONFIG["fitness"]
+        model = FitnessModel(
+            layout, weights=fitness["weights"],
+            violation_weights=fitness["violation_sub_weights"],
+            missing_important_threshold=fitness["missing_important_threshold"],
+            hard_constraints=["right_alt_off_l0"], use_cuda=False,
+        )
+        _objectives, l0_constraints = model.evaluate(layout.genome)
+        _objectives, deeper_constraints = model.evaluate(np.asarray([-1, 0], dtype=np.int32))
+        self.assertEqual(model.n_constraints, 1)
+        self.assertEqual(float(l0_constraints[0]), 1.0)
+        self.assertEqual(float(deeper_constraints[0]), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

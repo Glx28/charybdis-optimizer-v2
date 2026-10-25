@@ -78,6 +78,8 @@ DEFAULT_CONFIG = {
         "sparse_layer_base_penalty": 0.0,
         "sparse_layer_gap_penalty": 0.0,
         "right_alt_l0_penalty": 5000.0,
+        "layer_usage_preference_penalty": 200.0,
+        "mouse_layer_shortcut_penalty": 10000.0,
         "missing_important_threshold": 6.0,
         "toggle_effort_multiplier": 4.0,
         "violation_sub_weights": {
@@ -123,6 +125,8 @@ DEFAULT_CONFIG = {
             "toggle_back_to_l0",
             "same_layer_duplicate",
             "layer_access_thumb_preference",
+            "l0_toggle_access",
+            "right_alt_off_l0",
         ],
     },
     "output": {

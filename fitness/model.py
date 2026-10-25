@@ -134,6 +134,269 @@ def _right_alt_l0_penalty_batch(genomes, pos_layer, right_alt_sid, penalty):
     return scores
 
 
+@njit(cache=True)
+def _layer_usage_mismatch_batch(genomes, pos_layer, preference_index, preference_weights):
+    """Return weighted loss for moving logged modifier shortcuts off their dominant layer."""
+    batch_size, n_positions = genomes.shape
+    scores = np.zeros(batch_size, dtype=np.float32)
+    n_preferences = preference_weights.shape[0]
+    if n_preferences == 0:
+        return scores
+    covered = np.zeros((batch_size, n_preferences), dtype=np.bool_)
+    n_shortcuts = preference_index.shape[0]
+    for row in range(batch_size):
+        for idx in range(n_positions):
+            sid = int(genomes[row, idx])
+            layer = int(pos_layer[idx])
+            if sid < 0 or sid >= n_shortcuts or layer < 0 or layer >= 32:
+                continue
+            preference = int(preference_index[sid, layer])
+            if preference >= 0 and preference < n_preferences:
+                covered[row, preference] = True
+        for preference in range(n_preferences):
+            if not covered[row, preference]:
+                scores[row] += preference_weights[preference]
+    return scores
+
+
+@njit(cache=True)
+def _l0_toggle_access_violation_batch(genomes, pos_layer, access_targets, access_is_momentary):
+    """Return one hard-constraint violation when any toggle is assigned on L0."""
+    batch_size, n_positions = genomes.shape
+    scores = np.zeros((batch_size, 1), dtype=np.float32)
+    n_shortcuts = access_targets.shape[0]
+    for row in range(batch_size):
+        for idx in range(n_positions):
+            sid = int(genomes[row, idx])
+            if sid < 0 or sid >= n_shortcuts or int(pos_layer[idx]) != 0:
+                continue
+            if int(access_targets[sid]) >= 0 and not access_is_momentary[sid]:
+                scores[row, 0] = 1.0
+                break
+    return scores
+
+
+@njit(cache=True)
+def _right_alt_l0_violation_batch(genomes, pos_layer, right_alt_sid):
+    batch_size, n_positions = genomes.shape
+    scores = np.zeros((batch_size, 1), dtype=np.float32)
+    if right_alt_sid < 0:
+        return scores
+    for row in range(batch_size):
+        for idx in range(n_positions):
+            if int(genomes[row, idx]) == right_alt_sid and int(pos_layer[idx]) == 0:
+                scores[row, 0] = 1.0
+                break
+    return scores
+
+
+@njit(cache=True)
+def _mouse_layer_shortcut_penalty_batch(
+    genomes, pos_layer, pos_x, pos_effort, pos_hand, pos_is_thumb,
+    access_targets, access_is_momentary, is_mouse_button, mouse_button,
+    is_scroll_access, preference_index, preference_weights, max_effort,
+):
+    """Reward frequent mouse-session shortcuts on the contract-valid mouse layer."""
+    batch_size, n_positions = genomes.shape
+    scores = np.zeros(batch_size, dtype=np.float32)
+    n_shortcuts = preference_index.shape[0]
+    n_preferences = preference_weights.shape[0]
+    if n_preferences == 0:
+        return scores
+    for row in range(batch_size):
+        right_buttons = np.zeros((32, 6), dtype=np.int32)
+        left_buttons = np.zeros((32, 6), dtype=np.int32)
+        right_thumb_buttons = np.zeros((32, 6), dtype=np.int32)
+        scroll_right = np.zeros(32, dtype=np.bool_)
+        scroll_bad_x = np.zeros(32, dtype=np.bool_)
+        right_thumb_momentary = np.zeros(32, dtype=np.bool_)
+        toggle_reachable_edge = np.zeros((32, 32), dtype=np.bool_)
+        momentary_edge = np.zeros((32, 32), dtype=np.bool_)
+        for idx in range(n_positions):
+            sid = int(genomes[row, idx])
+            source = int(pos_layer[idx])
+            if sid < 0 or sid >= n_shortcuts or source < 0 or source >= 32:
+                continue
+            if is_mouse_button[sid]:
+                button = int(mouse_button[sid])
+                if 1 <= button <= 5 and source != 0 and source != 7:
+                    if pos_hand[idx] == 1:
+                        right_buttons[source, button] += 1
+                        if pos_is_thumb[idx]:
+                            right_thumb_buttons[source, button] += 1
+                    else:
+                        left_buttons[source, button] += 1
+            target = int(access_targets[sid])
+            if target < 0 or target >= 32:
+                continue
+            if is_scroll_access[sid] and source == target and source != 0 and source != 7 and pos_hand[idx] == 1 and not pos_is_thumb[idx]:
+                scroll_right[target] = True
+                if pos_x[idx] == 7.0 or pos_x[idx] == 8.0:
+                    scroll_bad_x[target] = True
+            if source != target and not is_scroll_access[sid]:
+                if access_is_momentary[sid]:
+                    momentary_edge[source, target] = True
+                    if pos_hand[idx] == 1 and pos_is_thumb[idx]:
+                        right_thumb_momentary[target] = True
+                else:
+                    toggle_reachable_edge[source, target] = True
+
+        reachable = np.zeros(32, dtype=np.bool_)
+        reachable[0] = True
+        for _ in range(32):
+            changed = False
+            for source in range(32):
+                if not reachable[source]:
+                    continue
+                for target in range(32):
+                    if (toggle_reachable_edge[source, target] or momentary_edge[source, target]) and not reachable[target]:
+                        reachable[target] = True
+                        changed = True
+            if not changed:
+                break
+        mouse_layer = -1
+        for layer in range(1, 32):
+            if layer == 7:
+                continue
+            valid = True
+            for button in range(1, 6):
+                if right_buttons[layer, button] == 0 or right_buttons[layer, button] > 1 or left_buttons[layer, button] > 1:
+                    valid = False
+                if right_thumb_buttons[layer, button] > 0:
+                    valid = False
+            toggle_accessible = False
+            momentary_accessible = False
+            for source in range(32):
+                if reachable[source]:
+                    if toggle_reachable_edge[source, layer]:
+                        toggle_accessible = True
+                    if momentary_edge[source, layer]:
+                        momentary_accessible = True
+            if (valid and scroll_right[layer] and not scroll_bad_x[layer]
+                    and not right_thumb_momentary[layer] and reachable[layer]
+                    and toggle_accessible and momentary_accessible):
+                mouse_layer = layer
+                break
+        if mouse_layer < 0:
+            scores[row] = 1.0
+            continue
+
+        best_effort = np.full(n_shortcuts, max_effort, dtype=np.float32)
+        present = np.zeros(n_shortcuts, dtype=np.bool_)
+        for idx in range(n_positions):
+            sid = int(genomes[row, idx])
+            if sid < 0 or sid >= n_shortcuts or int(pos_layer[idx]) != mouse_layer:
+                continue
+            if preference_index[sid, mouse_layer] >= 0:
+                present[sid] = True
+                effort = float(pos_effort[idx])
+                if effort < best_effort[sid]:
+                    best_effort[sid] = effort
+        for sid in range(n_shortcuts):
+            preference = int(preference_index[sid, mouse_layer])
+            if preference < 0 or preference >= n_preferences:
+                continue
+            weight = preference_weights[preference]
+            if not present[sid]:
+                scores[row] += weight
+            elif max_effort > 0.0:
+                scores[row] += weight * 0.25 * best_effort[sid] / max_effort
+    return scores
+
+
+def _build_layer_usage_preferences(layout, min_count=3, min_share=0.60):
+    """Map confident logged modifier-shortcut use to observed layer IDs.
+
+    Layer IDs remain data labels; this does not assign semantic roles to any
+    dynamic layer. Unmodified keys are excluded because ordinary typing is not
+    fully observed by the logger.
+    """
+    from fitness.factors.workflow_coherence import WorkflowCoherenceFactor
+
+    normalize = WorkflowCoherenceFactor._normalize_keys
+    sid_by_key = {}
+    for shortcut in layout.shortcuts:
+        sid_by_key[shortcut.keys] = int(shortcut.sid)
+        sid_by_key[normalize(shortcut.keys)] = int(shortcut.sid)
+
+    modifier_names = {"ctrl", "control", "shift", "alt", "leftalt", "rightalt", "win", "gui", "cmd", "command"}
+    observed = {}
+    for keys, by_layer in layout.usage_data.by_layer_shortcut.items():
+        sid = sid_by_key.get(keys, sid_by_key.get(normalize(keys), -1))
+        if sid < 0 or sid >= layout.n_shortcuts:
+            continue
+        shortcut = layout.shortcuts[sid]
+        if shortcut.is_layer_access or shortcut.category == "mouse":
+            continue
+        parts = [part.strip().lower() for part in str(keys).split("+")]
+        if not shortcut.modifiers and not any(part in modifier_names for part in parts[:-1]):
+            continue
+        for layer_text, raw_count in (by_layer or {}).items():
+            try:
+                layer, count = int(layer_text), int(raw_count)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= layer < 32 and layer != 7 and count > 0:
+                observed.setdefault(sid, {})[layer] = observed.setdefault(sid, {}).get(layer, 0) + count
+
+    preferences = []
+    for sid, counts in observed.items():
+        total = sum(counts.values())
+        if total < min_count:
+            continue
+        target_layer, target_count = max(counts.items(), key=lambda item: (item[1], item[0] == 0, -item[0]))
+        share = target_count / total
+        if share < min_share:
+            continue
+        preferences.append((sid, target_layer, math.log1p(total) * (2.0 * share - 1.0)))
+
+    preference_index = np.full((layout.n_shortcuts, 32), -1, dtype=np.int32)
+    preference_weights = np.asarray([row[2] for row in preferences], dtype=np.float32)
+    if preference_weights.size:
+        total_weight = float(preference_weights.sum())
+        if total_weight > 0.0:
+            preference_weights /= np.float32(total_weight)
+        for index, (sid, layer, _weight) in enumerate(preferences):
+            preference_index[sid, layer] = index
+    return preference_index, preference_weights
+
+
+def _build_mouse_session_shortcut_preferences(layout, min_count=3):
+    """Normalize logged shortcut demand observed during mouse-use sessions."""
+    from fitness.factors.workflow_coherence import WorkflowCoherenceFactor
+
+    normalize = WorkflowCoherenceFactor._normalize_keys
+    sid_by_key = {}
+    for shortcut in layout.shortcuts:
+        sid_by_key[shortcut.keys] = int(shortcut.sid)
+        sid_by_key[normalize(shortcut.keys)] = int(shortcut.sid)
+    rows = []
+    for keys, data in layout.usage_data.mouse_session_shortcuts.items():
+        sid = sid_by_key.get(keys, sid_by_key.get(normalize(keys), -1))
+        if sid < 0 or sid >= layout.n_shortcuts or not isinstance(data, dict):
+            continue
+        shortcut = layout.shortcuts[sid]
+        if shortcut.is_layer_access or shortcut.category == "mouse":
+            continue
+        try:
+            count = float(data.get("count", 0))
+        except (TypeError, ValueError):
+            continue
+        if count < min_count:
+            continue
+        global_data = layout.usage_data.shortcuts.get(keys, {})
+        global_count = float(global_data.get("count", 0)) if isinstance(global_data, dict) else 0.0
+        weight = math.log1p(count) * (1.0 + 0.2 * math.log1p(global_count))
+        if weight > 0.0:
+            rows.append((sid, weight))
+    total = sum(weight for _sid, weight in rows)
+    weights = np.asarray([weight / total for _sid, weight in rows], dtype=np.float32) if total else np.asarray([], dtype=np.float32)
+    preference_index = np.full((layout.n_shortcuts, 32), -1, dtype=np.int32)
+    for index, (sid, _weight) in enumerate(rows):
+        preference_index[sid, :] = index
+    return preference_index, weights
+
+
 @dataclass
 class ParityResult:
     ok: bool
@@ -171,6 +434,8 @@ class FitnessModel:
         sparse_layer_base_penalty: float = 0.0,
         sparse_layer_gap_penalty: float = 0.0,
         right_alt_l0_penalty: float = 5000.0,
+        layer_usage_preference_penalty: float = 200.0,
+        mouse_layer_shortcut_penalty: float = 10000.0,
     ):
         if not NUMBA_AVAILABLE:
             raise RuntimeError("Numba is required by the single-source fitness model")
@@ -181,7 +446,10 @@ class FitnessModel:
         self.missing_important_threshold = missing_important_threshold
         self.scale_factors = scale_factors if scale_factors is not None else np.ones(3, dtype=np.float32)
         self.reference_genome = reference_genome
-        self.hard_constraints = hard_constraints or []
+        self.hard_constraints = list(hard_constraints or [])
+        custom_names = {"l0_toggle_access", "right_alt_off_l0"}
+        self._custom_hard_constraints = [name for name in self.hard_constraints if name in custom_names]
+        self._kernel_hard_constraints = [name for name in self.hard_constraints if name not in custom_names]
         self.require_cuda = require_cuda
         self.layer_access_thumb_params = layer_access_thumb_params
 
@@ -193,6 +461,14 @@ class FitnessModel:
         self.sparse_layer_base_penalty = float(sparse_layer_base_penalty)
         self.sparse_layer_gap_penalty = float(sparse_layer_gap_penalty)
         self.right_alt_l0_penalty = float(right_alt_l0_penalty)
+        self.layer_usage_preference_penalty = float(layer_usage_preference_penalty)
+        self.mouse_layer_shortcut_penalty = float(mouse_layer_shortcut_penalty)
+        self._layer_usage_preference_index, self._layer_usage_preference_weights = (
+            _build_layer_usage_preferences(layout)
+        )
+        self._mouse_layer_shortcut_preference_index, self._mouse_layer_shortcut_preference_weights = (
+            _build_mouse_session_shortcut_preferences(layout)
+        )
         self._right_alt_sid = next((int(s.sid) for s in layout.shortcuts
                                     if s.base_key == "RightAlt" and not s.modifiers), -1)
         self._semantic_position_edges = self._build_semantic_position_edges(layout)
@@ -202,16 +478,30 @@ class FitnessModel:
         self._position_layers = np.asarray([p.layer for p in layout.positions], dtype=np.int32)
         self._position_x = np.asarray([p.x for p in layout.positions], dtype=np.float32)
         self._position_y = np.asarray([p.y for p in layout.positions], dtype=np.float32)
+        self._position_effort = np.asarray([p.effort for p in layout.positions], dtype=np.float32)
+        self._position_hand = np.asarray([1 if p.hand == "right" else 0 for p in layout.positions], dtype=np.int32)
+        self._position_is_thumb = np.asarray([p.is_thumb for p in layout.positions], dtype=np.bool_)
+        self._max_position_effort = np.float32(max((p.effort for p in layout.positions), default=1.0))
         self._semantic_cluster_starts, self._semantic_cluster_sids, self._semantic_cluster_weights = (
             self._build_semantic_contract_groups(layout)
         )
         self._access_targets = np.full(layout.n_shortcuts, -1, dtype=np.int32)
+        self._access_is_momentary = np.zeros(layout.n_shortcuts, dtype=np.bool_)
+        self._is_mouse_button = np.zeros(layout.n_shortcuts, dtype=np.bool_)
+        self._mouse_button = np.zeros(layout.n_shortcuts, dtype=np.int32)
+        self._is_scroll_access = np.zeros(layout.n_shortcuts, dtype=np.bool_)
         for shortcut in layout.shortcuts:
+            key = str(shortcut.keys).upper()
+            if key in {"MB1", "MB2", "MB3", "MB4", "MB5"}:
+                self._is_mouse_button[int(shortcut.sid)] = True
+                self._mouse_button[int(shortcut.sid)] = int(key[-1])
             if not getattr(shortcut, "is_layer_access", False):
                 continue
             target = int(getattr(shortcut, "access_target_layer", -1))
             if 0 <= target < 32:
                 self._access_targets[int(shortcut.sid)] = target
+                self._access_is_momentary[int(shortcut.sid)] = bool(shortcut.access_is_momentary)
+                self._is_scroll_access[int(shortcut.sid)] = str(shortcut.keys).startswith("@scroll:")
         self.arrays = precompute(
             layout,
             weights=weights,
@@ -219,7 +509,7 @@ class FitnessModel:
             missing_important_threshold=missing_important_threshold,
             scale_factors=self.scale_factors,
             reference_genome=reference_genome,
-            hard_constraints=self.hard_constraints,
+            hard_constraints=self._kernel_hard_constraints,
             toggle_effort_multiplier=toggle_effort_multiplier,
             layer_access_thumb_params=layer_access_thumb_params,
             semantic_cluster_multiplier=semantic_cluster_multiplier,
@@ -255,7 +545,7 @@ class FitnessModel:
             missing_important_threshold=self.missing_important_threshold,
             scale_factors=self.scale_factors,
             reference_genome=self.reference_genome,
-            hard_constraints=self.hard_constraints,
+            hard_constraints=self._kernel_hard_constraints,
             toggle_effort_multiplier=self.toggle_effort_multiplier,
             layer_access_thumb_params=self.layer_access_thumb_params,
             semantic_cluster_multiplier=self.semantic_cluster_multiplier,
@@ -345,12 +635,59 @@ class FitnessModel:
                 np.float32(self.sparse_layer_base_penalty),
                 np.float32(self.sparse_layer_gap_penalty),
             )
-        if self._right_alt_sid >= 0 and self.right_alt_l0_penalty > 0.0:
+        right_alt_sid = getattr(self, "_right_alt_sid", -1)
+        right_alt_penalty = float(getattr(self, "right_alt_l0_penalty", 0.0))
+        if right_alt_sid >= 0 and right_alt_penalty > 0.0:
             values[:, 2] += _right_alt_l0_penalty_batch(
-                batch, self._position_layers, self._right_alt_sid,
-                np.float32(self.right_alt_l0_penalty),
+                batch, self._position_layers, right_alt_sid,
+                np.float32(right_alt_penalty),
             )
+        layer_usage_penalty = float(getattr(self, "layer_usage_preference_penalty", 0.0))
+        preference_weights = getattr(self, "_layer_usage_preference_weights", np.asarray([]))
+        if layer_usage_penalty > 0.0 and preference_weights.size:
+            mismatch = _layer_usage_mismatch_batch(
+                batch, self._position_layers,
+                getattr(self, "_layer_usage_preference_index", np.empty((0, 0), dtype=np.int32)),
+                preference_weights,
+            )
+            values[:, 2] += mismatch * np.float32(layer_usage_penalty)
+        mouse_penalty = float(getattr(self, "mouse_layer_shortcut_penalty", 0.0))
+        mouse_weights = getattr(self, "_mouse_layer_shortcut_preference_weights", np.asarray([]))
+        if mouse_penalty > 0.0 and mouse_weights.size:
+            mismatch = _mouse_layer_shortcut_penalty_batch(
+                batch, self._position_layers, self._position_x,
+                getattr(self, "_position_effort", np.ones(len(self._position_layers), dtype=np.float32)),
+                getattr(self, "_position_hand", np.zeros(len(self._position_layers), dtype=np.int32)),
+                getattr(self, "_position_is_thumb", np.zeros(len(self._position_layers), dtype=np.bool_)),
+                self._access_targets, self._access_is_momentary,
+                self._is_mouse_button, self._mouse_button, self._is_scroll_access,
+                getattr(self, "_mouse_layer_shortcut_preference_index", np.empty((0, 0), dtype=np.int32)),
+                mouse_weights, float(getattr(self, "_max_position_effort", 1.0)),
+            )
+            values[:, 2] += mismatch * np.float32(mouse_penalty)
         return values
+
+    def _append_custom_constraints(self, genomes, constraints):
+        if not self._custom_hard_constraints:
+            return constraints
+        batch = np.asarray(genomes, dtype=np.int32)
+        if batch.ndim == 1:
+            batch = batch.reshape(1, -1)
+        custom_columns = []
+        for name in self._custom_hard_constraints:
+            if name == "l0_toggle_access":
+                custom_columns.append(_l0_toggle_access_violation_batch(
+                    batch, self._position_layers, self._access_targets, self._access_is_momentary,
+                ))
+            elif name == "right_alt_off_l0":
+                custom_columns.append(_right_alt_l0_violation_batch(
+                    batch, self._position_layers, getattr(self, "_right_alt_sid", -1),
+                ))
+        custom = np.concatenate(custom_columns, axis=1) if custom_columns else np.zeros((len(batch), 0), dtype=np.float32)
+        values = np.asarray(constraints, dtype=np.float32)
+        if values.ndim == 1:
+            return np.concatenate((values, custom[0]))
+        return np.concatenate((values, custom), axis=1)
 
     @property
     def n_constraints(self) -> int:
@@ -361,7 +698,7 @@ class FitnessModel:
         genome = np.asarray(genome, dtype=np.int32)
         objectives, constraints = _single_genome(genome, *self.arrays)
         objectives = self._add_semantic_position_score(objectives, genome)[0]
-        return objectives, constraints
+        return objectives, self._append_custom_constraints(genome, constraints)
 
     def evaluate_batch(self, genomes: np.ndarray):
         """Return ((batch, 3) objectives, (batch, n_constr) constraints)."""
@@ -376,7 +713,8 @@ class FitnessModel:
             objectives, constraints = evaluate_batch_cuda(genomes, self.arrays, cuda_args=self._cuda_args)
         else:
             objectives, constraints = _evaluate_batch(genomes, *self.arrays)
-        return self._add_semantic_position_score(objectives, genomes), constraints
+        objectives = self._add_semantic_position_score(objectives, genomes)
+        return objectives, self._append_custom_constraints(genomes, constraints)
 
     def validate_parity(
         self,

@@ -213,6 +213,9 @@ def build_evaluator(config, layout, scale_factors=None):
         sparse_layer_base_penalty=float(config.get("fitness.sparse_layer_base_penalty", 0.0)),
         sparse_layer_gap_penalty=float(config.get("fitness.sparse_layer_gap_penalty", 0.0)),
         right_alt_l0_penalty=float(config.get("fitness.right_alt_l0_penalty", 5000.0)),
+        layer_usage_preference_penalty=float(
+            config.get("fitness.layer_usage_preference_penalty", 200.0)
+        ),
     )
 
 

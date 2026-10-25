@@ -83,6 +83,12 @@ def load_evaluator(
         sparse_layer_base_penalty=float(fitness_cfg.get("sparse_layer_base_penalty", 0.0)),
         sparse_layer_gap_penalty=float(fitness_cfg.get("sparse_layer_gap_penalty", 0.0)),
         right_alt_l0_penalty=float(fitness_cfg.get("right_alt_l0_penalty", 5000.0)),
+        layer_usage_preference_penalty=float(
+            fitness_cfg.get("layer_usage_preference_penalty", 200.0)
+        ),
+        mouse_layer_shortcut_penalty=float(
+            fitness_cfg.get("mouse_layer_shortcut_penalty", 10000.0)
+        ),
     )
 
 

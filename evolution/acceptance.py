@@ -88,7 +88,7 @@ def _l0_toggle_hold_report(layout: Layout) -> Dict:
     toggles = []
     for idx, sid in enumerate(layout.genome):
         pos = layout.positions[idx]
-        if pos.layer != 0 or pos.is_frozen:
+        if pos.layer != 0:
             continue
         sid = int(sid)
         if sid < 0 or sid >= layout.n_shortcuts:
@@ -911,6 +911,7 @@ def build_acceptance_report(
         "left_alt_directly_available_on_l0": always_available_alt["acceptance_pass"],
         "norwegian_altgr_reachable": norwegian_altgr["reachable"],
         "right_alt_off_l0": norwegian_altgr["right_alt_off_l0"],
+        "no_l0_toggles": len(l0_toggle_hold["direct_l0_toggles"]) == 0,
         "norwegian_completion_cluster": bool(completion_cluster_report.get("acceptance_pass")),
         "unsupported_duplicates_near_zero": len(unsupported) == 0,
         "no_fake_scroll_keypresses": len(fake_scroll) == 0,
@@ -980,6 +981,8 @@ def build_acceptance_report(
         failure_guidance.append(f"Restore declared relative placement for semantic groups: {names}.")
     if not optimizer_side_checks["right_alt_off_l0"]:
         failure_guidance.append("Keep LeftAlt on L0 for shortcuts; place RightAlt/AltGr on a reachable deeper layer.")
+    if not optimizer_side_checks["no_l0_toggles"]:
+        failure_guidance.append("Move every layer toggle off L0; use thumb holds for direct L0 layer access.")
     if not optimizer_side_checks["l0_toggles_have_direct_hold_alternative"]:
         failure_guidance.append("Give every direct L0 layer toggle a direct thumb hold alternative; place toggles in deeper layers.")
     return {
