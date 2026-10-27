@@ -31,7 +31,10 @@ class FitnessEvaluator:
                  sparse_layer_gap_penalty: float = None,
                  right_alt_l0_penalty: float = None,
                  layer_usage_preference_penalty: float = None,
-                 mouse_layer_shortcut_penalty: float = None):
+                 mouse_layer_shortcut_penalty: float = None,
+                 mouse_layer_access_position_penalty: float = None,
+                 owner_mouse_layer_shortcut_preferences: Optional[List[str]] = None,
+                 owner_mouse_layer_shortcut_penalty: float = None):
         self.weights = dict(DEFAULT_CONFIG["fitness"]["weights"]) if weights is None else dict(weights)
         self.reference_layout = reference_layout
         self.scale_factors = scale_factors if scale_factors is not None else np.ones(3, dtype=np.float32)
@@ -81,6 +84,19 @@ class FitnessEvaluator:
             DEFAULT_CONFIG["fitness"].get("mouse_layer_shortcut_penalty", 10000.0)
             if mouse_layer_shortcut_penalty is None else mouse_layer_shortcut_penalty
         )
+        self.mouse_layer_access_position_penalty = float(
+            DEFAULT_CONFIG["fitness"].get("mouse_layer_access_position_penalty", 2.0)
+            if mouse_layer_access_position_penalty is None else mouse_layer_access_position_penalty
+        )
+        self.owner_mouse_layer_shortcut_preferences = list(
+            DEFAULT_CONFIG["fitness"].get("owner_mouse_layer_shortcut_preferences", [])
+            if owner_mouse_layer_shortcut_preferences is None
+            else owner_mouse_layer_shortcut_preferences
+        )
+        self.owner_mouse_layer_shortcut_penalty = float(
+            DEFAULT_CONFIG["fitness"].get("owner_mouse_layer_shortcut_penalty", 50000.0)
+            if owner_mouse_layer_shortcut_penalty is None else owner_mouse_layer_shortcut_penalty
+        )
 
         if reference_layout is not None:
             self.model = FitnessModel(
@@ -104,6 +120,9 @@ class FitnessEvaluator:
                 right_alt_l0_penalty=self.right_alt_l0_penalty,
                 layer_usage_preference_penalty=self.layer_usage_preference_penalty,
                 mouse_layer_shortcut_penalty=self.mouse_layer_shortcut_penalty,
+                mouse_layer_access_position_penalty=self.mouse_layer_access_position_penalty,
+                owner_mouse_layer_shortcut_preferences=self.owner_mouse_layer_shortcut_preferences,
+                owner_mouse_layer_shortcut_penalty=self.owner_mouse_layer_shortcut_penalty,
             )
         else:
             self.model = None
@@ -166,6 +185,9 @@ class FitnessEvaluator:
                 sparse_layer_gap_penalty=self.sparse_layer_gap_penalty,
                 layer_usage_preference_penalty=self.layer_usage_preference_penalty,
                 mouse_layer_shortcut_penalty=self.mouse_layer_shortcut_penalty,
+                mouse_layer_access_position_penalty=self.mouse_layer_access_position_penalty,
+                owner_mouse_layer_shortcut_preferences=self.owner_mouse_layer_shortcut_preferences,
+                owner_mouse_layer_shortcut_penalty=self.owner_mouse_layer_shortcut_penalty,
             )
             objectives, constraints = model.evaluate(layout.genome)
         else:

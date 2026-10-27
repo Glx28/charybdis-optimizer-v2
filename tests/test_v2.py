@@ -3796,6 +3796,7 @@ class TestL0ToggleAltMutation(unittest.TestCase):
         mutation.mouse_workflow_prob = 0.0
         mutation.l7_access_prob = 0.0
         mutation.group_overwrite_prob = 0.0
+        mutation.bulk_assign_prob = 0.0
         mutation.cluster_app_prob = 0.0
         mutation.random_assign_prob = 0.0
         mutation.effort_swap_prob = 0.0

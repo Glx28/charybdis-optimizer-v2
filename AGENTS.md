@@ -112,6 +112,14 @@ frequent application shortcuts; keep bare RightAlt (Norwegian AltGr) on a
 reachable non-L0 layer. Do not place both Alt keys on L0. Score RightAlt on L0
 as a major violation while preserving the AltGr key in the layout.
 
+Owner placement preference: physical thumb coordinate x3,y4 is lower effort
+than before (0.5) and receives a strong soft reward when it provides direct
+L0 access to the dynamically identified mouse-button layer. Keep LeftAlt on
+L0, but allow it to move to another L0 thumb so x3,y4 can serve that access.
+Owner also requested an L7 self-toggle at x8,y4; this is the sole explicit
+owner-authorized change to otherwise frozen L7 content. Preserve other L7
+fallback and exit-to-base bindings.
+
 At target generation, the whole run is invalid unless a generated non-L0/non-L7
 dynamic mouse workflow layer exists. That layer must contain every core mouse
 button, MB1-MB2-MB3-MB4-MB5, accessible on the right side of that same dynamic

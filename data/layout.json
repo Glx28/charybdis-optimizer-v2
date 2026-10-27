@@ -685,9 +685,9 @@
         "key": "LT_y4_x3",
         "start_x": 4,
         "start_y": 4,
-        "base_effort": 1.0,
+        "base_effort": 0.5,
         "edge_bonus": 0.0,
-        "effort": 1.0
+        "effort": 0.5
       },
       {
         "x": 4,
@@ -1500,10 +1500,10 @@
     "8:4": {
       "x": 8,
       "y": 4,
-      "behavior": "coach_base",
+      "behavior": "coach_l7_toggle",
       "parameter": "",
       "modifiers": [],
-      "label": "Exit Base"
+      "label": "Toggle L7"
     },
     "4:5": {
       "x": 4,

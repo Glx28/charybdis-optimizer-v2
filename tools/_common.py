@@ -89,6 +89,15 @@ def load_evaluator(
         mouse_layer_shortcut_penalty=float(
             fitness_cfg.get("mouse_layer_shortcut_penalty", 10000.0)
         ),
+        mouse_layer_access_position_penalty=float(
+            fitness_cfg.get("mouse_layer_access_position_penalty", 2.0)
+        ),
+        owner_mouse_layer_shortcut_preferences=fitness_cfg.get(
+            "owner_mouse_layer_shortcut_preferences", []
+        ),
+        owner_mouse_layer_shortcut_penalty=float(
+            fitness_cfg.get("owner_mouse_layer_shortcut_penalty", 50000.0)
+        ),
     )
 
 

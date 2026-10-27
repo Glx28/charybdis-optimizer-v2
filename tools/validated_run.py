@@ -153,7 +153,9 @@ def prepare(warmstart_path=None, fresh_start=False, generations=30000, usage_log
         genome = payload.get("best_genome", payload.get("genome"))
         if not isinstance(genome, list):
             raise ValueError(f"Warmstart must contain best_genome or genome list: {input_path}")
-        warmstart_generation = payload.get("best_generation", payload.get("generation"))
+        warmstart_generation = payload.get("best_generation")
+        if warmstart_generation is None:
+            warmstart_generation = payload.get("generation", payload.get("source_generation"))
         warmstart_sha256 = hashlib.sha256(input_bytes).hexdigest()
         archived_checkpoint = run / "warmstart_source_checkpoint.json"
         archived_checkpoint.write_bytes(input_bytes)
