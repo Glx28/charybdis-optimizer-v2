@@ -73,6 +73,7 @@ function run(config = {}) {
       shortcut_workflows: {}, app_sequences: {}, app_workflows: {}, by_app: {}, by_layer: {},
       by_layer_shortcut: {}, layer_shortcuts: {},
       raw_completion_keys: {}, raw_completion_total: 0,
+      norwegian_symbol_usage: { total: 0, by_key: {}, by_output: {} },
       note: "No usage data yet. Start charybdis_helpers.ahk to begin collecting.",
     };
     writeUsageStats(outputPath, empty);
@@ -122,6 +123,9 @@ function run(config = {}) {
   const appWorkflows = {};
   const rawCompletionKeys = {};
   let rawCompletionTotal = 0;
+  let norwegianSymbolTotal = 0;
+  const norwegianSymbolByKey = {};
+  const norwegianSymbolByOutput = {};
   const shortcutEventLog = [];  // flat log for workflow detection
   let earliest = null, latest = null;
 
@@ -497,6 +501,30 @@ function run(config = {}) {
       continue;
     }
 
+    if (eventType === "norwegian_symbol_key") {
+      const key = entry.physical_key || "unknown";
+      const output = entry.produced_output || "unknown";
+      const state = entry.modifier_state || "normal";
+      const count = Math.max(1, Number.parseInt(entry.count, 10) || 1);
+      if (!norwegianSymbolByKey[key]) norwegianSymbolByKey[key] = { total: 0, by_state: {}, apps: {}, by_layer: {} };
+      const symbol = norwegianSymbolByKey[key];
+      symbol.total += count;
+      symbol.by_state[state] = (symbol.by_state[state] || 0) + count;
+      symbol.apps[app] = (symbol.apps[app] || 0) + count;
+      symbol.by_layer[layer] = (symbol.by_layer[layer] || 0) + count;
+      if (!norwegianSymbolByOutput[output]) {
+        norwegianSymbolByOutput[output] = { total: 0, by_state: {}, apps: {}, by_layer: {}, physical_keys: {} };
+      }
+      const outputRow = norwegianSymbolByOutput[output];
+      outputRow.total += count;
+      outputRow.by_state[state] = (outputRow.by_state[state] || 0) + count;
+      outputRow.apps[app] = (outputRow.apps[app] || 0) + count;
+      outputRow.by_layer[layer] = (outputRow.by_layer[layer] || 0) + count;
+      outputRow.physical_keys[key] = (outputRow.physical_keys[key] || 0) + count;
+      norwegianSymbolTotal += count;
+      continue;
+    }
+
     // shortcut, functional, layer_key — all handled as key events
     const rawKeys = entry.keys;
     if (!rawKeys) continue;
@@ -778,6 +806,11 @@ function run(config = {}) {
     layer_shortcuts: layerShortcuts,
     raw_completion_keys: rawCompletionKeys,
     raw_completion_total: rawCompletionTotal,
+    norwegian_symbol_usage: {
+      total: norwegianSymbolTotal,
+      by_key: norwegianSymbolByKey,
+      by_output: norwegianSymbolByOutput,
+    },
     chains,
     workflows: shortcutWorkflows,
     shortcut_workflows: shortcutWorkflows,
