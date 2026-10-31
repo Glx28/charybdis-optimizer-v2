@@ -19,7 +19,7 @@ from tools._common import (
     mouse_layer_quality_warnings,
     resolve_checkpoint_path,
 )
-from evolution.acceptance import _dynamic_mouse_layer_report
+from evolution.layout_contract import audit_layout_contract
 
 
 def main():
@@ -45,7 +45,7 @@ def main():
     hold_hops = reach["hold_hops"]
     toggle_hops = reach["toggle_hops"]
 
-    # Candidate mouse layers by distinct right-hand non-thumb buttons
+    # L1 is contract-defined; never infer a mouse layer from its contents.
     mr = defaultdict(set)
     btn_positions = defaultdict(list)
     for i, sid in enumerate(layout.genome):
@@ -57,20 +57,15 @@ def main():
                 mr[lyr].add(int(sc_mouse_btn[sid]))
                 btn_positions[int(sc_mouse_btn[sid])].append((lyr, i, float(pos_x[i]), float(pos_y[i])))
 
-    candidate = -1
-    if mr:
-        best_lyr = max(mr, key=lambda lyr: len(mr[lyr]))
-        if len(mr[best_lyr]) >= 2:
-            candidate = best_lyr
-
-    details = _dynamic_mouse_layer_report(layout)
+    candidate = 1
+    details = audit_layout_contract(layout)
 
     print(f"=== Mouse Layer Report: {os.path.basename(ckpt_path)} ===")
     print()
-    print(f"Candidate mouse layer: L{candidate}")
-    best_detail = details.get("best_candidate") or {}
-    print(f"dynamic_mouse_layer_present: {details.get('acceptance_pass', False)}")
-    print(f"scroll_mode_access_present: {bool(best_detail.get('right_momentary_scroll_access'))}")
+    print(f"Contract mouse layer: L{candidate}")
+    print(f"owner_layout_contract_v1: {details.get('acceptance_pass', False)}")
+    for check, passed in details.get("checks", {}).items():
+        print(f"  {'PASS' if passed else 'FAIL'} {check}")
     print()
 
     quality_warnings = mouse_layer_quality_warnings(layout, arrays, details)
@@ -82,7 +77,7 @@ def main():
 
     if candidate >= 0:
         print(f"--- Buttons on L{candidate} ---")
-        for btn in sorted(mr[candidate]):
+        for btn in sorted(mr.get(candidate, set())):
             positions = [(i, x, y) for lyr, i, x, y in btn_positions[btn] if lyr == candidate]
             pos_strs = [f"pos{i}({x:.1f},{y:.1f})" for i, x, y in positions]
             print(f"  MB{btn}: {', '.join(pos_strs)}")

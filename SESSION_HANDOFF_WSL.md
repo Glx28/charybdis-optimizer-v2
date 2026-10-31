@@ -28,6 +28,12 @@ Environment:
 
 Current policy:
 
+- The owner contract is versioned in `contracts/layout_contract_v1.json` and
+  enforced during generation, evaluation, archive selection, export, and
+  promotion. L1 is always the mouse layer; L7 remains frozen and exempt.
+- Exact CUDA evaluation now drives child filtering and survivor selection. The
+  active optimizer no longer uses a surrogate mini-evaluation subset.
+
 - Workflow-focused first: layers should be useful for apps, shortcuts, mouse
   actions, scroll-mode actions, and transitions that usage data shows are used
   together.
@@ -37,26 +43,22 @@ Current policy:
   workflows with different shortcuts.
 - Repeated shortcuts across layers should stay on the same physical key or
   nearby region when possible for familiarity.
-- Only L0 and L7 have stable roles. L7 is frozen RPG/arrows/navigation and
-  keyboard-system fallback, not a generated mouse layer. Frozen L7 content is
-  not an optimizer acceptance surface.
+- L1 has the fixed mouse role. Other mutable layers can evolve useful
+  workflows. L7 is frozen RPG/arrows/navigation and keyboard-system fallback;
+  its existing content is preserved and exempt from mutable-layer checks.
 - L7 access is checked separately from content: L7 must be reachable by both a
   momentary layer access capability and a toggle layer access capability.
 - Raw arrows have no mutable-layer placement requirement; frozen L7 provides
   raw-arrow access.
-- At target generation, a run is invalid unless a generated non-L0/non-L7
-  dynamic mouse layer has MB1-MB2-MB3-MB4-MB5 on the right side, right-hand
-  non-thumb momentary Scroll, no mouse button on that layer's right-thumb area,
-  no momentary mouse-layer access on the right thumb side, and a reachable
-  toggle access path. The toggle access path does not have to originate on L0.
-- Mouse-button placement on that dynamic mouse layer is usage-weighted. Mouse
-  duplicates elsewhere are allowed but harder to justify than ordinary shortcut
-  duplicates.
-- This mouse-layer rule is final acceptance only. Intermediate generations do
-  not have to satisfy it yet.
+- Contract violations invalidate candidates at every generation. Essential
+  L0→L1 access must be ordinary momentary hold at x3,y4; fixed L1 mouse
+  bindings and the exact three-scroll count follow the contract file.
 
 Run discipline:
 
-- No trusted run is active unless explicitly reported in `SESSION_HANDOFF.md`.
+- Current trusted run status is recorded in `docs/validated-30k-run.md`;
+  `SESSION_HANDOFF.md` is a historical snapshot.
 - Production runs use the configured generation cap; checkpoint trends are review evidence, not automatic stop/restart triggers.
 - Do not use old Windows paths or old nested run-directory sync instructions.
+# Historical handoff — superseded for current work by
+# `contracts/layout_contract_v1.json` and `docs/LAYOUT_ACCEPTANCE.md`.

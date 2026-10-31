@@ -1,10 +1,10 @@
 {
   "timestamp": "2026-08-13T07:56:32.707202+00:00",
   "summary": {
-    "total_apps": 18,
-    "total_shortcuts": 611,
+    "total_apps": 19,
+    "total_shortcuts": 612,
     "total_mapped": 0,
-    "total_unmapped": 611,
+    "total_unmapped": 612,
     "overall_coverage_pct": 0
   },
   "apps": [
@@ -8213,6 +8213,34 @@
           "frequency": "low",
           "freq_weight": 5,
           "importance": 0.3,
+          "mapped": false,
+          "match_count": 0,
+          "best_match": null,
+          "access_score": 0,
+          "weighted_access": 0
+        }
+      ]
+    },
+    {
+      "id": "zz_walk_this_way",
+      "name": "PowerToys",
+      "user_weight": 1,
+      "total_shortcuts": 1,
+      "mapped": 0,
+      "unmapped": 1,
+      "coverage_pct": 0,
+      "weighted_score": 0,
+      "weighted_max": 50.0,
+      "efficiency_pct": 0,
+      "unmapped_high_frequency": [],
+      "shortcuts": [
+        {
+          "keys": "Ctrl+Alt+Win+F11",
+          "action": "Walk This Way window switcher",
+          "category": "Window Management",
+          "frequency": "high",
+          "freq_weight": 5,
+          "importance": 10.0,
           "mapped": false,
           "match_count": 0,
           "best_match": null,

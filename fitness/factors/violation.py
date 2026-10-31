@@ -240,6 +240,8 @@ class ViolationFactor(FitnessFactor):
             access = layout.shortcuts[int(sid)]
             if not access.is_layer_access or not access.access_is_momentary:
                 continue
+            if access.access_target_layer == 0:
+                continue
             occupied_by_layer[access.access_target_layer].add(layout.positions[i].hand)
 
         for i, sid in enumerate(layout.genome):

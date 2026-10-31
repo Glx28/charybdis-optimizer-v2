@@ -10,6 +10,7 @@ import json
 import glob
 import cProfile
 import pstats
+import hashlib
 
 # Unbuffer stdout so manager can see progress in real-time
 sys.stdout.reconfigure(line_buffering=True)
@@ -30,7 +31,55 @@ from evolution.surrogate import LayoutSurrogate, SurrogateTrainer, SurrogateMana
 from evolution.completion_cluster import analyze_completion_cluster
 from evolution.arrow_cluster import analyze_arrows
 from evolution.acceptance import build_acceptance_report
+from evolution.layout_contract import CONTRACT_SHA256
 from config import Config
+
+
+def _fitness_scale_fingerprint(config_path, data_dir):
+    """Identify inputs that determine exact objective scales.
+
+    Scale caches without this fingerprint can silently survive evaluator,
+    config, or usage-data changes and badly distort the weighted objective.
+    """
+    repo_root = os.path.dirname(os.path.abspath(__file__))
+    candidates = [os.path.abspath(config_path), os.path.abspath(__file__)]
+    data_root = os.path.abspath(data_dir)
+    roots = (
+        os.path.join(repo_root, "core"),
+        os.path.join(repo_root, "fitness"),
+        data_root,
+        os.path.join(repo_root, "contracts"),
+    )
+    for root in roots:
+        if not os.path.isdir(root):
+            continue
+        for current, _, names in os.walk(root):
+            for name in names:
+                path = os.path.join(current, name)
+                if root == data_root:
+                    candidates.append(path)
+                elif name.endswith((".py", ".json", ".yaml", ".yml")):
+                    candidates.append(path)
+    digest = hashlib.sha256()
+    for path in sorted(set(candidates)):
+        if not os.path.isfile(path):
+            continue
+        digest.update(os.path.relpath(path).encode("utf-8"))
+        digest.update(b"\0")
+        with open(path, "rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def _scale_cache_matches(cache, fingerprint):
+    return (
+        isinstance(cache, dict)
+        and cache.get("fingerprint") == fingerprint
+        and isinstance(cache.get("scale_factors"), list)
+        and len(cache["scale_factors"]) == 3
+    )
 
 from pymoo.optimize import minimize
 from pymoo.core.callback import Callback
@@ -38,16 +87,20 @@ from pymoo.core.callback import Callback
 
 def generate_random_layouts(layout, n, warmstart_genome=None):
     from evolution import build_group_placements
+    from evolution.layout_contract import owner_protected_indices
 
-    mutable = layout.mutable_indices
-    mutable_set = set(mutable.tolist()) if hasattr(mutable, 'tolist') else set(mutable)
+    seed = layout.genome.astype(np.int32).copy() if warmstart_genome is None else warmstart_genome.astype(np.int32).copy()
+    protected = set(int(i) for i in layout.frozen_indices)
+    if warmstart_genome is not None:
+        protected.update(owner_protected_indices(layout, seed))
+    frozen = np.asarray(sorted(protected), dtype=np.int32)
+    mutable = np.asarray([i for i in range(layout.n_positions) if i not in protected], dtype=np.int32)
     n_shortcuts = layout.n_shortcuts
     layouts = np.full((n, layout.n_positions), -1, dtype=np.int32)
     if n <= 0:
         return layouts
 
-    frozen = layout.frozen_indices
-    frozen_assigned = {int(sid) for sid in layout.genome[frozen] if sid >= 0}
+    frozen_assigned = {int(sid) for sid in seed[frozen] if sid >= 0}
 
     # Exclude group sids from individual random assignment — they are placed
     # as complete groups at valid anchors so initial genomes are never scattered.
@@ -61,31 +114,53 @@ def generate_random_layouts(layout, n, warmstart_genome=None):
         sid for sid in range(n_shortcuts)
         if sid not in frozen_assigned and sid not in group_sids_all
     ]
+    mutable_index = {int(pos): i for i, pos in enumerate(mutable)}
+    group_records = []
+    for sid_tuple, anchor_list in groups:
+        anchor_matrix = np.asarray(anchor_list, dtype=np.int32)
+        if anchor_matrix.ndim != 2 or anchor_matrix.shape[1] != len(sid_tuple):
+            raise ValueError(f"Group anchor shape mismatch for shortcut group {sid_tuple}")
+        anchor_mutable_indices = np.asarray(
+            [[mutable_index.get(int(pos), -1) for pos in anchor] for anchor in anchor_matrix],
+            dtype=np.int32,
+        )
+        group_records.append((sid_tuple, anchor_matrix, anchor_mutable_indices))
+    layer_access_lut = np.zeros(n_shortcuts, dtype=np.bool_)
+    if layer_access_sids:
+        layer_access_lut[np.fromiter(layer_access_sids, dtype=np.int32)] = True
 
     if warmstart_genome is not None:
         layouts[0] = warmstart_genome.astype(np.int32).copy()
-        layouts[0, frozen] = layout.genome[frozen]  # ensure frozen positions are canonical
+        layouts[0, frozen] = seed[frozen]
         n_perturbed = min(n - 1, max(1, n // 5))
+        mutable_list = mutable.tolist()
         for i in range(1, n_perturbed + 1):
             g = warmstart_genome.astype(np.int32).copy()
-            g[frozen] = layout.genome[frozen]
+            g[frozen] = seed[frozen]
             n_swaps = random.randint(20, 80)
-            ml = mutable.tolist() if hasattr(mutable, 'tolist') else list(mutable)
             for _ in range(n_swaps):
-                ia = random.randrange(len(ml))
-                ib = random.randrange(len(ml))
-                g[ml[ia]], g[ml[ib]] = g[ml[ib]], g[ml[ia]]
+                ia = random.randrange(len(mutable_list))
+                ib = random.randrange(len(mutable_list))
+                g[mutable_list[ia]], g[mutable_list[ib]] = g[mutable_list[ib]], g[mutable_list[ia]]
             layouts[i] = g
         rand_start = n_perturbed + 1
     else:
-        layouts[0] = layout.genome.astype(np.int32).copy()
+        layouts[0] = seed
         rand_start = 1
 
     for i in range(rand_start, n):
-        layouts[i, frozen] = layout.genome[frozen]
+        layouts[i, frozen] = seed[frozen]
         n_assign = min(len(mutable), len(available_sids))
         assigned = random.sample(available_sids, n_assign)
         layouts[i, mutable[:n_assign]] = assigned
+        free_mask = layouts[i, mutable] < 0
+        occupied_group_positions = np.zeros(layout.n_positions, dtype=np.bool_)
+        row_values = layouts[i]
+        occupied_access_positions = np.zeros(layout.n_positions, dtype=np.bool_)
+        assigned_positions = np.flatnonzero(row_values >= 0)
+        if len(assigned_positions):
+            assigned_sids = row_values[assigned_positions]
+            occupied_access_positions[assigned_positions] = layer_access_lut[assigned_sids]
 
         # Place groups without clobbering members placed for earlier groups.
         # Group definitions can overlap in shortcut IDs and geometry. The
@@ -93,46 +168,56 @@ def generate_random_layouts(layout, n, warmstart_genome=None):
         # later overlapping groups must not scatter those assignments.
         placed_group_sids = set()
         placed_group_positions = set()
-        for sid_tuple, anchor_list in groups:
+        for sid_tuple, anchor_matrix, anchor_mutable_indices in group_records:
             group_sid_set = set(sid_tuple)
             if group_sid_set & placed_group_sids:
                 continue
-            compatible_anchors = [
-                anchor for anchor in anchor_list
-                if not (set(anchor) & placed_group_positions)
-                and not any(int(layouts[i, pos]) in layer_access_sids for pos in anchor)
-            ]
-            if not compatible_anchors:
+            conflicts = (
+                occupied_group_positions[anchor_matrix].any(axis=1)
+                | occupied_access_positions[anchor_matrix].any(axis=1)
+            )
+            compatible_indices = np.flatnonzero(~conflicts)
+            if not len(compatible_indices):
                 continue
-            anchor = list(random.choice(compatible_anchors))
-            anchor_set = set(anchor)
+            chosen = int(compatible_indices[random.randrange(len(compatible_indices))])
+            anchor_array = anchor_matrix[chosen]
+            anchor = tuple(int(pos) for pos in anchor_array)
+            current_group_mutable_indices = anchor_mutable_indices[chosen]
             # Read what's at the anchor positions now (to displace them).
-            displaced = [int(layouts[i, pos]) for pos in anchor]
+            displaced = [int(sid) for sid in layouts[i, anchor_array]]
             # Place group sids at anchor.
             for sid, pos in zip(sid_tuple, anchor):
                 layouts[i, pos] = sid
             # Displaced non-group sids go to the first free mutable slots.
             fill_sids = [s for s in displaced if s >= 0 and s not in group_sids_all]
-            free_slots = [
-                pos for pos in mutable
-                if pos not in anchor_set and int(layouts[i, pos]) == -1
-            ]
+            anchor_free_mask = free_mask.copy()
+            valid_anchor_indices = current_group_mutable_indices[current_group_mutable_indices >= 0]
+            anchor_free_mask[valid_anchor_indices] = False
+            free_slot_indices = np.flatnonzero(anchor_free_mask)
+            free_slots = mutable[free_slot_indices]
             for pos, sid in zip(free_slots, fill_sids):
                 layouts[i, pos] = sid
+            free_mask[valid_anchor_indices] = False
+            free_mask[free_slot_indices[:len(fill_sids)]] = False
+            occupied_group_positions[anchor_array] = True
+            occupied_access_positions[anchor_array] = np.fromiter(
+                (int(sid) in layer_access_sids for sid in sid_tuple),
+                dtype=np.bool_, count=len(sid_tuple),
+            )
             placed_group_sids.update(group_sid_set)
-            placed_group_positions.update(anchor_set)
+            placed_group_positions.update(anchor)
 
         # Groups skipped because of shared members or unavailable nonoverlap
         # anchors still need assignable instances. Fill unclaimed positions
         # after all protected group placements are complete.
-        assigned_group_sids = {
-            int(sid) for sid in layouts[i, mutable]
-            if int(sid) in group_sids_all
-        }
+        mutable_values = layouts[i, mutable]
+        assigned_group_sids = set(
+            int(sid) for sid in mutable_values[np.isin(mutable_values, tuple(group_sids_all))]
+        )
         missing_group_sids = sorted(
             group_sids_all - frozen_assigned - assigned_group_sids
         )
-        free_slots = [pos for pos in mutable if int(layouts[i, pos]) < 0]
+        free_slots = mutable[np.flatnonzero(layouts[i, mutable] < 0)]
         for pos, sid in zip(free_slots, missing_group_sids):
             layouts[i, pos] = sid
 
@@ -214,7 +299,19 @@ def build_evaluator(config, layout, scale_factors=None):
         sparse_layer_gap_penalty=float(config.get("fitness.sparse_layer_gap_penalty", 0.0)),
         right_alt_l0_penalty=float(config.get("fitness.right_alt_l0_penalty", 5000.0)),
         layer_usage_preference_penalty=float(
-            config.get("fitness.layer_usage_preference_penalty", 200.0)
+            config.get("fitness.layer_usage_preference_penalty", 10000.0)
+        ),
+        mouse_layer_shortcut_penalty=float(
+            config.get("fitness.mouse_layer_shortcut_penalty", 10000.0)
+        ),
+        mouse_layer_access_position_penalty=float(
+            config.get("fitness.mouse_layer_access_position_penalty", 2.0)
+        ),
+        owner_mouse_layer_shortcut_preferences=config.get(
+            "fitness.owner_mouse_layer_shortcut_preferences", []
+        ),
+        owner_mouse_layer_shortcut_penalty=float(
+            config.get("fitness.owner_mouse_layer_shortcut_penalty", 50000.0)
         ),
     )
 
@@ -253,9 +350,78 @@ def enforce_training_device_policy(config):
         )
 
 
+_DUPLICATE_USAGE_INDEX_CACHE = {}
+
+
+def _duplicate_usage_index(layout):
+    """Pre-index static usage evidence once for this catalog and usage log."""
+    signature = tuple((s.sid, s.keys, s.app) for s in layout.shortcuts)
+    cache_key = (id(layout.usage_data), signature)
+    cached = _DUPLICATE_USAGE_INDEX_CACHE.get(cache_key)
+    if cached is not None and cached[0] is layout.usage_data:
+        return cached[1]
+
+    by_key = {}
+    by_app = {}
+    for shortcut in layout.shortcuts:
+        by_key.setdefault(shortcut.keys, []).append(shortcut.sid)
+        by_app.setdefault(shortcut.app, []).append(shortcut.sid)
+    indexed = {name: {} for name in ("sequences", "workflows", "apps")}
+
+    def add_key(bucket, row_key):
+        for part in set(row_key.split(" -> ")):
+            for sid in by_key.get(part, ()):
+                bucket.setdefault(sid, []).append(row_key)
+
+    for row_key, data in layout.usage_data.sequences.items():
+        if isinstance(data, dict) and data.get("count", 0) >= 2:
+            add_key(indexed["sequences"], row_key)
+    for source in (layout.usage_data.chains, layout.usage_data.workflows):
+        for row_key, data in source.items():
+            if isinstance(data, dict) and data.get("count", 0) >= 2:
+                add_key(indexed["workflows"], row_key)
+    for row_key, data in layout.usage_data.app_workflows.items():
+        if not isinstance(data, dict) or data.get("count", 0) < 2:
+            continue
+        apps = [part.strip() for part in row_key.split(" + ") if part.strip()]
+        for app_name, sids in by_app.items():
+            if any(_app_matches(app_name, app) for app in apps):
+                for sid in sids:
+                    indexed["apps"].setdefault(sid, []).append(row_key)
+
+    if len(_DUPLICATE_USAGE_INDEX_CACHE) >= 16:
+        _DUPLICATE_USAGE_INDEX_CACHE.pop(next(iter(_DUPLICATE_USAGE_INDEX_CACHE)))
+    _DUPLICATE_USAGE_INDEX_CACHE[cache_key] = (layout.usage_data, indexed)
+    return indexed
+
+
+def unsupported_duplicate_sid_mask(layout):
+    """Precompute the SIDs whose repeated placements fail the duplicate rule."""
+    support = _shortcut_duplicate_support(layout)
+    usage_index = _duplicate_usage_index(layout)
+    mask = np.zeros(layout.n_shortcuts, dtype=np.bool_)
+    for shortcut in layout.shortcuts:
+        if shortcut.is_l0_only or shortcut.keys.startswith("_base_"):
+            continue
+        usage_row = layout.usage_data.shortcuts.get(shortcut.keys, {})
+        has_usage = isinstance(usage_row, dict) and int(usage_row.get("count", 0)) > 0
+        mouse_row = layout.usage_data.mouse_session_shortcuts.get(shortcut.keys, {})
+        has_mouse_usage = isinstance(mouse_row, dict) and int(mouse_row.get("count", 0)) > 0
+        has_reason = (
+            has_usage
+            or has_mouse_usage
+            or bool(usage_index["sequences"].get(shortcut.sid))
+            or bool(usage_index["workflows"].get(shortcut.sid))
+            or bool(usage_index["apps"].get(shortcut.sid))
+        )
+        mask[int(shortcut.sid)] = float(support[int(shortcut.sid)]) < 0.25 and has_reason
+    return mask
+
+
 def analyze_duplicates(layout):
     """Explain which duplicate placements have usage support."""
     support = _shortcut_duplicate_support(layout)
+    usage_index = _duplicate_usage_index(layout)
     counts = {}
     layers = {}
     positions = {}
@@ -289,22 +455,9 @@ def analyze_duplicates(layout):
             continue
         if frozen_counts.get(sid, 0) == count:
             continue
-        seq_hits = [
-            key for key, data in layout.usage_data.sequences.items()
-            if shortcut.keys in key.split(" -> ") and isinstance(data, dict) and data.get("count", 0) >= 2
-        ]
-        workflow_hits = [
-            key for key, data in list(layout.usage_data.chains.items()) + list(layout.usage_data.workflows.items())
-            if shortcut.keys in key.split(" -> ") and isinstance(data, dict) and data.get("count", 0) >= 2
-        ]
-        app_hits = [
-            key for key, data in layout.usage_data.app_workflows.items()
-            if (
-                isinstance(data, dict)
-                and data.get("count", 0) >= 2
-                and any(_app_matches(shortcut.app, part.strip()) for part in key.split(" + "))
-            )
-        ]
+        seq_hits = usage_index["sequences"].get(sid, [])
+        workflow_hits = usage_index["workflows"].get(sid, [])
+        app_hits = usage_index["apps"].get(sid, [])
         mouse_hit = layout.usage_data.mouse_session_shortcuts.get(shortcut.keys, {})
         usage_count = 0
         usage_row = layout.usage_data.shortcuts.get(shortcut.keys, {})
@@ -424,7 +577,8 @@ class ExactEvalCallback(Callback):
     @staticmethod
     @staticmethod
     def _constraint_penalty_from_objectives(pop_F, min_penalty=2.0, max_penalty=25.0, spread_fraction=0.25):
-        totals = pop_F.sum(axis=1) if pop_F.ndim == 2 else np.asarray(pop_F, dtype=np.float64)
+        pop_F = np.asarray(pop_F, dtype=np.float64)
+        totals = pop_F.sum(axis=1) if pop_F.ndim == 2 else pop_F
         if totals.size < 2:
             return float(min_penalty)
         q25, q75 = np.percentile(totals.astype(np.float64), [25, 75])
@@ -443,9 +597,9 @@ class ExactEvalCallback(Callback):
         """
         pop_F = np.asarray(pop_F, dtype=np.float64)
         if pop_F.ndim == 1:
-            base = pop_F.reshape(1, -1).sum(axis=1)
+            base = np.asarray(pop_F, dtype=np.float64).reshape(1, -1).sum(axis=1)
         else:
-            base = pop_F.sum(axis=1)
+            base = np.asarray(pop_F, dtype=np.float64).sum(axis=1)
         if pop_G is not None and getattr(pop_G, "shape", (0, 0))[1] > 0:
             if constraint_penalty is None:
                 constraint_penalty = cls._constraint_penalty_from_objectives(pop_F)
@@ -456,13 +610,13 @@ class ExactEvalCallback(Callback):
         return base + float(constraint_penalty) * cv
 
     @staticmethod
-    def _dynamic_mouse_failed(exact_entry):
+    def _owner_contract_failed(exact_entry):
         failed = set(exact_entry.get("acceptance_failed_checks", []))
-        return "dynamic_mouse_layer_present" in failed
+        return bool({"owner_layout_contract_v1", "l1_mouse_contract"} & failed)
 
     @classmethod
     def _display_gap(cls, exact_entry, target=None):
-        if cls._dynamic_mouse_failed(exact_entry):
+        if cls._owner_contract_failed(exact_entry):
             return 5.0
         return None if target is None else float(exact_entry["total_score"]) - float(target)
 
@@ -476,14 +630,17 @@ class ExactEvalCallback(Callback):
         }
 
     def _is_better_exact(self, candidate_entry, incumbent_entry):
+        cand_cv = sum(max(0.0, float(x)) for x in candidate_entry.get("constraints", []))
+        if (cand_cv != 0.0 or not candidate_entry.get("optimizer_side_pass", False)
+                or self._owner_contract_failed(candidate_entry)):
+            return False
         if incumbent_entry is None:
             return True
-        cand_cv = sum(max(0.0, float(x)) for x in candidate_entry.get("constraints", []))
         inc_cv = sum(max(0.0, float(x)) for x in incumbent_entry.get("constraints", []))
         if cand_cv != inc_cv:
             return cand_cv < inc_cv
-        cand_mouse_fail = self._dynamic_mouse_failed(candidate_entry)
-        inc_mouse_fail = self._dynamic_mouse_failed(incumbent_entry)
+        cand_mouse_fail = self._owner_contract_failed(candidate_entry)
+        inc_mouse_fail = self._owner_contract_failed(incumbent_entry)
         if cand_mouse_fail != inc_mouse_fail:
             return not cand_mouse_fail
         cand_completion = "norwegian_completion_cluster" not in candidate_entry.get(
@@ -710,7 +867,9 @@ class ExactEvalCallback(Callback):
                 )
                 algorithm.termination.force_termination = True
 
-        best_genome = self.global_best_genome if self.global_best_genome is not None else population_best_genome
+        if self.global_best_genome is None or self.global_best_exact is None:
+            raise RuntimeError(f"No fully valid genome available for generation {gen} checkpoint")
+        best_genome = self.global_best_genome
         best_layout = self.layout.clone_with(genome=best_genome)
         exact_entry = dict(self.global_best_exact or population_exact_entry)
         self.best_exact = exact_entry
@@ -721,6 +880,7 @@ class ExactEvalCallback(Callback):
         checkpoint = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "generation": gen,
+            "contract_sha256": CONTRACT_SHA256,
             "best_genome": [int(x) for x in best_genome],
             "best_objectives": [float(x) for x in exact_entry["objectives"]],
             "best_constraints": [float(x) for x in exact_entry["constraints"]],
@@ -904,13 +1064,43 @@ def main(argv=None):
         except Exception as e:
             print(f"  Warmstart load failed for {warmstart_path}: {e}", flush=True)
 
+    if warmstart_genome is not None:
+        from evolution.layout_contract import audit_layout_contract
+        warmstart_layout = layout.clone_with(genome=warmstart_genome)
+        seed_acceptance = build_acceptance_report(
+            warmstart_layout,
+            analyze_duplicates(warmstart_layout),
+            analyze_completion_cluster(warmstart_layout),
+            analyze_arrows(warmstart_layout),
+        )
+        contract_audit = audit_layout_contract(warmstart_layout)
+        failed_acceptance = [
+            name for name, passed in seed_acceptance["optimizer_side_checks"].items()
+            if not passed
+        ]
+        if not contract_audit["acceptance_pass"]:
+            raise RuntimeError(
+                "Warmstart fails the versioned owner layout contract: "
+                + ", ".join(contract_audit["failed_checks"])
+            )
+        if failed_acceptance:
+            raise RuntimeError(
+                "Warmstart fails optimizer acceptance; refusing population fallback: "
+                + ", ".join(failed_acceptance)
+            )
+
     surrogate_enabled = bool(config.get("surrogate.enabled", False))
     evaluator = build_evaluator(config, layout)
     maybe_validate_exact_evaluator(config, layout, evaluator)
 
-    # Evaluate pre-seeded genome
-    seed_result = evaluator.evaluate(layout)
-    print(f"  Seed fitness (raw): effort={seed_result.objectives[0]*1:.0f}, adj={seed_result.objectives[1]*1:.0f}, viol={seed_result.objectives[2]*1:.0f}", flush=True)
+    # Score the actual warmstart when present; the reference layout is only
+    # the frozen canvas and otherwise produces a misleading empty-seed score.
+    seed_score_layout = (
+        layout.clone_with(genome=warmstart_genome)
+        if warmstart_genome is not None else layout
+    )
+    seed_result = evaluator.evaluate(seed_score_layout)
+    print(f"  Seed objectives (unscaled): {seed_result.objectives.tolist()}", flush=True)
 
     # Compute or load stable IQR-based scale factors.
     # Scale factors must be stable across runs so that scores are comparable and the
@@ -918,14 +1108,18 @@ def main(argv=None):
     # Problem: generate_random_layouts perturbs the warmstart, so as the warmstart
     # improves the IQR shrinks, biasing the scale factors.
     # Fix: compute once from a fresh (unbiased) random sample and cache to disk.
-    _scale_cache = "build/v2_scale_factors.json"
+    _scale_cache = os.path.join(args.output_dir, "v2_scale_factors.json")
+    _scale_fingerprint = _fitness_scale_fingerprint(args.config, args.data_dir)
     scale_factors = None
     if os.path.exists(_scale_cache):
         try:
             with open(_scale_cache) as _f:
                 _cached = json.load(_f)
-            scale_factors = np.array(_cached["scale_factors"], dtype=np.float64)
-            print(f"  IQR scale factors (cached): effort={scale_factors[0]:.2f}, adj={scale_factors[1]:.2f}, viol={scale_factors[2]:.2f}", flush=True)
+            if _scale_cache_matches(_cached, _scale_fingerprint):
+                scale_factors = np.array(_cached["scale_factors"], dtype=np.float64)
+                print(f"  IQR scale factors (cached, fingerprint matched): effort={scale_factors[0]:.2f}, adj={scale_factors[1]:.2f}, viol={scale_factors[2]:.2f}", flush=True)
+            else:
+                print("  Scale cache is stale or unversioned; recomputing.", flush=True)
         except Exception as _e:
             print(f"  Scale cache load failed: {_e}; recomputing.", flush=True)
             scale_factors = None
@@ -934,14 +1128,12 @@ def main(argv=None):
         # Use a fresh layout (no warmstart) so IQR reflects the true random distribution.
         # Problem: generate_random_layouts perturbs the warmstart genome, so as the warmstart
         # improves, the IQR shrinks — biasing scale factors each run. Fix: compute from fresh.
-        # Also disable semantic-cluster pressure while sampling: otherwise ramping cluster
-        # pressure inflates the violations IQR and cancels out its own normalized effect.
-        _data_dir = str(config.get("data_dir", "data"))
-        fresh_layout = build_layout(_data_dir, config.get("fitness.weights", {}))
+        # Calibrate against the active generation-zero landscape. Keep these scales fixed
+        # during training so later scheduled cluster increases retain their extra pressure.
+        fresh_layout = build_layout(args.data_dir, config.get("fitness.weights", {}))
         n_sample = 200  # more samples for stable IQR
         sample_layouts = generate_random_layouts(fresh_layout, n_sample)
         scale_evaluator = build_evaluator(config, fresh_layout)
-        scale_evaluator.set_semantic_cluster_multiplier(0.0)
         sample_scores, _ = evaluate_exact_batch(
             sample_layouts, fresh_layout, scale_evaluator, perf=perf, label="scale_sample_eval",
         )
@@ -952,14 +1144,14 @@ def main(argv=None):
         seed_scores = np.abs(seed_result_scale.objectives)
         scale_factors = np.maximum(iqr, seed_scores * 0.1)
         scale_factors = np.maximum(scale_factors, 1.0)
-        os.makedirs("build", exist_ok=True)
+        os.makedirs(args.output_dir, exist_ok=True)
         with open(_scale_cache, "w") as _f:
-            json.dump({"scale_factors": scale_factors.tolist()}, _f)
+            json.dump({"scale_factors": scale_factors.tolist(), "fingerprint": _scale_fingerprint}, _f)
         print(f"  IQR scale factors (computed, cached): effort={scale_factors[0]:.2f}, adj={scale_factors[1]:.2f}, viol={scale_factors[2]:.2f}", flush=True)
     evaluator = build_evaluator(config, layout, scale_factors=scale_factors)
     maybe_validate_exact_evaluator(config, layout, evaluator)
-    seed_result = evaluator.evaluate(layout)
-    print(f"  Seed fitness (normalized): effort={seed_result.objectives[0]:.2f}, adj={seed_result.objectives[1]:.2f}, viol={seed_result.objectives[2]:.2f}", flush=True)
+    seed_result = evaluator.evaluate(seed_score_layout)
+    print(f"  Seed objectives (scaled): {seed_result.objectives.tolist()}", flush=True)
     n_constraints = len(seed_result.constraints)
 
     surrogate_manager = None
@@ -1024,12 +1216,20 @@ def main(argv=None):
 
     # Create pymoo problem.
     from evolution import SwapMutation, StructuralGenomeSanitizer
-    from evolution.custom_ga import CustomGARunner
+    from evolution.custom_ga import CustomGARunner, _has_unsupported_duplicate
+    from evolution.layout_contract import owner_protected_indices
+
+    protected_seed = (layout.genome.copy() if warmstart_genome is None
+                      else warmstart_genome.astype(np.int32).copy())
+    mutation_frozen_mask = layout.frozen_mask.copy()
+    if warmstart_genome is not None:
+        mutation_frozen_mask[list(owner_protected_indices(layout, protected_seed))] = True
+    mutation_layout = layout.clone_with(genome=protected_seed)
 
     mutation = SwapMutation(
         prob=config.get("evolution.mutation_prob", 0.15),
-        frozen_mask=layout.frozen_mask,
-        layout=layout,
+        frozen_mask=mutation_frozen_mask,
+        layout=mutation_layout,
         group_overwrite_prob=config.get("evolution.group_overwrite_prob", 0.15),
         mouse_workflow_prob=config.get("evolution.mouse_workflow_prob", 0.06),
         l7_access_prob=config.get("evolution.l7_access_prob", 0.03),
@@ -1039,26 +1239,57 @@ def main(argv=None):
         cluster_app_prob=config.get("evolution.cluster_app_prob", 0.20),
         effort_swap_prob=config.get("evolution.effort_swap_prob", 0.06),
         smart_duplicate_prob=config.get("evolution.smart_duplicate_prob", 0.20),
+        mb45_move_prob=config.get("evolution.mb45_move_prob", 0.04),
     )
     sanitizer = StructuralGenomeSanitizer(
         n_shortcuts=layout.n_shortcuts,
-        frozen_mask=layout.frozen_mask,
-        seed_genome=layout.genome,
+        frozen_mask=mutation_frozen_mask,
+        seed_genome=protected_seed,
         layout=layout,
     )
     crossover_prob = config.get("evolution.crossover_prob", 0.7)
+    unsupported_duplicate_mask = unsupported_duplicate_sid_mask(layout)
 
     if warmstart_genome is not None:
-        print(f"  Initial population: 1 warmstart + {pop_size // 5} perturbed + {pop_size - pop_size // 5 - 1} random.", flush=True)
+        print(
+            f"  Initial population: 1 warmstart + {pop_size - 1} mutated seed variants; "
+            "hard-invalid or nonaccepted variants revert to the warmstart.",
+            flush=True,
+        )
     else:
         print("  All individuals start from fully random shortcut assignment (L0 thumb gets one random momentary hold).", flush=True)
     print(f"\nRunning evolution (CustomGA): pop={pop_size}, gens={n_gen}", flush=True)
     t0 = time.time()
 
-    initial_pop_X = generate_random_layouts(layout, pop_size, warmstart_genome=warmstart_genome)
-
-    mini_eval_fraction = float(config.get("surrogate.mini_eval_fraction", 0.1))
-    mini_eval_count = max(1, int(round(pop_size * mini_eval_fraction)))
+    if warmstart_genome is not None:
+        initial_pop_X = np.tile(warmstart_genome.astype(np.int32), (pop_size, 1))
+        if pop_size > 1:
+            mutation._do(None, initial_pop_X[1:])
+            sanitizer._do(None, initial_pop_X[1:])
+        _, initial_G = evaluator.evaluate_batch(initial_pop_X)
+        valid_variations = 1
+        for row in range(1, pop_size):
+            if np.any(initial_G[row] > 0):
+                initial_pop_X[row] = warmstart_genome
+                continue
+            if _has_unsupported_duplicate(
+                initial_pop_X[row], unsupported_duplicate_mask,
+                layout.frozen_mask,
+            ):
+                initial_pop_X[row] = warmstart_genome
+                continue
+            candidate_layout = layout.clone_with(genome=initial_pop_X[row])
+            report = build_acceptance_report(
+                candidate_layout, analyze_duplicates(candidate_layout),
+                analyze_completion_cluster(candidate_layout), analyze_arrows(candidate_layout),
+            )
+            if report["optimizer_side_pass"]:
+                valid_variations += 1
+            else:
+                initial_pop_X[row] = warmstart_genome
+        print(f"  Valid seeded population: {valid_variations}/{pop_size} candidates under full optimizer acceptance.", flush=True)
+    else:
+        initial_pop_X = generate_random_layouts(layout, pop_size)
 
     # Parse semantic-cluster multiplier schedule if present.
     # Format: list of [generation, multiplier] entries, e.g.
@@ -1082,10 +1313,10 @@ def main(argv=None):
         build_dir=args.output_dir,
         perf=perf,
         hard_constraints=hard_constraints,
-        mini_eval_count=mini_eval_count,
         n_constraints=n_constraints,
         semantic_multiplier_schedule=semantic_schedule,
         cluster_score_tolerance=float(config.get("evolution.cluster_score_tolerance", 0.15)),
+        unsupported_duplicate_sid_mask=unsupported_duplicate_mask,
     )
     ga_result = runner.run(n_gen, initial_pop_X=initial_pop_X)
 
@@ -1102,9 +1333,7 @@ def main(argv=None):
             flush=True,
         )
     else:
-        print("Warning: no global best found; falling back to seed genome.", flush=True)
-        best_genome = layout.genome.copy()
-        best_f = seed_result.objectives.copy()
+        raise RuntimeError("No fully valid seed or candidate entered the exact archive")
     print(f"Best layout (exact): objectives={best_f.tolist()}", flush=True)
 
     # Exact evaluation of best
@@ -1155,6 +1384,9 @@ def main(argv=None):
             ),
         },
         "exact_eval_history": runner.exact_history,
+        "archive_acceptance_rejections": ga_result.get("archive_acceptance_rejections", {}),
+        "archive_cluster_prefilter_rejections": ga_result.get("archive_cluster_prefilter_rejections", 0),
+        "archive_cluster_prefilter_reasons": ga_result.get("archive_cluster_prefilter_reasons", {}),
         "pareto_front": [],
         "generation": ga_result["gens_run"],
         "population_size": pop_size,
@@ -1181,6 +1413,9 @@ def main(argv=None):
             "surrogate_enabled": surrogate_enabled,
             "surrogate_device": getattr(getattr(surrogate_manager, "trainer", None), "device", None) if surrogate_manager else None,
             "profile_fast": args.profile_fast or config.get("profiling.enabled", False),
+            "archive_acceptance_rejections": ga_result.get("archive_acceptance_rejections", {}),
+            "archive_cluster_prefilter_rejections": ga_result.get("archive_cluster_prefilter_rejections", 0),
+            "archive_cluster_prefilter_reasons": ga_result.get("archive_cluster_prefilter_reasons", {}),
             "events": perf.summary(),
         }, f, indent=2, default=str)
     print(f"Performance report saved to {perf_path}", flush=True)

@@ -75,7 +75,7 @@ def main():
             for row, (a, b) in enumerate(batch_pairs):
                 candidates[row, a], candidates[row, b] = candidates[row, b], candidates[row, a]
             batch_objectives, batch_constraints = evaluator.evaluate_batch(candidates)
-            batch_scores = batch_objectives.sum(axis=1)
+            batch_scores = np.asarray(batch_objectives, dtype=np.float64).sum(axis=1)
             feasible = np.all(batch_constraints <= 0, axis=1)
             indexes = np.flatnonzero(feasible & (batch_scores < score - args.minimum_improvement))
             improvers.extend((float(batch_scores[i]), batch_pairs[int(i)], candidates[int(i)].copy(),

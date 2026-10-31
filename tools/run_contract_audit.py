@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Audit the exact-best genome against the validated-run contracts."""
 import argparse
+import hashlib
 import json
 import os
 import sys
 from collections import Counter
+from pathlib import Path
 
 import numpy as np
 
@@ -20,6 +22,10 @@ from evolution.arrow_cluster import analyze_arrows
 from evolution.completion_cluster import analyze_completion_cluster
 from tools._common import load_checkpoint, load_evaluator
 from tools.semantic_cluster_report import _cluster_quality
+
+
+def _checkpoint_sha256(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def _contract_checks(optimizer_acceptance, constraints, frozen_positions, ordered_failures):
@@ -83,13 +89,22 @@ def audit_genome(genome, generation, evaluator):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cpu", action="store_true", help="Run audit evaluator on CPU")
+    parser.add_argument("--data-dir", default="data",
+                        help="Layout and usage snapshot directory (default: data)")
+    parser.add_argument("--config", default="config_v2.yaml",
+                        help="Fitness configuration used for the audit")
     parser.add_argument("checkpoint")
     args = parser.parse_args()
     checkpoint = load_checkpoint(args.checkpoint)
-    evaluator = load_evaluator(require_cuda=not args.cpu, use_cuda=False if args.cpu else None,
-                               generation=checkpoint["generation"])
+    evaluator = load_evaluator(
+        config_path=args.config, data_dir=args.data_dir,
+        require_cuda=not args.cpu, use_cuda=False if args.cpu else None,
+        generation=checkpoint["generation"],
+    )
     audit = audit_genome(checkpoint.get("best_genome", checkpoint.get("genome")),
                          checkpoint["generation"], evaluator)
+    audit["checkpoint_sha256"] = _checkpoint_sha256(args.checkpoint)
+    audit["contract_sha256"] = audit["acceptance"]["details"]["owner_layout_contract_v1"]["contract_sha256"]
     print(json.dumps(audit, indent=2))
     return 0 if audit["run_contract_pass"] else 5
 

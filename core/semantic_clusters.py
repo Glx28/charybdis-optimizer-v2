@@ -120,7 +120,7 @@ KEYWORD_FAMILIES = [
     # Keep launchers in their actual contexts: PowerToys' two launch surfaces,
     # and Windows Search/Run. Browser address/search shortcuts have their own
     # family above; unrelated app search shortcuts do not join these groups.
-    KeywordFamily("powertoys_launcher", ("launcher", "command palette"),
+    KeywordFamily("powertoys_launcher", ("launcher", "command palette", "walk this way", "window switcher"),
                   require_app="PowerToys"),
     KeywordFamily("windows_launcher", ("search", "run dialog"),
                   require_app="Windows 11"),

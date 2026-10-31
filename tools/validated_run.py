@@ -153,9 +153,9 @@ def prepare(warmstart_path=None, fresh_start=False, generations=30000, usage_log
         genome = payload.get("best_genome", payload.get("genome"))
         if not isinstance(genome, list):
             raise ValueError(f"Warmstart must contain best_genome or genome list: {input_path}")
-        warmstart_generation = payload.get("best_generation")
+        warmstart_generation = payload.get("seed_source_generation", payload.get("source_generation"))
         if warmstart_generation is None:
-            warmstart_generation = payload.get("generation", payload.get("source_generation"))
+            warmstart_generation = payload.get("best_generation", payload.get("generation"))
         warmstart_sha256 = hashlib.sha256(input_bytes).hexdigest()
         archived_checkpoint = run / "warmstart_source_checkpoint.json"
         archived_checkpoint.write_bytes(input_bytes)
@@ -166,6 +166,7 @@ def prepare(warmstart_path=None, fresh_start=False, generations=30000, usage_log
             "genome": genome,
             "source_checkpoint": str(input_path),
             "source_generation": warmstart_generation,
+            "checkpoint_generation": payload.get("generation"),
         }
         selected_warmstart = source / "build/v2_local_search_result.json"
         selected_warmstart.parent.mkdir(parents=True, exist_ok=True)
@@ -429,12 +430,15 @@ def contract_audit_checkpoint(run, checkpoint, source):
         [str(PYTHON), "tools/run_contract_audit.py", "--cpu", str(checkpoint)],
         cwd=source, capture_output=True, text=True,
     )
-    audit_path.write_text(result.stdout)
     (audit_path.with_suffix(".stderr")).write_text(result.stderr)
     if result.returncode not in (0, 5):
         raise RuntimeError(f"contract audit failed to run for generation {generation}: {result.stderr}")
     audit = json.loads(result.stdout)
     audit["audit_exit_code"] = result.returncode
+    audit["checkpoint_sha256"] = hashlib.sha256(checkpoint.read_bytes()).hexdigest()
+    audit["contract_sha256"] = audit.get("acceptance", {}).get("details", {}).get(
+        "owner_layout_contract_v1", {}).get("contract_sha256")
+    write_json(audit_path, audit)
     return audit
 
 
@@ -515,15 +519,41 @@ def watch_existing(run, pid):
                         gate_baseline_audit = contract_audit_checkpoint(
                             run, reviews / path.name, source,
                         )
+                        if not gate_baseline_audit.get("run_contract_pass", False):
+                            stop_reason = "initial checkpoint failed the owner/run contract"
+                            stop_generation = int(checkpoint["generation"])
+                            write_json(reviews / f"generation-{stop_generation}-invalid.json",
+                                       gate_baseline_audit)
+                            log.write(f"STOPPING at generation {stop_generation}: {stop_reason}\n")
+                            try:
+                                os.kill(pid, 15)
+                            except ProcessLookupError:
+                                pass
                     except Exception as exc:
-                        write_json(reviews / f"generation-{checkpoint['generation']}-audit-error.json", {"reason": str(exc)})
-                        log.write(f"Checkpoint audit failed; continuing run: {exc}\n")
+                        stop_reason = f"initial checkpoint contract audit failed: {exc}"
+                        stop_generation = int(checkpoint["generation"])
+                        write_json(reviews / f"generation-{stop_generation}-audit-error.json", {"reason": str(exc)})
+                        log.write(f"STOPPING at generation {stop_generation}: {stop_reason}\n")
                         gate_baseline_audit = {"checks": {}, "audit_error": str(exc)}
+                        try:
+                            os.kill(pid, 15)
+                        except ProcessLookupError:
+                            pass
                     continue
                 try:
                     current_audit = contract_audit_checkpoint(run, reviews / path.name, source)
                     if current_audit.get("audit_error"):
-                        continue
+                        raise RuntimeError(current_audit["audit_error"])
+                    if not current_audit.get("run_contract_pass", False):
+                        stop_reason = "checkpoint failed the owner/run contract"
+                        stop_generation = int(checkpoint["generation"])
+                        write_json(reviews / f"generation-{stop_generation}-invalid.json", current_audit)
+                        log.write(f"STOPPING at generation {stop_generation}: {stop_reason}\n")
+                        try:
+                            os.kill(pid, 15)
+                        except ProcessLookupError:
+                            pass
+                        break
                     gate_generation = checkpoint["generation"]
                     if gate_generation not in CONTRACT_REVIEW_GENERATIONS:
                         continue
@@ -531,11 +561,15 @@ def watch_existing(run, pid):
                         gate_baseline, summary, gate_baseline_audit, current_audit,
                     )
                 except Exception as exc:
-                    write_json(reviews / f"generation-{checkpoint['generation']}-audit-error.json", {"reason": str(exc)})
-                    log.write(f"Contract review failed; continuing run: {exc}\n")
-                    gate_baseline = summary
-                    gate_baseline_audit = {"checks": {}, "audit_error": str(exc)}
-                    continue
+                    stop_reason = f"checkpoint contract audit failed: {exc}"
+                    stop_generation = int(checkpoint["generation"])
+                    write_json(reviews / f"generation-{stop_generation}-audit-error.json", {"reason": str(exc)})
+                    log.write(f"STOPPING at generation {stop_generation}: {stop_reason}\n")
+                    try:
+                        os.kill(pid, 15)
+                    except ProcessLookupError:
+                        pass
+                    break
                 stop, consecutive_stalls, decision = contract_gate_should_stop(
                     review, current_audit, consecutive_stalls,
                 )
@@ -634,15 +668,10 @@ def execute(run, min_free_mib, max_utilization):
                                    "max_utilization": max_utilization})
     # Check the frozen code. Guard additionally runs in the dirty Git worktree,
     # where changed-file detection triggers its mandatory performance check.
-    known_fixture_failures = (
-        "tests/test_run_contract.py::test_sparse_layer_occupancy_is_diagnostic_only[1-True-numba]",
-        "tests/test_run_contract.py::test_sparse_layer_occupancy_is_diagnostic_only[1-True-cuda]",
-    )
     checked(run, "focused-tests", [str(PYTHON), "-m", "pytest", "-q", "tests/test_run_contract.py",
-                                   "tests/test_layer_access_thumb.py", "tests/test_semantic_clusters.py"],
-            source, allowed_test_failures=known_fixture_failures)
+                                   "tests/test_layer_access_thumb.py", "tests/test_semantic_clusters.py"], source)
     checked(run, "unit-tests", [str(PYTHON), "-m", "pytest", "-q", "tests/"],
-            source, allowed_test_failures=known_fixture_failures)
+            source)
     checked(run, "ai-guard", ["just", "ai-guard"], ROOT)
     # Explicit benchmark exit code rejects contention skips (guard permits them).
     checked(run, "perf-benchmark", [str(PYTHON), "tools/perf_benchmark.py"], source)
@@ -693,8 +722,32 @@ def execute(run, min_free_mib, max_utilization):
                     if gate_baseline is None:
                         gate_baseline = summary
                         gate_baseline_audit = contract_audit_checkpoint(run, path, source)
+                        if not gate_baseline_audit.get("run_contract_pass", False):
+                            stop_reason = "initial checkpoint failed the owner/run contract"
+                            gate_generation = checkpoint["generation"]
+                            write_json(reviews / f"generation-{gate_generation}-invalid.json", gate_baseline_audit)
+                            process.terminate()
+                            try:
+                                process.wait(timeout=30)
+                            except subprocess.TimeoutExpired:
+                                process.kill()
+                                process.wait()
+                            break
                         continue
                     current_audit = contract_audit_checkpoint(run, path, source)
+                    if current_audit.get("audit_error"):
+                        raise RuntimeError(current_audit["audit_error"])
+                    if not current_audit.get("run_contract_pass", False):
+                        stop_reason = "checkpoint failed the owner/run contract"
+                        gate_generation = checkpoint["generation"]
+                        write_json(reviews / f"generation-{gate_generation}-invalid.json", current_audit)
+                        process.terminate()
+                        try:
+                            process.wait(timeout=30)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait()
+                        break
                     if gate_baseline_audit.get("audit_error"):
                         gate_baseline = summary
                         gate_baseline_audit = current_audit
@@ -735,9 +788,15 @@ def execute(run, min_free_mib, max_utilization):
                 except Exception as exc:
                     generation = checkpoint["generation"]
                     write_json(reviews / f"generation-{generation}-audit-error.json", {"reason": str(exc)})
-                    print(f"Generation {generation} contract audit failed; continuing run: {exc}", flush=True)
-                    gate_baseline = summary
-                    gate_baseline_audit = {"checks": {}, "audit_error": str(exc)}
+                    stop_reason = f"checkpoint audit failed: {exc}"
+                    gate_generation = generation
+                    process.terminate()
+                    try:
+                        process.wait(timeout=30)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    break
             if process.poll() is not None:
                 break
             time.sleep(10)

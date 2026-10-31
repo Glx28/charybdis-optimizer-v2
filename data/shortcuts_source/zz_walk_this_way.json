@@ -1,0 +1,18 @@
+{
+  "id": "zz_walk_this_way",
+  "name": "PowerToys",
+  "exe_names": [
+    "powertoys.exe"
+  ],
+  "expected_count": 1,
+  "shortcuts": [
+    {
+      "keys": "Ctrl+Alt+Win+F11",
+      "action": "Walk This Way window switcher",
+      "category": "Window Management",
+      "frequency": "high",
+      "importance": 10.0,
+      "preferred_hand": "either"
+    }
+  ]
+}

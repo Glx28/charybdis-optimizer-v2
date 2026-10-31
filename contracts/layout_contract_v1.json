@@ -1,0 +1,82 @@
+{
+  "version": "1.4.2",
+  "mouse_layer": 1,
+  "frozen_layer": 7,
+  "frozen_layer_content_source": "data/layout.json:l7_frozen",
+  "frozen_layer_content_sha256": "cfb9082bb21b2089663181f7eab3b9afcbb6edf123484028a2e37b9f1b2aeb23",
+  "essential_access": {
+    "source_layer": 0,
+    "target_layer": 1,
+    "x": 3,
+    "y": 4,
+    "mode": "ordinary_momentary"
+  },
+  "seed_fixed_bindings": [
+    {"scope": "current_applied_seed", "layer": 0, "x": 7, "y": 4, "key": "@access:L7:hold"}
+  ],
+  "fixed_mouse_bindings": {
+    "MB1": {"layer": 1, "x": 8, "y": 2},
+    "MB2": {"layer": 1, "x": 9, "y": 2},
+    "@scroll:L1:hold": {"layer": 1, "x": 10, "y": 2}
+  },
+  "mouse_buttons": ["MB1", "MB2", "MB3", "MB4", "MB5"],
+  "mb3_region": "L1 right-hand non-thumb",
+  "mb45_group": "L1 right-hand non-thumb, same row, adjacent, MB4 left of MB5",
+  "scroll_bindings": {
+    "count": 3,
+    "mode": "momentary",
+    "fixed": "@scroll:L1:hold",
+    "additional": 2,
+    "additional_layer_rules": "distinct layers outside L0, L1, and frozen L7; each targets its containing layer; non-thumb; never an essential access edge"
+  },
+  "mouse_lock": "reachable L1 self-toggle/lock from the L0 L1 hold; lock persists after hold release",
+  "ordinary_hold_reachability": "every generated layer L1-L10 except frozen L7 has an ordinary momentary path from L0; scroll bindings are excluded",
+  "thumb_clearance": "for every reachable ordinary momentary thumb hold, including same-layer holds, on its target layer each thumb side held along an access path contains only empty or return-to-L0 bindings; toggles and locks never waive this rule; L7 is exempt",
+  "required_l1_shortcuts": [
+    "Win+Alt+Space",
+    "Ctrl+Alt+Win+F11",
+    "Win+Tab",
+    "Win+Shift+S",
+    "Ctrl+C",
+    "Ctrl+V",
+    "Ctrl+S",
+    "Ctrl+X",
+    "Win+Shift+Left",
+    "Win+Shift+Right",
+    "Win+Left",
+    "Win+Right",
+    "Ctrl+-",
+    "Ctrl++"
+  ],
+  "required_shortcut_placement": "These shortcuts must remain on legal L1 non-thumb positions outside the top row, with physical effort at most 1.0. Usage, effort, and familiarity score alternative placements within that legal set.",
+  "required_groups": [
+    ["Ctrl+X", "Ctrl+C"],
+    ["Ctrl+C", "Ctrl+V"],
+    ["Win+Alt+Space", "Ctrl+Alt+Win+F11"],
+    ["Win+Shift+Left", "Win+Shift+Right"],
+    ["Win+Left", "Win+Right"],
+    ["Ctrl+-", "Ctrl++"]
+  ],
+  "required_semantic_cluster_layouts": "Every semantic cluster with declared nonzero relative offsets must retain its exact relative placement.",
+  "norwegian_raw_key_cluster": {
+    "keys_by_order": {
+      "1": "DASH AND UNDERSCORE",
+      "2": "EQUALS AND PLUS",
+      "3": "GRAVE ACCENT AND TILDE",
+      "4": "RIGHT BRACE",
+      "5": "NON-US BACKSLASH AND PIPE"
+    },
+    "offsets_from_order_2": {
+      "1": [-1, 0], "2": [0, 0], "3": [-2, 0], "4": [-2, 1], "5": [-2, 3]
+    },
+    "layer_rule": "one mutable non-L7 layer"
+  },
+  "preserved_owner_rules": [
+    "Norwegian keys and grouping",
+    "LeftAlt on L0",
+    "reachable non-L0 RightAlt/AltGr",
+    "required shortcut groups",
+    "existing duplicate restrictions",
+    "L7 frozen with existing contents"
+  ]
+}

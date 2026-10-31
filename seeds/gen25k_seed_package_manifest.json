@@ -1,0 +1,70 @@
+{
+  "package_version": 1,
+  "source_generation": 25000,
+  "local_generation": 0,
+  "seed_sha256": "30d2de8ce4b879a11f326dd30b3c1d6187754e268736ce1313ba5f30e2336500",
+  "genome_sha256": "bd1c9e52c86dcdf1f51112d33e2166a96982da46f6b85996d42cd32521c6b53c",
+  "contract_version": "1.4.1",
+  "contract_sha256": "40cf4b2fb7fafff37f46e036a2bd168107eb327c682ec84b2942ea6dbfca9020",
+  "usage_stats_sha256": "72c1fa4185f073465ff93f78c20759aee19aa395ad39632a87af38416dbece5d",
+  "artifacts": {
+    "seed": {
+      "path": "/home/nos/charybdis/charybdis-optimizer-v2/seeds/gen25k_corrected_seed.json",
+      "sha256": "30d2de8ce4b879a11f326dd30b3c1d6187754e268736ce1313ba5f30e2336500"
+    },
+    "checkpoint": {
+      "path": "/home/nos/charybdis/charybdis-optimizer-v2/build/runs/gen25k_repair_work/current_logger_20261030_v1.3/seed_export_checkpoint.json",
+      "sha256": "2ec971eb3edb43e0ef395ea4066b6a8978a10fcc46b6c0501ea480f67fa2899f"
+    },
+    "contract_audit": {
+      "path": "/home/nos/charybdis/charybdis-optimizer-v2/build/runs/gen25k_contract14_reaudit_20261030T091905Z/seed-contract-audit.json",
+      "sha256": "c2bc62c87d6103c6e2987947a215be313ee3f63bbec9632f10d34dbd5b7a0031"
+    },
+    "norwegian_owner_audit": {
+      "path": "/home/nos/charybdis/charybdis-optimizer-v2/build/runs/gen25k_repair_work/current_logger_20261030_v1.3/seed_norwegian_owner_audit.json",
+      "sha256": "b719ea8be211b3cc5187fd6c4dc9e5ce9104b91adc88ae74c81f8fc9152507fe"
+    },
+    "binding_audit": {
+      "path": "/home/nos/charybdis/charybdis-optimizer-v2/build/runs/gen25k_contract14_reaudit_20261030T091905Z/seed-binding-audit.json",
+      "sha256": "d64ef8f16dffc25cd2762c4b94ea300654d704a59959f8e14ea9a25afab0b3a2"
+    },
+    "csv": {
+      "path": "/home/nos/charybdis/charybdis-optimizer-v2/build/runs/gen25k_repair_work/current_logger_20261030_v1.3/export/gen25k_corrected_seed_v1.3_keybindings_explained.csv",
+      "sha256": "1ded76aaa1f0e90088fa3e18aaf315280e9e7496317d4386c42fbf89f5d709a9"
+    },
+    "apply_js": {
+      "path": "/home/nos/charybdis/charybdis-optimizer-v2/build/runs/gen25k_repair_work/current_logger_20261030_v1.3/export/gen25k_corrected_seed_v1.3_apply.js",
+      "sha256": "7b2c22740073a46fcd852fd343ae8c2b3a72b5c5076bf3bd852648313b063d0c"
+    },
+    "seed_contract_1_4_audit": {
+      "path": "build/runs/gen25k_contract14_reaudit_20261030T091905Z/seed-contract-audit.json",
+      "status": "pass",
+      "sha256": "c2bc62c87d6103c6e2987947a215be313ee3f63bbec9632f10d34dbd5b7a0031",
+      "contract_version": "1.4.1"
+    },
+    "contract_audit_checkpoint": {
+      "path": "/home/nos/charybdis/charybdis-optimizer-v2/build/runs/gen25k_contract14_reaudit_20261030T091905Z/seed-audit-checkpoint.json",
+      "sha256": "f618727ef6c953a2d348e4b7700702238e6ebd68e89c4e1cbdf8751f9e52336a"
+    }
+  },
+  "exported_binding_sha256": "0b8202f935070222b0dc4141f6ea4c1c7b6d17e82feb0eb76213dba173737a75",
+  "acceptance": {
+    "seed_accepted": true,
+    "contract_audit_pass": true,
+    "norwegian_owner_audit_pass": true,
+    "binding_audit_pass": true,
+    "assignment_mismatches": 0,
+    "payload_mismatches": 0,
+    "all_pass": true
+  },
+  "logger_snapshot": {
+    "path": "/mnt/c/Users/nos/portable-charybdis/runtime/shortcut_usage.jsonl",
+    "sha256": "0828b027888d9cf873a3f02a59688e59ffc3ca288dab0b45c59ec869c5ae40b1",
+    "bytes": 32424781,
+    "valid_events": 208434,
+    "malformed_lines": 3,
+    "first_event_ts": "2026-09-29T13:37:07Z",
+    "last_event_ts": "2026-10-30T08:35:08Z",
+    "usage_stats_sha256": "72c1fa4185f073465ff93f78c20759aee19aa395ad39632a87af38416dbece5d"
+  }
+}

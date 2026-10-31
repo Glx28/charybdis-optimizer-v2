@@ -692,6 +692,32 @@ class TestSurrogate(unittest.TestCase):
         cached_scores = np.array([entry[1] for entry in manager.exact_cache])
         self.assertEqual(cached_scores.shape, (20, 7))
 
+    def test_surrogate_manager_cache_is_bounded_to_recent_exact_samples(self):
+        surrogate = LayoutSurrogate(
+            n_positions=10, n_shortcuts=20, n_factors=3, hidden_dim=32
+        )
+        trainer = SurrogateTrainer(surrogate, device="cpu")
+        manager = SurrogateManager(
+            surrogate, trainer, max_retrain_samples=4,
+        )
+
+        layouts = np.arange(60, dtype=np.int32).reshape(6, 10)
+        scores = np.arange(18, dtype=np.float32).reshape(6, 3)
+        manager.add_exact_evaluations(layouts, scores)
+        self.assertEqual(len(manager.exact_cache), 4)
+        np.testing.assert_array_equal(
+            np.stack([entry[0] for entry in manager.exact_cache]), layouts[-4:],
+        )
+
+        next_layouts = np.arange(60, 90, dtype=np.int32).reshape(3, 10)
+        next_scores = np.arange(9, dtype=np.float32).reshape(3, 3)
+        manager.add_exact_evaluations(next_layouts, next_scores)
+        self.assertEqual(len(manager.exact_cache), 4)
+        np.testing.assert_array_equal(
+            np.stack([entry[0] for entry in manager.exact_cache]),
+            np.concatenate([layouts[-1:], next_layouts]),
+        )
+
     def test_feasibility_first_selection(self):
         scalar = np.array([1.0, 0.5, 2.0, 0.1, 3.0], dtype=np.float32)
         cv = np.array([
@@ -838,29 +864,19 @@ class TestSurrogate(unittest.TestCase):
                 self.assertTrue(positions_of_sid.issubset({0, 1, 2, 3, 4}),
                     f"sid {sid} moved to unexpected positions {positions_of_sid}")
 
-    def test_mouse_workflow_mutation_proposes_acceptance_visible_layer(self):
-        random.seed(300)
-        positions = tuple([
-            Position(0, 0, 3.0, 4.0, "left", 0, 0.1, is_thumb=True),
-            Position(1, 0, 4.0, 4.0, "left", 0, 0.1, is_thumb=True),
-            Position(2, 0, 5.0, 4.0, "left", 0, 0.1, is_thumb=True),
-            Position(3, 0, 0.0, 0.0, "left", 1, 1.0),
-            *(Position(i, 1, float(7 + (i - 4)), 1.0, "right", 1, 0.2) for i in range(4, 10)),
-            *(Position(i, 1, float(i - 10), 2.0, "left", 1, 1.0) for i in range(10, 14)),
-        ])
-        shortcuts = tuple([
-            Shortcut(0, "MB1", "Left click", "Mouse", 10.0, category="mouse", base_key="MB1"),
-            Shortcut(1, "MB2", "Right click", "Mouse", 9.0, category="mouse", base_key="MB2"),
-            Shortcut(2, "MB3", "Middle click", "Mouse", 7.0, category="mouse", base_key="MB3"),
-            Shortcut(3, "MB4", "Back", "Mouse", 6.0, category="mouse", base_key="MB4"),
-            Shortcut(4, "MB5", "Forward", "Mouse", 6.0, category="mouse", base_key="MB5"),
-            Shortcut(5, "@scroll:L1:hold", "Scroll Mode Layer 1", "Layer Access", 15.0, category="layer_access", base_key="Scroll_L1", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
-            Shortcut(6, "@access:L1:hold", "Momentary Layer 1", "Layer Access", 12.0, category="layer_access", base_key="L1", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
-            Shortcut(7, "@access:L1:toggle", "Toggle Layer 1", "Layer Access", 12.0, category="layer_access", base_key="L1", is_layer_access=True, access_target_layer=1, access_is_momentary=False),
-            Shortcut(8, "@access:L7:hold", "Momentary Layer 7", "Layer Access", 12.0, category="layer_access", base_key="L7", is_layer_access=True, access_target_layer=7, access_is_momentary=True),
-            Shortcut(9, "@access:L7:toggle", "Toggle Layer 7", "Layer Access", 12.0, category="layer_access", base_key="L7", is_layer_access=True, access_target_layer=7, access_is_momentary=False),
-            *(Shortcut(i, f"K{i}", "", "App", 1.0, base_key=f"K{i}") for i in range(10, 14)),
-        ])
+    def test_mouse_layer_role_is_fixed_and_workflow_relocation_is_disabled(self):
+        """Legacy mouse-workflow proposals cannot move the owner role from L1."""
+        positions = tuple(
+            Position(i, 0 if i < 4 else 1, float(i), 0.0, "left", 0 if i < 4 else 1, 0.5, is_thumb=i < 4)
+            for i in range(14)
+        )
+        shortcuts = tuple(
+            Shortcut(i, key, key, "Mouse", 1.0, category="mouse", base_key=key)
+            for i, key in enumerate(("MB1", "MB2", "MB3", "MB4", "MB5"))
+        ) + tuple(
+            Shortcut(i, f"K{i}", "", "App", 1.0, base_key=f"K{i}")
+            for i in range(5, 14)
+        )
         genome = np.arange(14, dtype=np.int32)
         layout = Layout(genome.copy(), positions, shortcuts, np.zeros(14, dtype=np.bool_))
         mutation = SwapMutation(
@@ -869,145 +885,9 @@ class TestSurrogate(unittest.TestCase):
             layout=layout,
             group_overwrite_prob=0.0,
             mouse_workflow_prob=1.0,
-            l7_access_prob=0.0,
         )
         moved = mutation._do(None, genome.reshape(1, -1).copy())[0]
-        report = _dynamic_mouse_layer_report(layout.clone_with(genome=moved))
-        self.assertTrue(report["acceptance_pass"], report)
-
-    def test_mouse_workflow_mutation_assigns_by_effort_priority(self):
-        """Freshly-proposed mouse layer must put Scroll/MB2/MB1 on the
-        lowest-effort candidate slots, not an arbitrary position-index order."""
-        import evolution
-        random.seed(301)
-        positions = tuple([
-            Position(0, 0, 3.0, 4.0, "left", 0, 0.1, is_thumb=True),
-            Position(1, 0, 4.0, 4.0, "left", 0, 0.1, is_thumb=True),
-            Position(2, 0, 5.0, 4.0, "left", 0, 0.1, is_thumb=True),
-            Position(3, 0, 0.0, 0.0, "left", 1, 1.0),
-            # 6 right-non-thumb candidate slots with distinct, deliberately
-            # scrambled efforts (position index order != effort order). x=7/8
-            # are deliberately given the two highest efforts so they're never
-            # "best" and don't collide with the separate x7/x8 scroll-comfort
-            # rule under test elsewhere.
-            Position(4, 1, 7.0, 1.0, "right", 1, 1.75),
-            Position(5, 1, 9.0, 1.0, "right", 1, 0.0),
-            Position(6, 1, 8.0, 1.0, "right", 1, 1.0),
-            Position(7, 1, 10.0, 1.0, "right", 1, 1.25),
-            Position(8, 1, 11.0, 1.0, "right", 1, 0.5),
-            Position(9, 1, 12.0, 1.0, "right", 1, 0.75),
-            *(Position(i, 1, float(i - 10), 2.0, "left", 1, 1.0) for i in range(10, 14)),
-        ])
-        shortcuts = tuple([
-            Shortcut(0, "MB1", "Left click", "Mouse", 10.0, category="mouse", base_key="MB1"),
-            Shortcut(1, "MB2", "Right click", "Mouse", 9.0, category="mouse", base_key="MB2"),
-            Shortcut(2, "MB3", "Middle click", "Mouse", 7.0, category="mouse", base_key="MB3"),
-            Shortcut(3, "MB4", "Back", "Mouse", 6.0, category="mouse", base_key="MB4"),
-            Shortcut(4, "MB5", "Forward", "Mouse", 6.0, category="mouse", base_key="MB5"),
-            Shortcut(5, "@scroll:L1:hold", "Scroll Mode Layer 1", "Layer Access", 15.0, category="layer_access", base_key="Scroll_L1", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
-            Shortcut(6, "@access:L1:hold", "Momentary Layer 1", "Layer Access", 12.0, category="layer_access", base_key="L1", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
-            Shortcut(7, "@access:L1:toggle", "Toggle Layer 1", "Layer Access", 12.0, category="layer_access", base_key="L1", is_layer_access=True, access_target_layer=1, access_is_momentary=False),
-            Shortcut(8, "@access:L7:hold", "Momentary Layer 7", "Layer Access", 12.0, category="layer_access", base_key="L7", is_layer_access=True, access_target_layer=7, access_is_momentary=True),
-            Shortcut(9, "@access:L7:toggle", "Toggle Layer 7", "Layer Access", 12.0, category="layer_access", base_key="L7", is_layer_access=True, access_target_layer=7, access_is_momentary=False),
-            *(Shortcut(i, f"K{i}", "", "App", 1.0, base_key=f"K{i}") for i in range(10, 14)),
-        ])
-        genome = np.arange(14, dtype=np.int32)
-        layout = Layout(genome.copy(), positions, shortcuts, np.zeros(14, dtype=np.bool_))
-
-        for use_numba in (True, False):
-            orig = evolution.NUMBA_AVAILABLE
-            evolution.NUMBA_AVAILABLE = use_numba
-            try:
-                mutation = SwapMutation(
-                    prob=0.0,
-                    frozen_mask=layout.frozen_mask,
-                    layout=layout,
-                    group_overwrite_prob=0.0,
-                    mouse_workflow_prob=1.0,
-                    l7_access_prob=0.0,
-                )
-                moved = mutation._do(None, genome.reshape(1, -1).copy())[0]
-            finally:
-                evolution.NUMBA_AVAILABLE = orig
-
-            pos_of = {sid: int(idx) for idx, sid in enumerate(moved) if 0 <= sid < 6}
-            effort_of = {i: positions[i].effort for i in range(4, 10)}
-            # Position 5 (effort 0.0) is the single lowest-effort slot: Scroll (sid 5)
-            # must win it, matching Scroll's dominant effort-priority weight.
-            self.assertEqual(pos_of.get(5), 5, f"[numba={use_numba}] Scroll should occupy the lowest-effort slot")
-            # MB2 (sid 1) must land on a lower-effort slot than MB1 (sid 0).
-            self.assertLess(
-                effort_of[pos_of[1]], effort_of[pos_of[0]],
-                f"[numba={use_numba}] MB2 should have lower effort than MB1",
-            )
-            # MB1 must land on a lower-effort slot than MB3/MB4/MB5.
-            for lower_sid in (2, 3, 4):
-                self.assertLess(
-                    effort_of[pos_of[0]], effort_of[pos_of[lower_sid]],
-                    f"[numba={use_numba}] MB1 should have lower effort than sid {lower_sid}",
-                )
-
-    def test_mouse_workflow_mutation_never_proposes_scroll_on_uncomfortable_x(self):
-        """Regression test: when the lowest-effort candidate slot happens to
-        be at x=7 or x=8 (uncomfortable for momentary Scroll per policy),
-        Scroll must be moved to a different slot instead of landing there —
-        this is a final-acceptance-reject condition, not a soft preference."""
-        import evolution
-        random.seed(301)
-        positions = tuple([
-            Position(0, 0, 3.0, 4.0, "left", 0, 0.1, is_thumb=True),
-            Position(1, 0, 4.0, 4.0, "left", 0, 0.1, is_thumb=True),
-            Position(2, 0, 5.0, 4.0, "left", 0, 0.1, is_thumb=True),
-            Position(3, 0, 0.0, 0.0, "left", 1, 1.0),
-            # The single lowest-effort slot (0.0) sits at x=8, deliberately
-            # colliding with the uncomfortable-x rule.
-            Position(4, 1, 7.0, 1.0, "right", 1, 1.75),
-            Position(5, 1, 8.0, 1.0, "right", 1, 0.0),
-            Position(6, 1, 9.0, 1.0, "right", 1, 1.0),
-            Position(7, 1, 10.0, 1.0, "right", 1, 1.25),
-            Position(8, 1, 11.0, 1.0, "right", 1, 0.5),
-            Position(9, 1, 12.0, 1.0, "right", 1, 0.75),
-            *(Position(i, 1, float(i - 10), 2.0, "left", 1, 1.0) for i in range(10, 14)),
-        ])
-        shortcuts = tuple([
-            Shortcut(0, "MB1", "Left click", "Mouse", 10.0, category="mouse", base_key="MB1"),
-            Shortcut(1, "MB2", "Right click", "Mouse", 9.0, category="mouse", base_key="MB2"),
-            Shortcut(2, "MB3", "Middle click", "Mouse", 7.0, category="mouse", base_key="MB3"),
-            Shortcut(3, "MB4", "Back", "Mouse", 6.0, category="mouse", base_key="MB4"),
-            Shortcut(4, "MB5", "Forward", "Mouse", 6.0, category="mouse", base_key="MB5"),
-            Shortcut(5, "@scroll:L1:hold", "Scroll Mode Layer 1", "Layer Access", 15.0, category="layer_access", base_key="Scroll_L1", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
-            Shortcut(6, "@access:L1:hold", "Momentary Layer 1", "Layer Access", 12.0, category="layer_access", base_key="L1", is_layer_access=True, access_target_layer=1, access_is_momentary=True),
-            Shortcut(7, "@access:L1:toggle", "Toggle Layer 1", "Layer Access", 12.0, category="layer_access", base_key="L1", is_layer_access=True, access_target_layer=1, access_is_momentary=False),
-            Shortcut(8, "@access:L7:hold", "Momentary Layer 7", "Layer Access", 12.0, category="layer_access", base_key="L7", is_layer_access=True, access_target_layer=7, access_is_momentary=True),
-            Shortcut(9, "@access:L7:toggle", "Toggle Layer 7", "Layer Access", 12.0, category="layer_access", base_key="L7", is_layer_access=True, access_target_layer=7, access_is_momentary=False),
-            *(Shortcut(i, f"K{i}", "", "App", 1.0, base_key=f"K{i}") for i in range(10, 14)),
-        ])
-        genome = np.arange(14, dtype=np.int32)
-        layout = Layout(genome.copy(), positions, shortcuts, np.zeros(14, dtype=np.bool_))
-
-        for use_numba in (True, False):
-            orig = evolution.NUMBA_AVAILABLE
-            evolution.NUMBA_AVAILABLE = use_numba
-            try:
-                mutation = SwapMutation(
-                    prob=0.0,
-                    frozen_mask=layout.frozen_mask,
-                    layout=layout,
-                    group_overwrite_prob=0.0,
-                    mouse_workflow_prob=1.0,
-                    l7_access_prob=0.0,
-                )
-                moved = mutation._do(None, genome.reshape(1, -1).copy())[0]
-            finally:
-                evolution.NUMBA_AVAILABLE = orig
-
-            scroll_pos = int(np.where(moved == 5)[0][0])
-            scroll_x = positions[scroll_pos].x
-            self.assertNotIn(
-                scroll_x, (7.0, 8.0),
-                f"[numba={use_numba}] Scroll must never be proposed at x=7/8 (uncomfortable, "
-                f"final-acceptance reject), landed at x={scroll_x}",
-            )
+        np.testing.assert_array_equal(moved, genome)
 
     def test_l7_access_mutation_proposes_hold_and_toggle(self):
         random.seed(400)
@@ -1134,6 +1014,32 @@ class TestEvaluator(unittest.TestCase):
         self.assertIn("workflow_coherence", result.factor_scores)
         self.assertIn("finger_balance", result.factor_scores)
         self.assertIn("same_finger", result.factor_scores)
+
+    def test_total_score_preserves_small_objective_changes(self):
+        # A large violation channel can round away a one-ULP effort improvement
+        # if the float32 objectives are summed before converting to Python float.
+        base = np.asarray([2.42219448, -36.732456, 407402.6875], dtype=np.float32)
+        better = base.copy()
+        better[0] = np.nextafter(base[0], np.float32(-np.inf))
+        self.assertEqual(float(np.sum(base)), float(np.sum(better)))
+        self.assertLess(
+            FitnessEvaluator._total_score(better),
+            FitnessEvaluator._total_score(base),
+        )
+
+    def test_feasible_archive_order_preserves_small_objective_changes(self):
+        from evolution.custom_ga import _ordered_feasible_archive_indices
+
+        base = np.asarray([2.42219448, -36.732456, 407402.6875], dtype=np.float32)
+        better = base.copy()
+        better[0] = np.nextafter(base[0], np.float32(-np.inf))
+        objectives = np.stack([base, better])
+        constraints = np.zeros((2, 1), dtype=np.float32)
+        self.assertEqual(float(objectives.sum(axis=1)[0]), float(objectives.sum(axis=1)[1]))
+        self.assertEqual(
+            _ordered_feasible_archive_indices(objectives, constraints).tolist(),
+            [1, 0],
+        )
 
     def test_layer_specialization_penalizes_redundant_generated_layers(self):
         positions = tuple(
@@ -2469,41 +2375,41 @@ class TestEvaluator(unittest.TestCase):
     def test_dynamic_mouse_layer_same_side_duplicate_policy(self):
         # Positions 0-9 and the shortcuts below are the exact fixture from
         # test_dynamic_mouse_layer_penalty_rewards_natural_complete_layer,
-        # which is already verified to make layer 3 the winning (lowest
-        # penalty) dynamic-mouse-layer candidate. Positions 10-11 are extra
-        # layer-3 slots (one right non-thumb, one left) used only to place
+        # which is already verified to make contract-defined L1 complete.
+        # Positions 10-11 are extra L1 slots (one right non-thumb, one left)
+        # used only to place
         # duplicate MB1 copies for this test.
         positions = (
             Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
             Position(1, 0, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
-            Position(2, 3, 2.0, 1.0, "left", 1, 1.0),
+            Position(2, 1, 2.0, 1.0, "left", 1, 1.0),
             # effort=0.0 on the mouse-button/scroll positions: a valid
             # natural mouse layer here must be optimally placed, or its own
             # candidate_penalty (post dynamic_mouse_layer fix, which reports
             # the natural layer's real penalty instead of an unrelated empty
             # candidate layer's flat baseline) would legitimately exceed the
             # baseline and break the "valid beats broken" comparisons below.
-            Position(3, 3, 8.0, 2.0, "right", 1, 0.0),
-            Position(4, 3, 9.0, 2.0, "right", 1, 0.0),
+            Position(3, 1, 8.0, 2.0, "right", 1, 0.0),
+            Position(4, 1, 9.0, 2.0, "right", 1, 0.0),
             # MB3/MB4/MB5 and Scroll ideal x-targets: MB3=11, MB4=12, MB5=13,
             # Scroll=10 -- Scroll's ideal sits one slot right of MB2 (not on
             # top of it), so MB1(x8)/MB2(x9) can land adjacent.
-            Position(5, 3, 11.0, 2.0, "right", 2, 0.0),
-            Position(6, 3, 12.0, 2.0, "right", 3, 0.0),
-            Position(7, 3, 13.0, 2.0, "right", 4, 0.0),
-            Position(8, 3, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
-            Position(9, 3, 10.0, 2.0, "right", 1, 0.0),
-            Position(10, 3, 14.0, 1.0, "right", 4, 0.0),
+            Position(5, 1, 11.0, 2.0, "right", 2, 0.0),
+            Position(6, 1, 12.0, 2.0, "right", 3, 0.0),
+            Position(7, 1, 13.0, 2.0, "right", 4, 0.0),
+            Position(8, 1, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
+            Position(9, 1, 10.0, 2.0, "right", 1, 0.0),
+            Position(10, 1, 14.0, 1.0, "right", 4, 0.0),
         )
         shortcuts = (
             Shortcut(
-                0, "@access:L0->L3:hold:Mouse", "Mouse", "Layer Access", 16.0,
-                "layer_access", is_layer_access=True, access_target_layer=3,
+                0, "@access:L0->L1:hold:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=1,
                 access_is_momentary=True,
             ),
             Shortcut(
-                1, "@access:L0->L3:toggle:Mouse", "Mouse", "Layer Access", 16.0,
-                "layer_access", is_layer_access=True, access_target_layer=3,
+                1, "@access:L0->L1:toggle:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=1,
                 access_is_momentary=False,
             ),
             Shortcut(2, "MB1", "Click", "Mouse", 20.0, "mouse"),
@@ -2512,13 +2418,13 @@ class TestEvaluator(unittest.TestCase):
             Shortcut(5, "MB4", "Click", "Mouse", 8.0, "mouse"),
             Shortcut(6, "MB5", "Click", "Mouse", 8.0, "mouse"),
             Shortcut(
-                7, "@access:L3->L6:hold:Scroll", "Scroll", "Layer Access", 12.0,
-                "layer_access", is_layer_access=True, access_target_layer=6,
+                7, "@scroll:L1:hold", "Scroll", "Layer Access", 12.0,
+                "layer_access", is_layer_access=True, access_target_layer=1,
                 access_is_momentary=True,
             ),
             Shortcut(
-                8, "@access:L0->L3:hold:MouseRightThumb", "Mouse", "Layer Access", 10.0,
-                "layer_access", is_layer_access=True, access_target_layer=3,
+                8, "@access:L0->L1:hold:MouseRightThumb", "Mouse", "Layer Access", 10.0,
+                "layer_access", is_layer_access=True, access_target_layer=1,
                 access_is_momentary=True,
             ),
         )
@@ -2562,22 +2468,22 @@ class TestEvaluator(unittest.TestCase):
         # one-left-plus-one-right pairing.
         self.assertGreater(two_right_score, left_right_score)
 
-    def test_dynamic_mouse_layer_incomplete_candidate_duplicate_penalty(self):
+    def test_incomplete_mouse_layer_candidate_duplicate_penalty(self):
         positions = (
             Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
             Position(1, 0, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
-            Position(2, 5, 8.0, 1.0, "right", 1, 1.0),
-            Position(3, 5, 3.0, 1.0, "left", 1, 1.0),
+            Position(2, 2, 8.0, 1.0, "right", 1, 1.0),
+            Position(3, 2, 3.0, 1.0, "left", 1, 1.0),
         )
         shortcuts = (
             Shortcut(
-                0, "@access:L0->L3:hold:Mouse", "Mouse", "Layer Access", 16.0,
-                "layer_access", is_layer_access=True, access_target_layer=3,
+                0, "@access:L0->L2:hold:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=2,
                 access_is_momentary=True,
             ),
             Shortcut(
-                1, "@access:L0->L3:toggle:Mouse", "Mouse", "Layer Access", 16.0,
-                "layer_access", is_layer_access=True, access_target_layer=3,
+                1, "@access:L0->L2:toggle:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=2,
                 access_is_momentary=False,
             ),
             Shortcut(2, "MB1", "Click", "Mouse", 20.0, "mouse"),
@@ -2595,7 +2501,7 @@ class TestEvaluator(unittest.TestCase):
         vweights["dynamic_mouse_layer"] = 1.0
         evaluator = FitnessEvaluator(weights=weights, reference_layout=single_right, violation_weights=vweights,
                                      hard_constraints=[], missing_important_threshold=99.0)
-        # Layer 5 is an incomplete mouse-layer candidate (only MB1 present).
+        # L2 is an incomplete mouse-layer candidate (only MB1 present).
         # Keeping only the right-side copy must score better than adding a
         # left-side duplicate, because incomplete candidates don't get the
         # paired-duplicate exception.
@@ -2604,7 +2510,7 @@ class TestEvaluator(unittest.TestCase):
             evaluator.evaluate(single_right).objectives[2],
         )
 
-    def test_l0_empty_position_is_no_longer_exempt(self):
+    def test_l0_empty_position_does_not_reward_arbitrary_fill(self):
         positions = (
             Position(0, 0, 5.0, 5.0, "left", 1, 1.5, is_thumb=True),
         )
@@ -2615,24 +2521,25 @@ class TestEvaluator(unittest.TestCase):
         empty_l0 = Layout(np.array([-1], dtype=np.int32), positions, shortcuts, frozen)
         filled_l0 = Layout(np.array([0], dtype=np.int32), positions, shortcuts, frozen)
 
-        # Violations objective (empty_pos_waste, raw_scores[16]): empty L0 must
-        # now cost something (it was previously fully exempt).
+        # Empty L0 is intentional base-layer capacity, so empty_position must
+        # not reward filling it with an arbitrary low-use shortcut.
         weights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["weights"]}
         weights["violations"] = 1.0
         vweights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
         vweights["empty_position"] = 1.0
         evaluator = FitnessEvaluator(weights=weights, reference_layout=filled_l0, violation_weights=vweights,
                                      hard_constraints=[], missing_important_threshold=99.0)
-        self.assertGreater(evaluator.evaluate(empty_l0).objectives[2], 0.0)
+        self.assertEqual(evaluator.evaluate(empty_l0).objectives[2], 0.0)
+        self.assertEqual(evaluator.evaluate(filled_l0).objectives[2], 0.0)
 
-        # Effort objective (the sigmoid empty-position penalty added directly
-        # to effort): empty L0 must score worse than filled L0.
+        # The effort objective likewise has no empty-L0 bonus: assigning an
+        # unused action incurs its actual effort cost.
         weights2 = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["weights"]}
         weights2["effort"] = 1.0
         vweights2 = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]}
         evaluator2 = FitnessEvaluator(weights=weights2, reference_layout=filled_l0, violation_weights=vweights2,
                                       hard_constraints=[], missing_important_threshold=99.0)
-        self.assertGreater(
+        self.assertLess(
             evaluator2.evaluate(empty_l0).objectives[0],
             evaluator2.evaluate(filled_l0).objectives[0],
         )
@@ -2656,33 +2563,132 @@ class TestEvaluator(unittest.TestCase):
         r = evaluator.evaluate(empty_l0_frozen)
         self.assertEqual(r.objectives[2], 0.0)
 
-    def test_l0_thumb_occupied_never_worse_than_empty(self):
-        # A low-importance, zero-usage shortcut occupying an L0 thumb slot
-        # must not score worse (in violations_raw terms) than leaving the
-        # exact same slot empty.
+    def test_l0_thumb_low_use_binding_pays_opportunity_cost(self):
+        # A zero-usage shortcut should pay for consuming a scarce L0 thumb
+        # position; leaving that position available is preferable.
         positions = (
-            Position(0, 0, 5.0, 5.0, "left", 1, 1.5, is_thumb=True),
+            Position(0, 0, 7.0, 4.0, "right", 1, 1.0, is_thumb=True),
         )
         shortcuts = (
-            Shortcut(0, "Ctrl+Z", "Undo", "App", 5.0),
+            Shortcut(0, "Ctrl+6", "Switch to tab 6", "Browser", 0.19),
         )
         frozen = np.zeros(len(positions), dtype=np.bool_)
         empty_l0 = Layout(np.array([-1], dtype=np.int32), positions, shortcuts, frozen)
         filled_l0 = Layout(np.array([0], dtype=np.int32), positions, shortcuts, frozen)
+        used_l0 = Layout(
+            np.array([0], dtype=np.int32), positions, shortcuts, frozen,
+            usage_data=UsageData(shortcuts={"Ctrl+6": {"count": 1000}}),
+        )
         weights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["weights"]}
-        weights["violations"] = 1.0
+        weights["effort"] = 1.0
         vweights = dict(DEFAULT_CONFIG["fitness"]["violation_sub_weights"])
         evaluator = FitnessEvaluator(weights=weights, reference_layout=filled_l0, violation_weights=vweights,
                                      hard_constraints=[], missing_important_threshold=99.0)
-        self.assertLessEqual(
-            evaluator.evaluate(filled_l0).objectives[2],
-            evaluator.evaluate(empty_l0).objectives[2],
+        empty_score = evaluator.evaluate(empty_l0).objectives[2]
+        empty_effort = evaluator.evaluate(empty_l0).objectives[0]
+        unused_score = evaluator.evaluate(filled_l0).objectives[0]
+        used_score = evaluator.evaluate(used_l0).objectives[0]
+        self.assertEqual(empty_score, 0.0)
+        self.assertGreater(
+            unused_score, empty_effort,
         )
+        self.assertLess(used_score, unused_score)
+
+        def l0_opportunity_score(layer_counts):
+            usage = UsageData(
+                shortcuts={"Ctrl+6": {"count": 1000}},
+                by_layer_shortcut=layer_counts,
+            )
+            candidate = Layout(
+                np.array([0], dtype=np.int32), positions, shortcuts, frozen,
+                usage_data=usage,
+            )
+            isolated_weights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["weights"]}
+            isolated_weights["effort"] = 1.0
+            isolated_violations = {
+                k: 0.0 for k in DEFAULT_CONFIG["fitness"]["violation_sub_weights"]
+            }
+            isolated = FitnessEvaluator(
+                weights=isolated_weights, reference_layout=candidate,
+                violation_weights=isolated_violations, hard_constraints=[],
+                layer_usage_preference_penalty=0.0,
+                mouse_layer_shortcut_penalty=0.0,
+                owner_mouse_layer_shortcut_penalty=0.0,
+            )
+            return float(isolated.evaluate(candidate).objectives[2])
+
+        empty_local_use = l0_opportunity_score({})
+        use_on_l1 = l0_opportunity_score({"Ctrl+6": {"1": 1000}})
+        use_on_l0 = l0_opportunity_score({"Ctrl+6": {"0": 1000}})
+        self.assertGreater(empty_local_use, 0.0)
+        self.assertEqual(use_on_l1, empty_local_use)
+        self.assertLess(use_on_l0, empty_local_use)
+
+    def test_l0_thumb_opportunity_cost_tracks_usage_against_higher_effort_layer(self):
+        positions = (
+            Position(0, 0, 7.0, 4.0, "right", 1, 1.0, is_thumb=True),
+            Position(1, 0, 9.0, 5.0, "right", 1, 3.0),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+6", "Switch to tab 6", "Browser", 0.19),
+        )
+        genome_l0 = np.asarray([0, -1], dtype=np.int32)
+        genome_high_effort = np.asarray([-1, 0], dtype=np.int32)
+        frozen = np.zeros(len(positions), dtype=np.bool_)
+        weights = {k: 0.0 for k in DEFAULT_CONFIG["fitness"]["weights"]}
+        weights["effort"] = 1.0
+
+        def make_evaluator(usage):
+            layout = Layout(
+                genome_l0.copy(), positions, shortcuts, frozen,
+                usage_data=usage,
+            )
+            return FitnessEvaluator(
+                weights=weights, reference_layout=layout, use_cuda=False,
+                hard_constraints=[], layer_usage_preference_penalty=0.0,
+            )
+
+        def score_pair(usage):
+            evaluator = make_evaluator(usage)
+            l0_score, _ = evaluator.evaluate_batch(genome_l0.reshape(1, -1))
+            high_effort_score, _ = evaluator.evaluate_batch(
+                genome_high_effort.reshape(1, -1)
+            )
+            return float(l0_score[0, 0]), float(high_effort_score[0, 0])
+
+        unused_l0, unused_high_effort = score_pair(UsageData())
+        mature_l0, mature_l1 = score_pair(
+            UsageData(shortcuts={"Ctrl+6": {"count": 1000}})
+        )
+        self.assertLess(unused_high_effort, unused_l0)
+        self.assertLess(mature_l0, mature_l1)
+
+        from fitness.cuda_kernel import cuda_available
+        if cuda_available():
+            candidates = np.stack([genome_l0, genome_high_effort])
+            for usage, expected_better_index in (
+                (UsageData(), 1),
+                (UsageData(shortcuts={"Ctrl+6": {"count": 1000}}), 0),
+            ):
+                evaluator = make_evaluator(usage)
+                cpu, cpu_constraints = evaluator.model.evaluate_batch(candidates)
+                evaluator.model._use_cuda = True
+                try:
+                    cuda, cuda_constraints = evaluator.model.evaluate_batch(candidates)
+                finally:
+                    evaluator.model._use_cuda = False
+                np.testing.assert_allclose(cuda[:, 0], cpu[:, 0], rtol=1e-5, atol=1e-5)
+                np.testing.assert_array_equal(cuda_constraints, cpu_constraints)
+                self.assertLess(
+                    float(cuda[expected_better_index, 0]),
+                    float(cuda[1 - expected_better_index, 0]),
+                )
 
     def test_archive_bootstrap_never_accepts_infeasible_first_entry(self):
         from evolution.custom_ga import CustomGARunner
         infeasible = {"constraints": [1.0, 0.0], "total_score": -500.0}
-        feasible = {"constraints": [0.0, 0.0], "total_score": -10.0}
+        feasible = {"constraints": [0.0, 0.0], "total_score": -10.0,
+                    "optimizer_side_pass": True, "acceptance_failed_checks": []}
         # No incumbent yet: an infeasible candidate must NOT become the archive seed.
         self.assertFalse(CustomGARunner._is_better(None, infeasible, None))
         # A feasible candidate may become the archive seed.
@@ -2736,36 +2742,36 @@ class TestEvaluator(unittest.TestCase):
 
     def test_same_layer_duplicate_mouse_pair_exception_and_orphan(self):
         # Reuses the verified fixture from
-        # test_dynamic_mouse_layer_same_side_duplicate_policy: layer 3 is the
-        # winning dynamic-mouse-layer candidate with positions 0-9 as-is.
+        # test_dynamic_mouse_layer_same_side_duplicate_policy: contract-defined
+        # L1 is complete with positions 0-9 as-is.
         positions = (
             Position(0, 0, 3.0, 4.0, "left", 0, 0.8, is_thumb=True),
             Position(1, 0, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
-            Position(2, 3, 2.0, 1.0, "left", 1, 1.0),
+            Position(2, 1, 2.0, 1.0, "left", 1, 1.0),
             # effort=0.0 on the mouse-button/scroll positions: a valid
             # natural mouse layer here must be optimally placed, or its own
             # candidate_penalty (post dynamic_mouse_layer fix, which reports
             # the natural layer's real penalty instead of an unrelated empty
             # candidate layer's flat baseline) would legitimately exceed the
             # baseline and break the "valid beats broken" comparisons below.
-            Position(3, 3, 8.0, 2.0, "right", 1, 0.0),
-            Position(4, 3, 9.0, 2.0, "right", 1, 0.0),
-            Position(5, 3, 10.0, 2.0, "right", 2, 0.0),
-            Position(6, 3, 11.0, 2.0, "right", 3, 0.0),
-            Position(7, 3, 12.0, 2.0, "right", 4, 0.0),
-            Position(8, 3, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
-            Position(9, 3, 9.0, 2.0, "right", 1, 0.0),
-            Position(10, 3, 13.0, 1.0, "right", 4, 0.0),
+            Position(3, 1, 8.0, 2.0, "right", 1, 0.0),
+            Position(4, 1, 9.0, 2.0, "right", 1, 0.0),
+            Position(5, 1, 10.0, 2.0, "right", 2, 0.0),
+            Position(6, 1, 11.0, 2.0, "right", 3, 0.0),
+            Position(7, 1, 12.0, 2.0, "right", 4, 0.0),
+            Position(8, 1, 8.0, 4.0, "right", 0, 0.8, is_thumb=True),
+            Position(9, 1, 9.0, 2.0, "right", 1, 0.0),
+            Position(10, 1, 13.0, 1.0, "right", 4, 0.0),
         )
         shortcuts = (
             Shortcut(
-                0, "@access:L0->L3:hold:Mouse", "Mouse", "Layer Access", 16.0,
-                "layer_access", is_layer_access=True, access_target_layer=3,
+                0, "@access:L0->L1:hold:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=1,
                 access_is_momentary=True,
             ),
             Shortcut(
-                1, "@access:L0->L3:toggle:Mouse", "Mouse", "Layer Access", 16.0,
-                "layer_access", is_layer_access=True, access_target_layer=3,
+                1, "@access:L0->L1:toggle:Mouse", "Mouse", "Layer Access", 16.0,
+                "layer_access", is_layer_access=True, access_target_layer=1,
                 access_is_momentary=False,
             ),
             Shortcut(2, "MB1", "Click", "Mouse", 20.0, "mouse"),
@@ -2774,8 +2780,8 @@ class TestEvaluator(unittest.TestCase):
             Shortcut(5, "MB4", "Click", "Mouse", 8.0, "mouse"),
             Shortcut(6, "MB5", "Click", "Mouse", 8.0, "mouse"),
             Shortcut(
-                7, "@access:L3->L6:hold:Scroll", "Scroll", "Layer Access", 12.0,
-                "layer_access", is_layer_access=True, access_target_layer=6,
+                7, "@scroll:L1:hold", "Scroll", "Layer Access", 12.0,
+                "layer_access", is_layer_access=True, access_target_layer=1,
                 access_is_momentary=True,
             ),
         )
@@ -2789,7 +2795,7 @@ class TestEvaluator(unittest.TestCase):
             hard_constraints=["same_layer_duplicate"],
             missing_important_threshold=99.0,
         )
-        # Valid left+right MB1 pair on the actual dynamic mouse layer: allowed.
+        # Valid left+right MB1 pair on L1: allowed.
         left_right_pair = Layout(
             np.array([0, 1, 2, 2, 3, 4, 5, 6, -1, 7, -1], dtype=np.int32), positions, shortcuts, frozen,
         )
@@ -2801,8 +2807,8 @@ class TestEvaluator(unittest.TestCase):
         )
         self.assertGreater(evaluator.evaluate(two_right).constraints[0], 0.0)
 
-        # Same left+right pair, but Scroll has moved to an uncomfortable x=7
-        # position, so layer 3 no longer qualifies as natural_mouse_layer.
+        # Same left+right pair, but Scroll moved to uncomfortable x=7, so L1
+        # no longer qualifies for the duplicate exception.
         # The left-side MB1 copy must immediately become an illegal duplicate.
         disqualified_positions = tuple(
             Position(
@@ -2818,6 +2824,45 @@ class TestEvaluator(unittest.TestCase):
             disqualified_positions, shortcuts, frozen,
         )
         self.assertGreater(evaluator.evaluate(orphaned_pair).constraints[0], 0.0)
+
+    def test_non_l1_complete_mouse_layer_gets_no_duplicate_pair_exception(self):
+        positions = (
+            Position(0, 0, 3.0, 4.0, "left", 0, 0.5, is_thumb=True),
+            Position(1, 0, 4.0, 4.0, "left", 0, 0.5, is_thumb=True),
+            Position(2, 2, 8.0, 2.0, "right", 1, 0.5),
+            Position(3, 2, 9.0, 2.0, "right", 1, 0.5),
+            Position(4, 2, 11.0, 2.0, "right", 2, 0.5),
+            Position(5, 2, 12.0, 2.0, "right", 3, 0.5),
+            Position(6, 2, 13.0, 2.0, "right", 4, 0.5),
+            Position(7, 2, 3.0, 2.0, "left", 1, 0.5),
+            Position(8, 2, 10.0, 2.0, "right", 1, 0.5),
+        )
+        shortcuts = (
+            Shortcut(0, "@access:L0->L2:hold", "Hold L2", "Layer Access", 10.0,
+                     is_layer_access=True, access_target_layer=2, access_is_momentary=True),
+            Shortcut(1, "@access:L0->L2:toggle", "Toggle L2", "Layer Access", 10.0,
+                     is_layer_access=True, access_target_layer=2, access_is_momentary=False),
+            Shortcut(2, "MB1", "MB1", "Mouse", 10.0, "mouse"),
+            Shortcut(3, "MB2", "MB2", "Mouse", 10.0, "mouse"),
+            Shortcut(4, "MB3", "MB3", "Mouse", 10.0, "mouse"),
+            Shortcut(5, "MB4", "MB4", "Mouse", 10.0, "mouse"),
+            Shortcut(6, "MB5", "MB5", "Mouse", 10.0, "mouse"),
+            Shortcut(7, "@scroll:L2:hold", "Scroll", "Layer Access", 10.0,
+                     is_layer_access=True, access_target_layer=2, access_is_momentary=True),
+        )
+        layout = Layout(
+            np.asarray([0, 1, 2, 3, 4, 5, 6, 2, 7], dtype=np.int32),
+            positions, shortcuts, np.zeros(len(positions), dtype=np.bool_),
+        )
+        evaluator = FitnessEvaluator(
+            weights=DEFAULT_CONFIG["fitness"]["weights"],
+            reference_layout=layout,
+            violation_weights=DEFAULT_CONFIG["fitness"]["violation_sub_weights"],
+            hard_constraints=["same_layer_duplicate"],
+            missing_important_threshold=99.0,
+            use_cuda=False,
+        )
+        self.assertGreater(evaluator.evaluate(layout).constraints[0], 0.0)
 
     def test_no_same_layer_duplicates_report(self):
         from evolution.acceptance import _no_same_layer_duplicates_report
@@ -2948,15 +2993,12 @@ class TestEvaluator(unittest.TestCase):
             frozen,
         )
         toggle_report = _momentary_only_thumb_clearance_report(toggle_access)
-        self.assertTrue(toggle_report["acceptance_pass"])
-        floor_rows = [
-            item
-            for layer in toggle_report["layers"]
-            for item in layer.get("effort_floor_assignments", [])
-        ]
-        self.assertEqual(len(floor_rows), 1)
-        self.assertEqual(floor_rows[0]["keys"], "Ctrl+A")
-        self.assertEqual(floor_rows[0]["effective_effort_floor"], 4.0)
+        self.assertFalse(toggle_report["acceptance_pass"])
+        self.assertEqual(toggle_report["violations"][0]["restricted_hands"], ["left"])
+        self.assertEqual(
+            [item["keys"] for item in toggle_report["violations"][0]["violating_assignments"]],
+            ["Ctrl+A"],
+        )
         toggle_other_side = Layout(
             np.array([0, 1, -1, 4], dtype=np.int32),
             positions,
@@ -2986,8 +3028,8 @@ class TestEvaluator(unittest.TestCase):
             frozen,
         )
         both_report = _momentary_only_thumb_clearance_report(both_momentary_sides)
-        self.assertTrue(both_report["acceptance_pass"])
-        self.assertFalse(any(layer.get("effort_floor_assignments") for layer in both_report["layers"]))
+        self.assertFalse(both_report["acceptance_pass"])
+        self.assertEqual(both_report["violations"][0]["restricted_hands"], ["left", "right"])
 
         lost_second_side = Layout(
             np.array([0, -1, 3, -1], dtype=np.int32),
@@ -3007,8 +3049,8 @@ class TestEmptyPositionPenalty(unittest.TestCase):
     - Low-effort (prime) positions → high penalty when empty.
     - High-effort (far/corner) positions → near-zero penalty when empty.
     - L7 frozen content is never penalised.
-    - L0 is NOT exempt (it is the only zero-cost, always-reachable layer) and
-      gets an extra multiplier on top of the base penalty.
+    - L0 is exempt because base-layer positions may intentionally remain open;
+      low-use thumb bindings pay a separate usage-based opportunity cost.
     - Penalty is soft: it adds to the violations objective but never causes a
       hard acceptance failure by itself.
     """
@@ -3116,11 +3158,8 @@ class TestEmptyPositionPenalty(unittest.TestCase):
         self.assertEqual(result.total_score, 0.0,
                          f"L7 frozen empty position must not be penalised; got {result.total_score}")
 
-    def test_l0_empty_is_penalised_by_empty_position(self):
-        """L0 empty positions are NOT excluded from empty_position: L0 is the
-        only zero-cost, always-reachable layer, so an empty L0 slot must cost
-        at least as much as an equivalent-effort empty slot elsewhere (and, per
-        fitness/kernel.py's L0 multiplier, more)."""
+    def test_l0_empty_is_excluded_from_empty_position(self):
+        """Leaving L0 open must not create pressure to install arbitrary keys."""
         positions = (
             Position(0, 0, 7.0, 2.0, "right", 1, 0.3),   # L0, prime effort, empty
             Position(1, 0, 0.0, 0.0, "right", 4, 4.5),   # L0, far, empty
@@ -3132,8 +3171,10 @@ class TestEmptyPositionPenalty(unittest.TestCase):
         layout = Layout(np.array([-1, -1], dtype=np.int32), positions, shortcuts, frozen)
         ev = self._make_evaluator(layout, empty_position_weight=50.0)
         result = ev.evaluate(layout)
-        self.assertGreater(result.total_score, 0.0,
-                           f"L0 empty positions must now be penalised; got {result.total_score}")
+        no_empty_weight = self._make_evaluator(layout, empty_position_weight=0.0)
+        baseline = no_empty_weight.evaluate(layout)
+        self.assertEqual(result.total_score, baseline.total_score,
+                         "L0 empty bindings must not contribute to empty_position")
 
     def test_penalty_is_soft_not_hard_constraint(self):
         """empty_position never appears as a hard constraint."""
@@ -3395,12 +3436,9 @@ class TestDynamicLayerAccessNotCanonical(unittest.TestCase):
         layout = Layout(genome, positions, shortcuts, frozen, layer_access=stale)
 
         report = build_acceptance_report(layout)
-        dynamic_mouse = report["details"]["dynamic_mouse_layer"]
-        self.assertTrue(dynamic_mouse["acceptance_pass"],
-                        f"Mouse layer acceptance should pass using genome; "
-                        f"guidance={dynamic_mouse.get('failure_guidance')}")
-        self.assertEqual(dynamic_mouse["mouse_layer"], 4,
-                         "Mouse layer should be L4 as bound in genome, not canonical layer_access")
+        self.assertEqual(report["details"]["mouse_layer"]["required_layer"], 1)
+        self.assertFalse(report["optimizer_side_checks"]["owner_layout_contract_v1"],
+                         "L4 mouse bindings cannot replace the fixed L1 role")
 
 
 class TestStagnationMetric(unittest.TestCase):
@@ -3495,24 +3533,24 @@ class TestStagnationMetric(unittest.TestCase):
         self.assertGreater(wide_penalty, narrow_penalty)
         self.assertLessEqual(wide_penalty, 25.0)
 
-    def test_dynamic_mouse_failure_cannot_be_archive_best(self):
-        """Exact archive ranking treats dynamic mouse failure as a hard worse tier."""
+    def test_owner_contract_failure_cannot_enter_exact_archive(self):
+        """A contract-invalid candidate cannot win by score."""
         from run_evolution import ExactEvalCallback
 
         cb = object.__new__(ExactEvalCallback)
         candidate = {
             "constraints": [0.0],
             "optimizer_side_pass": False,
-            "acceptance_failed_checks": ["dynamic_mouse_layer_present"],
+            "acceptance_failed_checks": ["owner_layout_contract_v1"],
             "total_score": -60.0,
         }
         incumbent = {
             "constraints": [0.0],
             "optimizer_side_pass": False,
-            "acceptance_failed_checks": ["dynamic_mouse_layer_present", "norwegian_completion_cluster"],
+            "acceptance_failed_checks": ["owner_layout_contract_v1", "norwegian_completion_cluster"],
             "total_score": -50.0,
         }
-        self.assertTrue(cb._is_better_exact(candidate, incumbent))
+        self.assertFalse(cb._is_better_exact(candidate, incumbent))
         self.assertFalse(cb._is_better_exact(incumbent, candidate))
         self.assertEqual(ExactEvalCallback._display_gap(candidate), 5.0)
 
@@ -3520,37 +3558,31 @@ class TestStagnationMetric(unittest.TestCase):
         from run_evolution import ExactEvalCallback
 
         cb = object.__new__(ExactEvalCallback)
-        candidate = {
-            "constraints": [0.0], "total_score": -45.0,
-            "optimizer_side_pass": False,
-            "acceptance_failed_checks": ["left_alt_directly_available_on_l0"],
-        }
-        incumbent = {
-            "constraints": [0.0], "total_score": -50.0,
-            "optimizer_side_pass": False,
-            "acceptance_failed_checks": ["norwegian_completion_cluster"],
-        }
+        candidate = {"constraints": [0.0], "total_score": -45.0,
+                     "optimizer_side_pass": True, "acceptance_failed_checks": []}
+        incumbent = {"constraints": [0.0], "total_score": -50.0,
+                     "optimizer_side_pass": False,
+                     "acceptance_failed_checks": ["norwegian_completion_cluster"]}
         self.assertTrue(cb._is_better_exact(candidate, incumbent))
         self.assertFalse(cb._is_better_exact(incumbent, candidate))
 
-    def test_custom_ga_uses_same_dynamic_mouse_archive_tier(self):
-        """Custom GPU GA archive ranking follows the same hard mouse tier."""
+    def test_custom_ga_rejects_invalid_contract_archive_candidates(self):
         from evolution.custom_ga import CustomGARunner, _display_gap, _scalar
 
         candidate = {
             "constraints": [0.0],
             "optimizer_side_pass": False,
-            "acceptance_failed_checks": ["dynamic_mouse_layer_present"],
+            "acceptance_failed_checks": ["owner_layout_contract_v1"],
             "total_score": -60.0,
         }
         incumbent = {
             "constraints": [0.0],
             "optimizer_side_pass": False,
-            "acceptance_failed_checks": ["dynamic_mouse_layer_present"],
+            "acceptance_failed_checks": ["owner_layout_contract_v1"],
             "total_score": -50.0,
         }
         runner = object.__new__(CustomGARunner)
-        self.assertTrue(runner._is_better(candidate, incumbent))
+        self.assertFalse(runner._is_better(candidate, incumbent))
         self.assertFalse(runner._is_better(incumbent, candidate))
         self.assertEqual(_display_gap(candidate), 5.0)
 
@@ -3564,7 +3596,7 @@ class TestStagnationMetric(unittest.TestCase):
 
         candidate = {
             "constraints": [0.0], "optimizer_side_pass": False,
-            "acceptance_failed_checks": ["no_same_layer_duplicates"],
+            "acceptance_failed_checks": ["owner_layout_contract_v1"],
             "clusters_together": 32, "clusters_total": 65,
             "clusters_order_ok": 12, "clusters_ordered_total": 28,
             "total_score": -100.0,
@@ -3581,7 +3613,7 @@ class TestStagnationMetric(unittest.TestCase):
 
         candidate.update(clusters_together=38, clusters_total=65,
                          clusters_order_ok=14, clusters_ordered_total=30)
-        self.assertTrue(runner._is_better(candidate, incumbent))
+        self.assertFalse(runner._is_better(candidate, incumbent))
 
     def test_custom_ga_archive_prioritizes_completion_cluster_pass(self):
         """A valid Norwegian cluster must replace an otherwise better invalid archive."""
@@ -3590,8 +3622,8 @@ class TestStagnationMetric(unittest.TestCase):
         runner = object.__new__(CustomGARunner)
         candidate = {
             "constraints": [0.0], "total_score": -45.0,
-            "optimizer_side_pass": False,
-            "acceptance_failed_checks": ["left_alt_directly_available_on_l0"],
+            "optimizer_side_pass": True,
+            "acceptance_failed_checks": [],
             "norwegian_completion_cluster_pass": True,
             "clusters_together": 5, "clusters_total": 10,
         }
@@ -3725,37 +3757,27 @@ class TestMouseLayerAcceptanceTier(unittest.TestCase):
         return Layout(genome, positions, shortcuts, frozen)
 
     def test_mouse_layer_check_is_in_optimizer_side(self):
-        """dynamic_mouse_layer_present must appear in optimizer_side_checks, not export_checks."""
+        """The versioned L1 contract gates training acceptance."""
         from evolution.acceptance import build_acceptance_report
         layout = self._build_mouse_layout(include_mouse=True)
         report = build_acceptance_report(layout)
-        self.assertIn("dynamic_mouse_layer_present", report["optimizer_side_checks"],
-                      "Mouse layer check must be in optimizer_side_checks (training-level)")
-        self.assertNotIn("dynamic_mouse_layer_present", report.get("export_checks", {}),
-                         "Mouse layer check must not be in export_checks")
+        self.assertIn("owner_layout_contract_v1", report["optimizer_side_checks"])
+        self.assertFalse(report["optimizer_side_checks"]["owner_layout_contract_v1"])
 
     def test_no_final_acceptance_only_field(self):
         """The misleading final_acceptance_only field must not appear in the mouse layer report."""
         from evolution.acceptance import build_acceptance_report
         layout = self._build_mouse_layout(include_mouse=True)
         report = build_acceptance_report(layout)
-        mouse_detail = report["details"]["dynamic_mouse_layer"]
-        self.assertNotIn("final_acceptance_only", mouse_detail,
-                         "final_acceptance_only was removed — it was misleading since the check runs at training time")
+        self.assertEqual(report["details"]["mouse_layer"]["required_layer"], 1)
 
     def test_missing_mouse_layer_fails_optimizer_side(self):
         """Layout without valid mouse layer must have optimizer_side_pass=False."""
         from evolution.acceptance import build_acceptance_report
         layout = self._build_mouse_layout(include_mouse=False)
         report = build_acceptance_report(layout)
-        self.assertFalse(report["optimizer_side_checks"]["dynamic_mouse_layer_present"],
-                         "Missing mouse layer must fail dynamic_mouse_layer_present")
-        # optimizer_side_pass should be False (other checks may also fail, that's fine)
-        if all(v for k, v in report["optimizer_side_checks"].items()
-               if k != "dynamic_mouse_layer_present"):
-            # all other checks pass → optimizer_side_pass should be solely driven by mouse
-            self.assertFalse(report["optimizer_side_pass"],
-                             "optimizer_side_pass must be False when mouse layer is absent")
+        self.assertFalse(report["optimizer_side_checks"]["owner_layout_contract_v1"])
+        self.assertFalse(report["optimizer_side_pass"])
 
     def test_l7_cannot_be_mouse_layer(self):
         """L7 is excluded from mouse layer detection — it cannot satisfy the mouse layer check."""
@@ -4290,6 +4312,58 @@ class TestCudaExactEvalParity(unittest.TestCase):
 
 
 
+    def test_cuda_parity_for_layer_specific_sequence_with_duplicate_bindings(self):
+        from fitness.cuda_kernel import cuda_available
+        if not cuda_available():
+            self.skipTest("CUDA not available")
+
+        positions = (
+            Position(0, 1, 0.0, 0.0, "left", 1, 1.0),
+            Position(1, 1, 1.0, 0.0, "left", 1, 1.0),
+            Position(2, 1, 8.0, 0.0, "right", 1, 1.0),
+            Position(3, 2, 0.0, 0.0, "left", 1, 1.0),
+            Position(4, 2, 8.0, 0.0, "right", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+A", "Action A", "app", 3.0, modifiers=("Ctrl",)),
+            Shortcut(1, "Ctrl+B", "Action B", "app", 3.0, modifiers=("Ctrl",)),
+        )
+        usage = UsageData(
+            sequences={
+                "Ctrl+A -> Ctrl+B": {
+                    "count": 20, "avg_gap_ms": 500, "confidence": 1.0,
+                    "by_layer_pair": {"1->1": 20},
+                },
+            },
+            chains={
+                "Ctrl+A -> Ctrl+B": {"count": 20, "by_layer_path": {"1->1": 20}},
+            },
+        )
+        layout = Layout(
+            np.asarray([0, 1, -1, 0, 1], dtype=np.int32), positions, shortcuts,
+            np.zeros(5, dtype=np.bool_), usage_data=usage,
+        )
+        weights = dict(DEFAULT_CONFIG["fitness"]["weights"])
+        for name in weights:
+            weights[name] = 0.0
+        weights["adjacency"] = 1.0
+        cpu = FitnessEvaluator(
+            weights=weights, reference_layout=layout, use_cuda=False,
+            layer_usage_preference_penalty=0.0,
+        )
+        gpu = FitnessEvaluator(
+            weights=weights, reference_layout=layout, use_cuda=True,
+            layer_usage_preference_penalty=0.0,
+        )
+        samples = np.asarray([
+            [0, 1, -1, 0, 1],
+            [0, -1, 1, 0, 1],
+        ], dtype=np.int32)
+        cpu_scores, _ = cpu.evaluate_batch(samples)
+        gpu_scores, _ = gpu.evaluate_batch(samples)
+        np.testing.assert_allclose(gpu_scores, cpu_scores, rtol=2e-4, atol=2e-4)
+
+
 class TestSemanticMutationNumba(unittest.TestCase):
     def test_numba_place_sids_matches_python(self):
         from evolution import _numba_place_sids
@@ -4426,37 +4500,392 @@ class TestSemanticMutationNumba(unittest.TestCase):
 
 
 class TestLayerUsagePreferences(unittest.TestCase):
-    def test_modifier_shortcuts_follow_confident_observed_layer_use(self):
+    def test_mouse_session_favorites_are_weighted_by_actual_l1_use(self):
+        from fitness.model import (
+            _build_mouse_session_shortcut_preferences,
+            _build_owner_mouse_layer_shortcut_preferences,
+        )
+
+        positions = (
+            Position(0, 0, 0.0, 0.0, "left", 1, 1.0),
+            Position(1, 1, 1.0, 0.0, "right", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+C", "Copy", "app", 8.0, modifiers=("Ctrl",)),
+            Shortcut(1, "Ctrl+V", "Paste", "app", 8.0, modifiers=("Ctrl",)),
+        )
+        layout = Layout(
+            np.asarray([0, 1], dtype=np.int32), positions, shortcuts,
+            np.zeros(2, dtype=np.bool_),
+            usage_data=UsageData(
+                by_layer_shortcut={
+                    "Ctrl+C": {"0": 1000, "1": 5},
+                    "Ctrl+V": {"0": 10, "1": 100},
+                },
+                mouse_session_shortcuts={
+                    "Ctrl+C": {"count": 1000},
+                    "Ctrl+V": {"count": 100},
+                },
+            ),
+        )
+        index, weights = _build_mouse_session_shortcut_preferences(
+            layout, favorite_keys=("Ctrl+C", "Ctrl+V")
+        )
+        copy_weight = float(weights[index[0, 1]])
+        paste_weight = float(weights[index[1, 1]])
+        self.assertLess(copy_weight, paste_weight)
+
+        index, weights = _build_owner_mouse_layer_shortcut_preferences(
+            layout, ("Ctrl+C", "Ctrl+V")
+        )
+        copy_favorite_weight = float(weights[index[0, 1]])
+        paste_favorite_weight = float(weights[index[1, 1]])
+        self.assertLess(copy_favorite_weight, paste_favorite_weight)
+
+    def test_owner_fixed_bindings_are_exempt_from_layer_usage_demotions(self):
+        from fitness.model import _build_layer_usage_preferences
+
+        positions = (
+            Position(0, 0, 0.0, 0.0, "left", 1, 1.0),
+            Position(1, 0, 1.0, 0.0, "left", 1, 1.0),
+            Position(2, 1, 1.0, 0.0, "right", 1, 1.0),
+            Position(3, 1, 2.0, 0.0, "right", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+C", "Copy", "app", 8.0, modifiers=("Ctrl",)),
+            Shortcut(1, "@access:L1:hold", "L1 access", "Layer Access", 5.0,
+                     is_layer_access=True, access_target_layer=1,
+                     access_is_momentary=True),
+            Shortcut(2, "MB1", "Mouse button 1", "mouse", 5.0, category="mouse"),
+            Shortcut(3, "LeftAlt", "Left Alt", "modifier", 5.0,
+                     base_key="LeftAlt", is_l0_only=True),
+        )
+        layout = Layout(
+            np.asarray([0, 3, 1, 2], dtype=np.int32), positions, shortcuts,
+            np.asarray([False, False, False, False]),
+            usage_data=UsageData(by_layer_shortcut={
+                "Ctrl+C": {"0": 100, "1": 1},
+                "@access:L1:hold": {"0": 20, "1": 20},
+                "MB1": {"0": 20, "1": 20},
+                "LeftAlt": {"0": 20, "1": 20},
+            }),
+        )
+        layer_cost, layer_familiarity = _build_layer_usage_preferences(layout)
+        self.assertGreater(float(layer_cost[0, 1]), 0.0)
+        for fixed_sid in (1, 2, 3):
+            self.assertTrue(np.all(layer_cost[fixed_sid] == 0.0))
+            self.assertTrue(np.all(layer_familiarity[fixed_sid] == 0.0))
+
+    def test_familiarity_grows_with_layer_specific_use_and_keeps_other_layers_mobile(self):
         from fitness.model import _build_layer_usage_preferences, _layer_usage_mismatch_batch
 
         positions = (
             Position(0, 0, 0.0, 0.0, "left", 1, 1.0),
-            Position(1, 2, 1.0, 0.0, "right", 1, 1.0),
+            Position(1, 1, 1.0, 0.0, "right", 1, 1.0),
         )
         shortcuts = (
             Shortcut(0, "Ctrl+C", "Copy", "app", 8.0, modifiers=("Ctrl",)),
-            Shortcut(1, "Space", "Typing", "app", 5.0),
+            Shortcut(1, "@", "Email symbol", "app", 5.0),
+            Shortcut(2, "Space", "Typing", "app", 5.0),
+            Shortcut(3, "å", "Norwegian letter", "app", 5.0),
         )
         layout = Layout(
-            np.asarray([0, 1], dtype=np.int32), positions, shortcuts,
-            np.asarray([False, False]),
+            np.asarray([0, 1, -1, -1], dtype=np.int32), positions + (
+                Position(2, 1, 2.0, 0.0, "right", 1, 1.0),
+                Position(3, 1, 3.0, 0.0, "right", 1, 1.0),
+            ), shortcuts,
+            np.asarray([False, False, False, False]),
             usage_data=UsageData(by_layer_shortcut={
-                "Ctrl+C": {"0": 8, "2": 2},
+                "Ctrl+C": {"0": 80, "1": 5},
                 "Space": {"0": 100},
-            }),
+            }, norwegian_symbol_usage={"by_output": {
+                "@": {"by_layer": {"1": 12}},
+                "å": {"by_layer": {"0": 9}},
+            }}),
         )
-        preference_index, weights = _build_layer_usage_preferences(layout)
-        self.assertEqual(int(preference_index[0, 0]), 0)
-        self.assertEqual(int(preference_index[0, 2]), -1)
-        self.assertTrue(np.all(preference_index[1] == -1))
-        self.assertAlmostEqual(float(weights.sum()), 1.0)
+        layer_cost, layer_familiarity = _build_layer_usage_preferences(layout)
+        self.assertEqual(float(layer_cost[0, 0]), 0.0)
+        self.assertGreater(float(layer_cost[0, 1]), 0.0)
+        self.assertEqual(float(layer_cost[1, 1]), 0.0)
+        self.assertGreater(float(layer_cost[1, 0]), 0.0)
+        self.assertTrue(np.all(layer_cost[2] == 0.0))
+        self.assertEqual(float(layer_cost[3, 0]), 0.0)
+        self.assertGreater(float(layer_cost[3, 1]), 0.0)
+        self.assertGreater(float(layer_familiarity[0, 0]), float(layer_familiarity[0, 1]))
+        self.assertGreater(float(layer_familiarity[1, 1]), 0.0)
+
+        low_count_layout = Layout(
+            layout.genome.copy(), layout.positions, layout.shortcuts, layout.frozen_mask.copy(),
+            usage_data=UsageData(by_layer_shortcut={"Ctrl+C": {"0": 3}}),
+        )
+        low_cost, low_familiarity = _build_layer_usage_preferences(low_count_layout)
+        high_count_layout = Layout(
+            layout.genome.copy(), layout.positions, layout.shortcuts, layout.frozen_mask.copy(),
+            usage_data=UsageData(by_layer_shortcut={"Ctrl+C": {"0": 1000}}),
+        )
+        high_cost, high_familiarity = _build_layer_usage_preferences(high_count_layout)
+        self.assertGreater(float(high_cost[0, 1]), float(low_cost[0, 1]))
+        self.assertGreater(float(high_familiarity[0, 0]), float(low_familiarity[0, 0]))
 
         scores = _layer_usage_mismatch_batch(
             np.asarray([[0, 1], [1, 0]], dtype=np.int32),
-            np.asarray([0, 2], dtype=np.int32), preference_index, weights,
+            np.asarray([0, 1], dtype=np.int32),
+            np.asarray([0.5, 0.5], dtype=np.float32),
+            np.asarray([False, False]), layer_cost, 4.0,
         )
         self.assertEqual(float(scores[0]), 0.0)
-        self.assertEqual(float(scores[1]), 1.0)
+        self.assertGreater(float(scores[1]), 0.0)
+        low_effort_penalty = _layer_usage_mismatch_batch(
+            np.asarray([[0]], dtype=np.int32), np.asarray([1], dtype=np.int32),
+            np.asarray([0.5], dtype=np.float32), np.asarray([False]), layer_cost, 4.0,
+        )[0]
+        high_effort_penalty = _layer_usage_mismatch_batch(
+            np.asarray([[0]], dtype=np.int32), np.asarray([1], dtype=np.int32),
+            np.asarray([4.0], dtype=np.float32), np.asarray([False]), layer_cost, 4.0,
+        )[0]
+        frozen_penalty = _layer_usage_mismatch_batch(
+            np.asarray([[0]], dtype=np.int32), np.asarray([1], dtype=np.int32),
+            np.asarray([0.5], dtype=np.float32), np.asarray([True]), layer_cost, 4.0,
+        )[0]
+        self.assertGreater(float(low_effort_penalty), float(high_effort_penalty))
+        self.assertEqual(float(frozen_penalty), 0.0)
+
+    def test_frequent_sequence_keeps_distance_signal_for_far_apart_actions(self):
+        positions = tuple(
+            Position(i, 1, float(i if i < 2 else i + 7), 0.0, "left", 1, 1.0)
+            for i in range(4)
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+A", "Action A", "app", 3.0, modifiers=("Ctrl",)),
+            Shortcut(1, "Ctrl+B", "Action B", "app", 3.0, modifiers=("Ctrl",)),
+        )
+        with_sequence = Layout(
+            np.asarray([0, 1, -1, -1], dtype=np.int32), positions, shortcuts,
+            np.zeros(4, dtype=np.bool_),
+            usage_data=UsageData(sequences={
+                "Ctrl+A -> Ctrl+B": {"count": 20, "avg_gap_ms": 500, "confidence": 1.0},
+            }),
+        )
+        without_sequence = Layout(
+            with_sequence.genome.copy(), positions, shortcuts,
+            np.zeros(4, dtype=np.bool_), usage_data=UsageData(),
+        )
+        weights = dict(DEFAULT_CONFIG["fitness"]["weights"])
+        for name in weights:
+            weights[name] = 0.0
+        weights["adjacency"] = 1.0
+        evaluator = FitnessEvaluator(
+            weights=weights, reference_layout=with_sequence,
+            use_cuda=False, layer_usage_preference_penalty=0.0,
+        )
+        close = np.asarray([0, 1, -1, -1], dtype=np.int32)
+        far = np.asarray([0, -1, -1, 1], dtype=np.int32)
+        close_objectives, _ = evaluator.evaluate_batch(close.reshape(1, -1))
+        far_objectives, _ = evaluator.evaluate_batch(far.reshape(1, -1))
+        no_sequence_evaluator = FitnessEvaluator(
+            weights=weights, reference_layout=without_sequence,
+            use_cuda=False, layer_usage_preference_penalty=0.0,
+        )
+        far_without_sequence, _ = no_sequence_evaluator.evaluate_batch(far.reshape(1, -1))
+        self.assertLess(float(close_objectives[0, 1]), float(far_objectives[0, 1]))
+        self.assertLess(float(far_objectives[0, 1]), float(far_without_sequence[0, 1]))
+
+    def test_sequence_proximity_uses_observed_layers_when_shortcuts_are_duplicated(self):
+        from fitness.kernel import _chain_rows, _sequence_rows
+
+        positions = (
+            Position(0, 1, 0.0, 0.0, "left", 1, 1.0),
+            Position(1, 1, 1.0, 0.0, "left", 1, 1.0),
+            Position(2, 1, 8.0, 0.0, "right", 1, 1.0),
+            Position(3, 2, 0.0, 0.0, "left", 1, 1.0),
+            Position(4, 2, 8.0, 0.0, "right", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+A", "Action A", "app", 3.0, modifiers=("Ctrl",)),
+            Shortcut(1, "Ctrl+B", "Action B", "app", 3.0, modifiers=("Ctrl",)),
+        )
+        usage = UsageData(
+            sequences={
+                "Ctrl+A -> Ctrl+B": {
+                    "count": 20, "avg_gap_ms": 500, "confidence": 1.0,
+                    "by_layer_pair": {"1->1": 20},
+                },
+            },
+            chains={
+                "Ctrl+A -> Ctrl+B": {"count": 20, "by_layer_path": {"1->1": 20}},
+            },
+        )
+        layout = Layout(
+            np.asarray([0, 1, -1, 0, 1], dtype=np.int32), positions, shortcuts,
+            np.zeros(5, dtype=np.bool_), usage_data=usage,
+        )
+        rows = _sequence_rows(layout)
+        self.assertEqual(rows.shape, (1, 5))
+        self.assertEqual(tuple(rows[0, :4]), (0.0, 1.0, 1.0, 1.0))
+        chain_rows = _chain_rows(layout, usage.chains, 2, 1.0)
+        self.assertEqual(chain_rows.shape, (1, 5))
+        self.assertEqual(tuple(chain_rows[0, :4]), (0.0, 1.0, 1.0, 1.0))
+
+        weights = dict(DEFAULT_CONFIG["fitness"]["weights"])
+        for name in weights:
+            weights[name] = 0.0
+        weights["adjacency"] = 1.0
+        evaluator = FitnessEvaluator(
+            weights=weights, reference_layout=layout, use_cuda=False,
+            layer_usage_preference_penalty=0.0,
+        )
+        close = np.asarray([0, 1, -1, 0, 1], dtype=np.int32)
+        far = np.asarray([0, -1, 1, 0, 1], dtype=np.int32)
+        close_objectives, _ = evaluator.evaluate_batch(close.reshape(1, -1))
+        far_objectives, _ = evaluator.evaluate_batch(far.reshape(1, -1))
+        self.assertLess(float(close_objectives[0, 1]), float(far_objectives[0, 1]))
+        close_factor = AdjacencyFactor(usage_weight=1.0).compute(layout)
+        far_layout = Layout(far, positions, shortcuts, np.zeros(5, dtype=np.bool_), usage_data=usage)
+        far_factor = AdjacencyFactor(usage_weight=1.0).compute(far_layout)
+        self.assertGreater(close_factor, far_factor)
+
+        # Sliding 2–5 event chains contain the same direct transition several
+        # times. They must not amplify proximity once direct sequence rows are
+        # present.
+        without_chains = Layout(
+            np.asarray([0, 1, -1, 0, 1], dtype=np.int32), positions, shortcuts,
+            np.zeros(5, dtype=np.bool_),
+            usage_data=UsageData(sequences=usage.sequences),
+        )
+        no_chain_evaluator = FitnessEvaluator(
+            weights=weights, reference_layout=without_chains, use_cuda=False,
+            layer_usage_preference_penalty=0.0,
+        )
+        unique_candidate = np.asarray([0, 1, -1, -1, -1], dtype=np.int32)
+        with_chain_score, _ = evaluator.evaluate_batch(unique_candidate.reshape(1, -1))
+        without_chain_score, _ = no_chain_evaluator.evaluate_batch(unique_candidate.reshape(1, -1))
+        np.testing.assert_allclose(with_chain_score, without_chain_score, rtol=0.0, atol=1e-6)
+
+    def test_global_familiarity_demotes_low_use_layer_copy_to_high_effort(self):
+        positions = (
+            Position(0, 0, 0.0, 0.0, "left", 1, 0.5, is_frozen=True),
+            Position(1, 0, 1.0, 0.0, "left", 1, 0.5),
+            Position(2, 1, 1.0, 0.0, "right", 1, 0.5),
+            Position(3, 1, 8.0, 0.0, "right", 1, 4.0),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+C", "Copy", "app", 9.0, modifiers=("Ctrl",)),
+            Shortcut(1, "@access:L1:hold", "Hold L1", "Layer Access", 10.0,
+                     is_layer_access=True, access_target_layer=1, access_is_momentary=True),
+            Shortcut(2, "Other", "Other", "app", 1.0),
+        )
+        usage = UsageData(
+            shortcuts={"Ctrl+C": {"count": 1005}},
+            by_layer_shortcut={"Ctrl+C": {"0": 1000, "1": 5}},
+        )
+        layout = Layout(
+            np.asarray([1, 0, 0, -1], dtype=np.int32), positions, shortcuts,
+            np.asarray([True, False, False, False]), usage_data=usage,
+        )
+        weights = dict(DEFAULT_CONFIG["fitness"]["weights"])
+        for name in weights:
+            weights[name] = 0.0
+        weights["effort"] = 1.0
+        evaluator = FitnessEvaluator(
+            weights=weights, reference_layout=layout, use_cuda=False,
+            layer_usage_preference_penalty=10000.0,
+        )
+        low_effort_copy = np.asarray([1, 0, 0, -1], dtype=np.int32)
+        high_effort_copy = np.asarray([1, 0, -1, 0], dtype=np.int32)
+        low_objectives, _ = evaluator.evaluate_batch(low_effort_copy.reshape(1, -1))
+        high_objectives, _ = evaluator.evaluate_batch(high_effort_copy.reshape(1, -1))
+        self.assertLess(float(high_objectives[0].sum()), float(low_objectives[0].sum()))
+
+    def test_mature_binding_stays_put_but_new_layer_use_can_justify_a_move(self):
+        from fitness.model import (
+            _build_layer_usage_preferences,
+            _layer_position_familiarity_batch,
+            _layer_usage_mismatch_batch,
+        )
+
+        positions = (
+            Position(0, 0, 0.0, 0.0, "left", 1, 1.0),
+            Position(1, 0, 1.0, 0.0, "left", 1, 1.0),
+            Position(2, 1, 2.0, 0.0, "right", 1, 1.0),
+        )
+        shortcuts = (
+            Shortcut(0, "Ctrl+C", "Copy", "app", 8.0, modifiers=("Ctrl",)),
+            Shortcut(1, "Ctrl+V", "Paste", "app", 8.0, modifiers=("Ctrl",)),
+        )
+        incumbent = Layout(
+            np.asarray([0, 1, -1], dtype=np.int32), positions, shortcuts,
+            np.asarray([False, False, False]),
+            usage_data=UsageData(by_layer_shortcut={
+                "Ctrl+C": {"0": 1000},
+                "Ctrl+V": {"0": 10, "1": 800},
+            }),
+        )
+        layer_cost, familiarity = _build_layer_usage_preferences(incumbent)
+        reference_mask = np.asarray([
+            [True, False, False],
+            [False, True, False],
+        ], dtype=np.bool_)
+        reference_layer_mask = np.asarray([
+            [True] + [False] * 31,
+            [True] + [False] * 31,
+        ], dtype=np.bool_)
+        genomes = np.asarray([
+            [0, 1, -1],  # Incumbent placements.
+            [-1, 0, -1],  # Copy moved within L0 without supporting evidence.
+            [0, -1, 1],  # Paste moved to its newly observed-use layer.
+        ], dtype=np.int32)
+        position_cost = _layer_position_familiarity_batch(
+            genomes,
+            np.asarray([0, 0, 1], dtype=np.int32),
+            np.asarray([False, False, False]),
+            reference_mask,
+            reference_layer_mask,
+            familiarity,
+        )
+        self.assertEqual(float(position_cost[0]), 0.0)
+        self.assertGreater(float(position_cost[1]), 0.0)
+        self.assertEqual(float(position_cost[2]), 0.0)
+
+        # Exercise the full evaluator path: a mature same-layer binding stays
+        # at its incumbent position when no coordinate-level use supports a move.
+        stable_positions = positions + (
+            Position(3, 0, 3.0, 0.0, "right", 1, 1.0),
+        )
+        stable_layout = Layout(
+            np.asarray([0, 1, -1, -1], dtype=np.int32), stable_positions, shortcuts,
+            np.asarray([False, False, False, False]),
+            usage_data=UsageData(by_layer_shortcut={"Ctrl+C": {"0": 1000}}),
+        )
+        weights = dict(DEFAULT_CONFIG["fitness"]["weights"])
+        for name in weights:
+            weights[name] = 0.0
+        evaluator = FitnessEvaluator(
+            weights=weights, reference_layout=stable_layout, use_cuda=False,
+            layer_usage_preference_penalty=10000.0,
+        )
+        stayed, _ = evaluator.evaluate_batch(
+            np.asarray([[0, 1, -1, -1]], dtype=np.int32)
+        )
+        relocated, _ = evaluator.evaluate_batch(
+            np.asarray([[1, 0, -1, -1]], dtype=np.int32)
+        )
+        self.assertLess(float(stayed[0].sum()), float(relocated[0].sum()))
+
+        incumbent_layer_cost = _layer_usage_mismatch_batch(
+            np.asarray([[0, 1, -1]], dtype=np.int32),
+            np.asarray([0, 0, 1], dtype=np.int32),
+            np.asarray([1.0, 1.0, 1.0], dtype=np.float32),
+            np.asarray([False, False, False]), layer_cost, 4.0,
+        )[0]
+        moved_layer_cost = _layer_usage_mismatch_batch(
+            np.asarray([[0, -1, 1]], dtype=np.int32),
+            np.asarray([0, 0, 1], dtype=np.int32),
+            np.asarray([1.0, 1.0, 1.0], dtype=np.float32),
+            np.asarray([False, False, False]), layer_cost, 4.0,
+        )[0]
+        # Paste's new L1 usage removes the layer-mismatch cost, while the
+        # unproven same-layer Copy relocation still pays incumbent hysteresis.
+        self.assertLess(float(moved_layer_cost), float(incumbent_layer_cost))
 
     def test_l0_toggle_is_a_hard_model_constraint(self):
         from fitness.model import FitnessModel
@@ -4488,16 +4917,16 @@ class TestLayerUsagePreferences(unittest.TestCase):
         self.assertEqual(float(toggle_constraints[0]), 1.0)
         self.assertEqual(float(hold_constraints[0]), 0.0)
 
-    def test_mouse_session_shortcuts_are_rewarded_on_dynamic_mouse_layer_by_effort(self):
+    def test_mouse_session_shortcuts_are_rewarded_on_contract_l1_by_effort(self):
         from fitness.model import _mouse_layer_shortcut_penalty_batch
 
-        # Five right-hand mouse buttons on L2, with L0 scroll and toggle access.
-        layers = np.asarray([2, 2, 2, 2, 2, 2, 2, 0, 0], dtype=np.int32)
+        # Five right-hand mouse buttons on L1, with L0 scroll and toggle access.
+        layers = np.asarray([1, 1, 1, 1, 1, 1, 1, 0, 0], dtype=np.int32)
         x = np.asarray([0, 1, 2, 3, 4, 5, 6, 1, 2], dtype=np.float32)
         effort = np.asarray([1, 1, 1, 1, 1, 0, 1, 1, 1], dtype=np.float32)
         hand = np.asarray([1, 1, 1, 1, 1, 1, 1, 0, 0], dtype=np.int32)
         thumb = np.asarray([False] * 8 + [True], dtype=np.bool_)
-        access_targets = np.asarray([-1, -1, -1, -1, -1, -1, 2, 2, 2], dtype=np.int32)
+        access_targets = np.asarray([-1, -1, -1, -1, -1, -1, 1, 1, 1], dtype=np.int32)
         access_momentary = np.asarray([False] * 8 + [True], dtype=np.bool_)
         is_mouse = np.asarray([True] * 5 + [False] * 4, dtype=np.bool_)
         buttons = np.asarray([1, 2, 3, 4, 5, 0, 0, 0, 0], dtype=np.int32)

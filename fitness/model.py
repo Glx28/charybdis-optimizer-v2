@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 import numpy as np
-from numba import njit
+from numba import njit, prange
 
 from fitness.kernel import precompute, _evaluate_batch, _single_genome, NUMBA_AVAILABLE
 
@@ -20,6 +20,20 @@ except Exception:
     _CUDA_AVAILABLE = False
     evaluate_batch_cuda = None
     build_cuda_args = None
+
+
+def _horizontal_position_edges(layout, eligible):
+    """Precompute same-row adjacent position pairs for batched contract checks."""
+    by_coord = {}
+    for index, pos in enumerate(layout.positions):
+        if eligible(pos):
+            by_coord[(int(pos.layer), int(pos.x), int(pos.y))] = index
+    edges = [
+        (left, right)
+        for (layer, x, y), left in by_coord.items()
+        if (right := by_coord.get((layer, x + 1, y))) is not None
+    ]
+    return np.asarray(edges, dtype=np.int32).reshape((-1, 2))
 
 
 @njit(cache=True)
@@ -135,27 +149,29 @@ def _right_alt_l0_penalty_batch(genomes, pos_layer, right_alt_sid, penalty):
 
 
 @njit(cache=True)
-def _layer_usage_mismatch_batch(genomes, pos_layer, preference_index, preference_weights):
-    """Return weighted loss for moving logged modifier shortcuts off their dominant layer."""
+def _layer_usage_mismatch_batch(
+    genomes, pos_layer, pos_effort, pos_is_frozen, layer_cost, max_effort,
+):
+    """Penalize familiar shortcuts occupying prime positions on underused layers."""
     batch_size, n_positions = genomes.shape
     scores = np.zeros(batch_size, dtype=np.float32)
-    n_preferences = preference_weights.shape[0]
-    if n_preferences == 0:
+    if layer_cost.size == 0 or max_effort <= 0.0:
         return scores
-    covered = np.zeros((batch_size, n_preferences), dtype=np.bool_)
-    n_shortcuts = preference_index.shape[0]
+    n_shortcuts = layer_cost.shape[0]
     for row in range(batch_size):
         for idx in range(n_positions):
             sid = int(genomes[row, idx])
             layer = int(pos_layer[idx])
-            if sid < 0 or sid >= n_shortcuts or layer < 0 or layer >= 32:
+            if (sid < 0 or sid >= n_shortcuts or layer < 0 or layer >= 32
+                    or pos_is_frozen[idx]):
                 continue
-            preference = int(preference_index[sid, layer])
-            if preference >= 0 and preference < n_preferences:
-                covered[row, preference] = True
-        for preference in range(n_preferences):
-            if not covered[row, preference]:
-                scores[row] += preference_weights[preference]
+            effort_ratio = pos_effort[idx] / max_effort
+            if effort_ratio < 0.0:
+                effort_ratio = 0.0
+            elif effort_ratio > 1.0:
+                effort_ratio = 1.0
+            prime_position_weight = 1.0 - 0.75 * effort_ratio
+            scores[row] += layer_cost[sid, layer] * prime_position_weight
     return scores
 
 
@@ -197,7 +213,7 @@ def _mouse_layer_shortcut_penalty_batch(
     is_scroll_access, preference_index, preference_weights, max_effort,
     pos_y=None, preferred_access_penalty=0.0,
 ):
-    """Reward frequent mouse-session shortcuts on the contract-valid mouse layer."""
+    """Reward frequent mouse-session shortcuts on contract-defined L1."""
     batch_size, n_positions = genomes.shape
     scores = np.zeros(batch_size, dtype=np.float32)
     n_shortcuts = preference_index.shape[0]
@@ -261,9 +277,7 @@ def _mouse_layer_shortcut_penalty_batch(
             if not changed:
                 break
         mouse_layer = -1
-        for layer in range(1, 32):
-            if layer == 7:
-                continue
+        for layer in range(1, 2):
             valid = True
             for button in range(1, 6):
                 if right_buttons[layer, button] == 0 or right_buttons[layer, button] > 1 or left_buttons[layer, button] > 1:
@@ -312,12 +326,12 @@ def _mouse_layer_shortcut_penalty_batch(
     return scores
 
 
-def _build_layer_usage_preferences(layout, min_count=3, min_share=0.60):
-    """Map confident logged modifier-shortcut use to observed layer IDs.
+def _build_layer_usage_preferences(layout, min_count=3, include_counts=False):
+    """Build layer mismatch costs and per-layer familiarity from observed use.
 
     Layer IDs remain data labels; this does not assign semantic roles to any
-    dynamic layer. Unmodified keys are excluded because ordinary typing is not
-    fully observed by the logger.
+    dynamic layer. Ordinary unmodified keys are excluded unless the symbol
+    logger explicitly captured their produced output.
     """
     from fitness.factors.workflow_coherence import WorkflowCoherenceFactor
 
@@ -334,7 +348,7 @@ def _build_layer_usage_preferences(layout, min_count=3, min_share=0.60):
         if sid < 0 or sid >= layout.n_shortcuts:
             continue
         shortcut = layout.shortcuts[sid]
-        if shortcut.is_layer_access or shortcut.category == "mouse":
+        if shortcut.is_layer_access or shortcut.is_l0_only or shortcut.category == "mouse":
             continue
         parts = [part.strip().lower() for part in str(keys).split("+")]
         if not shortcut.modifiers and not any(part in modifier_names for part in parts[:-1]):
@@ -347,30 +361,103 @@ def _build_layer_usage_preferences(layout, min_count=3, min_share=0.60):
             if 0 <= layer < 32 and layer != 7 and count > 0:
                 observed.setdefault(sid, {})[layer] = observed.setdefault(sid, {}).get(layer, 0) + count
 
-    preferences = []
+    symbol_usage = layout.usage_data.norwegian_symbol_usage
+    if isinstance(symbol_usage, dict):
+        for output, row in (symbol_usage.get("by_output") or {}).items():
+            sid = sid_by_key.get(output, sid_by_key.get(normalize(output), -1))
+            if sid < 0 or sid >= layout.n_shortcuts or not isinstance(row, dict):
+                continue
+            shortcut = layout.shortcuts[sid]
+            if shortcut.is_layer_access or shortcut.is_l0_only or shortcut.category == "mouse":
+                continue
+            for layer_text, raw_count in (row.get("by_layer") or {}).items():
+                try:
+                    layer, count = int(layer_text), int(raw_count)
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= layer < 32 and layer != 7 and count > 0:
+                    observed.setdefault(sid, {})[layer] = observed.setdefault(sid, {}).get(layer, 0) + count
+
+    layer_cost = np.zeros((layout.n_shortcuts, 32), dtype=np.float32)
+    layer_familiarity = np.zeros((layout.n_shortcuts, 32), dtype=np.float32)
+    layer_counts = np.zeros((layout.n_shortcuts, 32), dtype=np.float32)
     for sid, counts in observed.items():
+        for layer, count in counts.items():
+            layer_counts[sid, layer] = count
         total = sum(counts.values())
         if total < min_count:
             continue
-        target_layer, target_count = max(counts.items(), key=lambda item: (item[1], item[0] == 0, -item[0]))
-        share = target_count / total
-        if share < min_share:
+        familiarity = min(1.0, math.log1p(total) / math.log1p(1000.0))
+        max_layer_count = max(counts.values())
+        if max_layer_count <= 0:
             continue
-        preferences.append((sid, target_layer, math.log1p(total) * (2.0 * share - 1.0)))
-
-    preference_index = np.full((layout.n_shortcuts, 32), -1, dtype=np.int32)
-    preference_weights = np.asarray([row[2] for row in preferences], dtype=np.float32)
-    if preference_weights.size:
-        total_weight = float(preference_weights.sum())
-        if total_weight > 0.0:
-            preference_weights /= np.float32(total_weight)
-        for index, (sid, layer, _weight) in enumerate(preferences):
-            preference_index[sid, layer] = index
-    return preference_index, preference_weights
+        for layer in range(32):
+            if layer == 7:
+                continue
+            layer_share = counts.get(layer, 0) / max_layer_count
+            layer_cost[sid, layer] = familiarity * max(0.0, 1.0 - layer_share)
+            layer_familiarity[sid, layer] = familiarity * counts.get(layer, 0) / total
+    if include_counts:
+        return layer_cost, layer_familiarity, layer_counts
+    return layer_cost, layer_familiarity
 
 
-def _build_mouse_session_shortcut_preferences(layout, min_count=3):
-    """Normalize logged shortcut demand observed during mouse-use sessions."""
+@njit(cache=True)
+def _l0_thumb_usage_opportunity_batch(
+    genomes, pos_layer, pos_effort, pos_is_thumb, pos_is_frozen,
+    shortcut_importance, access_target, layer_usage_counts,
+):
+    """Charge unused L0 thumb occupancy in score units, relieved by L0 use."""
+    scores = np.zeros(genomes.shape[0], dtype=np.float32)
+    for row in range(genomes.shape[0]):
+        for idx in range(genomes.shape[1]):
+            if (pos_layer[idx] != 0 or not pos_is_thumb[idx]
+                    or pos_is_frozen[idx]):
+                continue
+            sid = int(genomes[row, idx])
+            if (sid < 0 or sid >= shortcut_importance.shape[0]
+                    or access_target[sid] >= 0):
+                continue
+            count = float(layer_usage_counts[sid, 0])
+            relief = math.log1p(count) * 0.14
+            if relief > 0.95:
+                relief = 0.95
+            if relief < 0.0:
+                relief = 0.0
+            waste = 200.0 * math.exp(-2.0 * float(pos_effort[idx]))
+            scores[row] += waste * float(shortcut_importance[sid]) * (1.0 - relief)
+    return scores
+
+
+@njit(cache=True)
+def _layer_position_familiarity_batch(
+    genomes, pos_layer, pos_is_frozen, reference_binding_mask,
+    reference_incumbent_layer_mask, layer_familiarity,
+):
+    """Charge movement away from a well-used incumbent binding on its layer."""
+    batch_size, n_positions = genomes.shape
+    scores = np.zeros(batch_size, dtype=np.float32)
+    n_shortcuts = layer_familiarity.shape[0]
+    for row in range(batch_size):
+        for idx in range(n_positions):
+            sid = int(genomes[row, idx])
+            layer = int(pos_layer[idx])
+            if (sid < 0 or sid >= n_shortcuts or layer < 0 or layer >= 32
+                    or layer == 7 or pos_is_frozen[idx]):
+                continue
+            evidence = layer_familiarity[sid, layer]
+            if evidence <= 0.0 or reference_binding_mask[sid, idx]:
+                continue
+            # Only stabilize a placement on a layer where the incumbent already
+            # binds this shortcut. Observed use on another layer can still justify
+            # moving the shortcut there.
+            if reference_incumbent_layer_mask[sid, layer]:
+                scores[row] += evidence
+    return scores
+
+
+def _build_mouse_session_shortcut_preferences(layout, min_count=3, favorite_keys=()):
+    """Prefer mouse-session actions only in proportion to their observed L1 use."""
     from fitness.factors.workflow_coherence import WorkflowCoherenceFactor
 
     normalize = WorkflowCoherenceFactor._normalize_keys
@@ -378,6 +465,7 @@ def _build_mouse_session_shortcut_preferences(layout, min_count=3):
     for shortcut in layout.shortcuts:
         sid_by_key[shortcut.keys] = int(shortcut.sid)
         sid_by_key[normalize(shortcut.keys)] = int(shortcut.sid)
+    favorites = {normalize(key) for key in (favorite_keys or [])}
     rows = []
     for keys, data in layout.usage_data.mouse_session_shortcuts.items():
         sid = sid_by_key.get(keys, sid_by_key.get(normalize(keys), -1))
@@ -392,9 +480,21 @@ def _build_mouse_session_shortcut_preferences(layout, min_count=3):
             continue
         if count < min_count:
             continue
-        global_data = layout.usage_data.shortcuts.get(keys, {})
-        global_count = float(global_data.get("count", 0)) if isinstance(global_data, dict) else 0.0
-        weight = math.log1p(count) * (1.0 + 0.2 * math.log1p(global_count))
+        by_layer = layout.usage_data.by_layer_shortcut.get(keys, {})
+        if not by_layer:
+            by_layer = layout.usage_data.by_layer_shortcut.get(normalize(keys), {})
+        try:
+            local_count = float(by_layer.get("1", by_layer.get(1, 0)))
+            observed_count = sum(float(value) for layer, value in by_layer.items()
+                                 if str(layer) != "7")
+        except (TypeError, ValueError):
+            continue
+        if local_count < min_count or observed_count <= 0.0:
+            continue
+        local_share = min(1.0, local_count / observed_count)
+        weight = math.log1p(count) * local_share
+        if normalize(shortcut.keys) in favorites:
+            weight *= 1.5
         if weight > 0.0:
             rows.append((sid, weight))
     total = sum(weight for _sid, weight in rows)
@@ -405,8 +505,8 @@ def _build_mouse_session_shortcut_preferences(layout, min_count=3):
     return preference_index, weights
 
 
-def _build_owner_mouse_layer_shortcut_preferences(layout, keys):
-    """Build explicit owner-requested shortcut placement on the dynamic mouse layer."""
+def _build_owner_mouse_layer_shortcut_preferences(layout, keys, min_count=3):
+    """Build soft favorite weights from actual use on the contract-defined L1."""
     from fitness.factors.workflow_coherence import WorkflowCoherenceFactor
 
     normalize = WorkflowCoherenceFactor._normalize_keys
@@ -417,6 +517,7 @@ def _build_owner_mouse_layer_shortcut_preferences(layout, keys):
 
     preference_index = np.full((layout.n_shortcuts, 32), -1, dtype=np.int32)
     selected = []
+    local_counts = {}
     for key in keys or []:
         sid = sid_by_key.get(str(key), sid_by_key.get(normalize(key), -1))
         if sid < 0 or sid >= layout.n_shortcuts or sid in selected:
@@ -424,9 +525,21 @@ def _build_owner_mouse_layer_shortcut_preferences(layout, keys):
         shortcut = layout.shortcuts[sid]
         if shortcut.is_layer_access or shortcut.category == "mouse":
             continue
+        by_layer = layout.usage_data.by_layer_shortcut.get(str(key), {})
+        if not by_layer:
+            by_layer = layout.usage_data.by_layer_shortcut.get(normalize(key), {})
+        try:
+            count = float(by_layer.get("1", by_layer.get(1, 0)))
+        except (TypeError, ValueError):
+            count = 0.0
+        if count < min_count:
+            continue
         selected.append(sid)
+        local_counts[sid] = count
 
-    weights = np.ones(len(selected), dtype=np.float32)
+    raw_weights = [math.log1p(local_counts[sid]) for sid in selected]
+    total = sum(raw_weights)
+    weights = np.asarray([weight / total for weight in raw_weights], dtype=np.float32) if total else np.asarray([], dtype=np.float32)
     for index, sid in enumerate(selected):
         preference_index[sid, :] = index
     return preference_index, weights
@@ -489,22 +602,386 @@ def _shortcut_pair_together_violation_batch(genomes, pos_layer, sid_a, sid_b):
 
 
 @njit(cache=True)
-def _l5_hold_self_toggle_path_violation_batch(genomes, pos_layer, hold_sid, toggle_sid):
-    """Require the owner-requested L0 hold -> L5 self-toggle path."""
+def _momentary_thumb_side_clear_violation_batch(
+    genomes, pos_layer, pos_is_thumb, pos_hand,
+    access_targets, access_is_momentary, is_scroll_access,
+):
+    """Count thumb bindings masked by reachable momentary access holds."""
     batch_size, n_positions = genomes.shape
+    n_shortcuts = access_targets.shape[0]
     scores = np.zeros((batch_size, 1), dtype=np.float32)
     for row in range(batch_size):
-        has_l0_hold = False
-        has_l5_self_toggle = False
+        edges = np.zeros((32, 32), dtype=np.bool_)
+        reachable = np.zeros(32, dtype=np.bool_)
+        reachable[0] = True
+        for idx in range(n_positions):
+            sid = int(genomes[row, idx])
+            if sid < 0 or sid >= n_shortcuts or is_scroll_access[sid]:
+                continue
+            source = int(pos_layer[idx])
+            target = int(access_targets[sid])
+            if 0 <= source < 32 and 0 <= target < 32 and target != 7:
+                edges[source, target] = True
+        for _ in range(32):
+            changed = False
+            for source in range(32):
+                if not reachable[source]:
+                    continue
+                for target in range(32):
+                    if edges[source, target] and not reachable[target]:
+                        reachable[target] = True
+                        changed = True
+            if not changed:
+                break
+
+        restrict_left = np.zeros(32, dtype=np.bool_)
+        restrict_right = np.zeros(32, dtype=np.bool_)
+        for idx in range(n_positions):
+            sid = int(genomes[row, idx])
+            if (sid < 0 or sid >= n_shortcuts or not pos_is_thumb[idx]
+                    or not access_is_momentary[sid] or is_scroll_access[sid]):
+                continue
+            source = int(pos_layer[idx])
+            target = int(access_targets[sid])
+            if (source < 0 or source >= 32 or target <= 0 or target >= 32
+                    or target == 7 or not reachable[source]):
+                continue
+            if pos_hand[idx] == 0:
+                restrict_left[target] = True
+            else:
+                restrict_right[target] = True
+
         for idx in range(n_positions):
             sid = int(genomes[row, idx])
             layer = int(pos_layer[idx])
-            if sid == hold_sid and layer == 0:
-                has_l0_hold = True
-            elif sid == toggle_sid and layer == 5:
-                has_l5_self_toggle = True
-        if not has_l0_hold or not has_l5_self_toggle:
-            scores[row, 0] = 1.0
+            if sid < 0 or sid >= n_shortcuts or not pos_is_thumb[idx]:
+                continue
+            if layer <= 0 or layer >= 32 or layer == 7 or access_targets[sid] == 0:
+                continue
+            if ((pos_hand[idx] == 0 and restrict_left[layer])
+                    or (pos_hand[idx] == 1 and restrict_right[layer])):
+                scores[row, 0] += 1.0
+    return scores
+
+
+@njit(cache=True, parallel=True)
+def _semantic_owner_contract_violation_batch(
+    genomes, pos_layer, pos_x, pos_y, pos_frozen,
+    cluster_starts, cluster_sids, cluster_dx, cluster_dy, cluster_required,
+    completion_order, completion_offsets,
+):
+    """Hard-gate required relative groups and Norwegian raw-key geometry."""
+    batch_size, n_positions = genomes.shape
+    n_shortcuts = len(completion_order)
+    n_layers = int(np.max(pos_layer)) + 1
+    result = np.zeros((batch_size, 1), dtype=np.float32)
+    for row in prange(batch_size):
+        first = np.full((n_shortcuts, n_layers), -1, dtype=np.int32)
+        first_any = np.full(n_shortcuts, -1, dtype=np.int32)
+        layer_first = np.full(n_layers, n_positions + 1, dtype=np.int32)
+        for idx in range(n_positions):
+            sid = int(genomes[row, idx])
+            layer = int(pos_layer[idx])
+            if sid < 0 or sid >= n_shortcuts or layer < 0 or layer >= n_layers:
+                continue
+            if first_any[sid] < 0:
+                first_any[sid] = idx
+            if first[sid, layer] < 0:
+                first[sid, layer] = idx
+            if idx < layer_first[layer]:
+                layer_first[layer] = idx
+
+        valid = True
+        for c in range(len(cluster_required)):
+            if not cluster_required[c]:
+                continue
+            start = int(cluster_starts[c])
+            end = int(cluster_starts[c + 1])
+            n_members = end - start
+            best_layer = -1
+            best_count = -1
+            full_layer = -1
+            best_first = n_positions + 1
+            for layer in range(n_layers):
+                if layer_first[layer] > n_positions:
+                    continue
+                count = 0
+                for member in range(start, end):
+                    sid = int(cluster_sids[member])
+                    if 0 <= sid < n_shortcuts and first[sid, layer] >= 0:
+                        count += 1
+                if count > best_count or (count == best_count and layer_first[layer] < best_first):
+                    best_layer = layer
+                    best_count = count
+                    best_first = layer_first[layer]
+                if count == n_members:
+                    if full_layer < 0 or layer_first[layer] < layer_first[full_layer]:
+                        full_layer = layer
+            dominant = full_layer if full_layer >= 0 else best_layer
+            if full_layer < 0 or dominant < 0:
+                valid = False
+                break
+            anchor_member = -1
+            placed = np.full(n_members, -1, dtype=np.int32)
+            for offset in range(n_members):
+                member = start + offset
+                sid = int(cluster_sids[member])
+                if sid < 0 or sid >= n_shortcuts:
+                    continue
+                idx = int(first[sid, dominant])
+                if idx < 0:
+                    idx = int(first_any[sid])
+                placed[offset] = idx
+                if (anchor_member < 0 and idx >= 0
+                        and int(pos_layer[idx]) == dominant
+                        and abs(float(cluster_dx[member])) <= 0.01
+                        and abs(float(cluster_dy[member])) <= 0.01):
+                    anchor_member = offset
+            if anchor_member < 0:
+                valid = False
+                break
+            anchor_idx = int(placed[anchor_member])
+            ax = float(pos_x[anchor_idx])
+            ay = float(pos_y[anchor_idx])
+            for offset in range(n_members):
+                idx = int(placed[offset])
+                if idx < 0 or int(pos_layer[idx]) != dominant:
+                    continue
+                dx = float(pos_x[idx]) - (ax + float(cluster_dx[start + offset]))
+                dy = float(pos_y[idx]) - (ay + float(cluster_dy[start + offset]))
+                if dx * dx + dy * dy > 0.25:
+                    valid = False
+                    break
+            if not valid:
+                break
+
+        if valid:
+            # Five raw Norwegian keys: one mutable non-L7 layer, declared shape.
+            raw_idx = np.full(6, -1, dtype=np.int32)
+            raw_layer = -1
+            for idx in range(n_positions):
+                sid = int(genomes[row, idx])
+                if sid < 0 or sid >= n_shortcuts:
+                    continue
+                order = int(completion_order[sid])
+                if order < 1 or order > 5:
+                    continue
+                if raw_idx[order] < 0:
+                    raw_idx[order] = idx
+                layer = int(pos_layer[idx])
+                if not pos_frozen[idx] and layer != 7:
+                    if raw_layer < 0:
+                        raw_layer = layer
+                    elif raw_layer != layer:
+                        valid = False
+                        break
+            if valid and raw_layer >= 0:
+                anchor = int(raw_idx[2])
+                if anchor < 0:
+                    valid = False
+                else:
+                    ax = float(pos_x[anchor])
+                    ay = float(pos_y[anchor])
+                    for order in range(1, 6):
+                        idx = int(raw_idx[order])
+                        if idx < 0:
+                            valid = False
+                            break
+                        dx = float(pos_x[idx]) - (ax + float(completion_offsets[order, 0]))
+                        dy = float(pos_y[idx]) - (ay + float(completion_offsets[order, 1]))
+                        if abs(dx) > 0.5 or abs(dy) > 0.5:
+                            valid = False
+                            break
+            else:
+                valid = False
+        if not valid:
+            result[row, 0] = 1.0
+    return result
+
+
+@njit(cache=True, parallel=True)
+def _owner_layout_contract_v1_violation_batch(
+    genomes, pos_layer, pos_x, pos_y, pos_effort, pos_hand, pos_is_thumb,
+    access_targets, access_is_momentary, is_scroll_access, mouse_sids,
+    mouse_button_by_sid, required_sids, required_index_by_sid,
+    required_pair_sids, required_pair_position_edges,
+    mb45_position_edges, l1_hold_sid, fixed_scroll_sid,
+    left_alt_sid, right_alt_sid, expected_l7,
+):
+    """Batched hard checks matching contracts/layout_contract_v1.json."""
+    batch_size, n_positions = genomes.shape
+    n_shortcuts = access_targets.shape[0]
+    scores = np.zeros((batch_size, 1), dtype=np.float32)
+    for row in prange(batch_size):
+        ok = True
+        failure_code = 0
+        mouse_seen = np.zeros(6, dtype=np.bool_)
+        mb3_ok = False
+        n_mb4 = 0
+        n_mb5 = 0
+        fixed_mb1 = False
+        fixed_mb2 = False
+        fixed_scroll = False
+        scroll_count = 0
+        extra_count = 0
+        extra_layers = np.zeros(32, dtype=np.bool_)
+        l1_lock = False
+        l0_hold = False
+        required_found = np.zeros(len(required_sids), dtype=np.bool_)
+
+        for i in range(n_positions):
+            sid = int(genomes[row, i])
+            layer = int(pos_layer[i])
+            if layer == 7 and sid != int(expected_l7[i]):
+                ok = False
+                failure_code |= 512
+            if sid < 0 or sid >= n_shortcuts:
+                continue
+            if sid == l1_hold_sid and layer == 0 and pos_x[i] == 3.0 and pos_y[i] == 4.0:
+                if access_targets[sid] == 1 and access_is_momentary[sid] and not is_scroll_access[sid]:
+                    l0_hold = True
+            if layer == 1 and access_targets[sid] == 1 and not access_is_momentary[sid]:
+                l1_lock = True
+            button = int(mouse_button_by_sid[sid])
+            if button > 0 and layer == 1:
+                mouse_seen[button] = True
+                if button == 1 and pos_x[i] == 8.0 and pos_y[i] == 2.0:
+                    fixed_mb1 = True
+                elif button == 2 and pos_x[i] == 9.0 and pos_y[i] == 2.0:
+                    fixed_mb2 = True
+                elif button == 3 and pos_hand[i] == 1 and not pos_is_thumb[i]:
+                    mb3_ok = True
+                elif button == 4 and pos_hand[i] == 1 and not pos_is_thumb[i]:
+                    n_mb4 += 1
+                elif button == 5 and pos_hand[i] == 1 and not pos_is_thumb[i]:
+                    n_mb5 += 1
+            if is_scroll_access[sid]:
+                scroll_count += 1
+                if (sid == fixed_scroll_sid and layer == 1 and pos_x[i] == 10.0
+                        and pos_y[i] == 2.0 and access_targets[sid] == 1
+                        and access_is_momentary[sid]):
+                    fixed_scroll = True
+                else:
+                    if (layer <= 0 or layer >= 32 or layer == 1 or layer == 7
+                            or pos_is_thumb[i] or access_targets[sid] != layer
+                            or not access_is_momentary[sid] or extra_layers[layer]):
+                        ok = False
+                        failure_code |= 4
+                    else:
+                        extra_layers[layer] = True
+                    extra_count += 1
+            required_index = int(required_index_by_sid[sid])
+            if (required_index >= 0 and layer == 1 and not pos_is_thumb[i]
+                    and pos_y[i] > 0.0 and pos_effort[i] <= 1.0):
+                required_found[required_index] = True
+
+        for b in range(1, 6):
+            if not mouse_seen[b]:
+                ok = False
+                failure_code |= 2
+        if not (fixed_mb1 and fixed_mb2 and mb3_ok and fixed_scroll):
+            ok = False
+            failure_code |= 2
+        if scroll_count != 3 or extra_count != 2:
+            ok = False
+            failure_code |= 4
+        extra_layer_count = 0
+        for layer in range(32):
+            if extra_layers[layer]:
+                extra_layer_count += 1
+        if extra_layer_count != 2:
+            ok = False
+            failure_code |= 4
+        if not (l0_hold and l1_lock):
+            ok = False
+            failure_code |= 1
+        adjacent_mb45 = False
+        if mouse_sids[4] >= 0 and mouse_sids[5] >= 0:
+            for edge in range(mb45_position_edges.shape[0]):
+                left = int(mb45_position_edges[edge, 0])
+                right = int(mb45_position_edges[edge, 1])
+                if (int(genomes[row, left]) == mouse_sids[4]
+                        and int(genomes[row, right]) == mouse_sids[5]):
+                    adjacent_mb45 = True
+                    break
+        if n_mb4 == 0 or n_mb5 == 0 or not adjacent_mb45:
+            ok = False
+            failure_code |= 8
+        for r in range(len(required_sids)):
+            if not required_found[r]:
+                ok = False
+                failure_code |= 16
+        for g in range(len(required_pair_sids)):
+            sid_a = int(required_pair_sids[g, 0])
+            sid_b = int(required_pair_sids[g, 1])
+            adjacent = False
+            if sid_a >= 0 and sid_b >= 0:
+                for edge in range(required_pair_position_edges.shape[0]):
+                    i = int(required_pair_position_edges[edge, 0])
+                    j = int(required_pair_position_edges[edge, 1])
+                    if ((int(genomes[row, i]) == sid_a and int(genomes[row, j]) == sid_b)
+                            or (int(genomes[row, i]) == sid_b and int(genomes[row, j]) == sid_a)):
+                        adjacent = True
+                        break
+            if not adjacent:
+                ok = False
+                failure_code |= 32
+
+        reachable = np.zeros(32, dtype=np.bool_)
+        reachable[0] = True
+        for _ in range(32):
+            changed = False
+            for i in range(n_positions):
+                sid = int(genomes[row, i])
+                if sid < 0 or sid >= n_shortcuts or is_scroll_access[sid] or not access_is_momentary[sid]:
+                    continue
+                source = int(pos_layer[i])
+                target = int(access_targets[sid])
+                if source >= 0 and source < 32 and target > 0 and target < 32 and source != target and reachable[source] and not reachable[target]:
+                    reachable[target] = True
+                    changed = True
+            if not changed:
+                break
+        for layer in range(1, 11):
+            if layer != 7 and not reachable[layer]:
+                ok = False
+                failure_code |= 64
+        restricted = np.zeros((32, 2), dtype=np.bool_)
+        for i in range(n_positions):
+            sid = int(genomes[row, i])
+            if sid < 0 or sid >= n_shortcuts or is_scroll_access[sid] or not access_is_momentary[sid] or not pos_is_thumb[i]:
+                continue
+            source = int(pos_layer[i])
+            target = int(access_targets[sid])
+            if (source >= 0 and source < 32 and target > 0 and target < 32 and target != 7
+                    and reachable[source]):
+                restricted[target, int(pos_hand[i])] = True
+        for i in range(n_positions):
+            sid = int(genomes[row, i])
+            layer = int(pos_layer[i])
+            if sid < 0 or layer <= 0 or layer >= 32 or layer == 7 or not pos_is_thumb[i]:
+                continue
+            if restricted[layer, int(pos_hand[i])] and access_targets[sid] != 0:
+                ok = False
+                failure_code |= 128
+        if left_alt_sid < 0 or right_alt_sid < 0:
+            ok = False
+            failure_code |= 256
+        else:
+            left_alt = False
+            right_alt = False
+            for i in range(n_positions):
+                sid = int(genomes[row, i])
+                layer = int(pos_layer[i])
+                if sid == left_alt_sid and layer == 0:
+                    left_alt = True
+                if sid == right_alt_sid and layer > 0 and layer < 32 and reachable[layer]:
+                    right_alt = True
+            if not (left_alt and right_alt):
+                ok = False
+                failure_code |= 256
+        if not ok:
+            scores[row, 0] = float(failure_code)
     return scores
 
 
@@ -545,11 +1022,11 @@ class FitnessModel:
         sparse_layer_base_penalty: float = 0.0,
         sparse_layer_gap_penalty: float = 0.0,
         right_alt_l0_penalty: float = 5000.0,
-        layer_usage_preference_penalty: float = 200.0,
+        layer_usage_preference_penalty: float = 10000.0,
         mouse_layer_shortcut_penalty: float = 10000.0,
         mouse_layer_access_position_penalty: float = 2.0,
         owner_mouse_layer_shortcut_preferences: Optional[List[str]] = None,
-        owner_mouse_layer_shortcut_penalty: float = 50000.0,
+        owner_mouse_layer_shortcut_penalty: float = 1000.0,
     ):
         if not NUMBA_AVAILABLE:
             raise RuntimeError("Numba is required by the single-source fitness model")
@@ -565,7 +1042,8 @@ class FitnessModel:
             "l0_toggle_access", "right_alt_off_l0",
             "cmdpal_on_mouse_layer", "access_hold_target_position_conflict",
             "zoom_controls_present_together", "monitor_move_pair_together",
-            "l5_hold_to_self_toggle_path",
+            "monitor_move_pair_on_mouse_layer", "momentary_thumb_side_clear",
+            "owner_layout_contract_v1",
         }
         self._custom_hard_constraints = [name for name in self.hard_constraints if name in custom_names]
         self._kernel_hard_constraints = [name for name in self.hard_constraints if name not in custom_names]
@@ -584,11 +1062,31 @@ class FitnessModel:
         self.mouse_layer_shortcut_penalty = float(mouse_layer_shortcut_penalty)
         self.mouse_layer_access_position_penalty = float(mouse_layer_access_position_penalty)
         self.owner_mouse_layer_shortcut_penalty = float(owner_mouse_layer_shortcut_penalty)
-        self._layer_usage_preference_index, self._layer_usage_preference_weights = (
-            _build_layer_usage_preferences(layout)
+        (self._layer_usage_cost, self._layer_usage_familiarity,
+         self._layer_usage_counts) = _build_layer_usage_preferences(
+            layout, include_counts=True
+        )
+        usage = layout.usage_data
+        has_shortcut_counts = any(
+            isinstance(row, dict) and float(row.get("count", 0) or 0) > 0
+            for row in usage.shortcuts.values()
+        )
+        has_layer_counts = any(
+            int(count) > 0
+            for by_layer in usage.by_layer_shortcut.values()
+            for count in (by_layer or {}).values()
+        )
+        has_symbol_counts = any(
+            isinstance(row, dict) and int(row.get("total", 0) or 0) > 0
+            for row in (usage.norwegian_symbol_usage.get("by_output") or {}).values()
+        ) if isinstance(usage.norwegian_symbol_usage, dict) else False
+        self._l0_thumb_usage_enabled = bool(
+            has_shortcut_counts or has_layer_counts or has_symbol_counts
         )
         self._mouse_layer_shortcut_preference_index, self._mouse_layer_shortcut_preference_weights = (
-            _build_mouse_session_shortcut_preferences(layout)
+            _build_mouse_session_shortcut_preferences(
+                layout, favorite_keys=owner_mouse_layer_shortcut_preferences or []
+            )
         )
         self._owner_mouse_layer_shortcut_preference_index, self._owner_mouse_layer_shortcut_preference_weights = (
             _build_owner_mouse_layer_shortcut_preferences(
@@ -598,19 +1096,99 @@ class FitnessModel:
         self._cmdpal_mouse_layer_preference_index, self._cmdpal_mouse_layer_preference_weights = (
             _build_owner_mouse_layer_shortcut_preferences(layout, ["Win+Alt+Space"])
         )
+        self._monitor_mouse_layer_preference_index, self._monitor_mouse_layer_preference_weights = (
+            _build_owner_mouse_layer_shortcut_preferences(
+                layout, ["Win+Shift+Left", "Win+Shift+Right"]
+            )
+        )
         self._right_alt_sid = next((int(s.sid) for s in layout.shortcuts
                                     if s.base_key == "RightAlt" and not s.modifiers), -1)
         self._zoom_in_sid = next((int(s.sid) for s in layout.shortcuts if s.keys == "Ctrl++"), -1)
         self._zoom_out_sid = next((int(s.sid) for s in layout.shortcuts if s.keys == "Ctrl+-"), -1)
         self._monitor_left_sid = next((int(s.sid) for s in layout.shortcuts if s.keys == "Win+Shift+Left"), -1)
         self._monitor_right_sid = next((int(s.sid) for s in layout.shortcuts if s.keys == "Win+Shift+Right"), -1)
-        self._l5_hold_sid = next((int(s.sid) for s in layout.shortcuts if s.keys == "@access:L5:hold"), -1)
-        self._l5_toggle_sid = next((int(s.sid) for s in layout.shortcuts if s.keys == "@access:L5:toggle"), -1)
+        self._owner_mouse_sids = np.full(6, -1, dtype=np.int32)
+        for shortcut in layout.shortcuts:
+            key = str(shortcut.keys).upper()
+            if key in {"MB1", "MB2", "MB3", "MB4", "MB5"}:
+                self._owner_mouse_sids[int(key[-1])] = int(shortcut.sid)
+        from evolution.layout_contract import CONTRACT
+        required_keys = list(CONTRACT.get("required_l1_shortcuts", ()))
+        key_to_sid = {str(s.keys): int(s.sid) for s in layout.shortcuts}
+        self._owner_required_sids = np.asarray(
+            [key_to_sid.get(key, -1) for key in required_keys], dtype=np.int32
+        )
+        self._owner_required_index_by_sid = np.full(layout.n_shortcuts, -1, dtype=np.int32)
+        for index, sid in enumerate(self._owner_required_sids):
+            if sid >= 0:
+                self._owner_required_index_by_sid[int(sid)] = index
+        self._owner_required_pair_sids = np.asarray([
+            [key_to_sid.get(str(a), -1), key_to_sid.get(str(b), -1)]
+            for a, b in CONTRACT.get("required_groups", ())
+        ], dtype=np.int32).reshape((-1, 2))
+        self._owner_required_pair_position_edges = _horizontal_position_edges(
+            layout,
+            lambda p: int(p.layer) == 1 and not p.is_thumb
+            and float(p.y) > 0.0 and float(p.effort) <= 1.0,
+        )
+        self._owner_mb45_position_edges = _horizontal_position_edges(
+            layout,
+            lambda p: int(p.layer) == 1 and str(p.hand).lower() == "right"
+            and not p.is_thumb,
+        )
+        self._owner_l1_hold_sid = key_to_sid.get("@access:L1:hold", -1)
+        self._owner_fixed_scroll_sid = key_to_sid.get("@scroll:L1:hold", -1)
+        self._owner_left_alt_sid = next((int(s.sid) for s in layout.shortcuts
+                                         if s.base_key == "LeftAlt" and not s.modifiers), -1)
+        self._owner_right_alt_sid = next((int(s.sid) for s in layout.shortcuts
+                                          if s.base_key == "RightAlt" and not s.modifiers), -1)
+        self._owner_expected_l7 = np.asarray([
+            int(layout.genome[i]) if int(p.layer) == 7 else -1
+            for i, p in enumerate(layout.positions)
+        ], dtype=np.int32)
+        cluster_starts = [0]
+        cluster_sids, cluster_dx, cluster_dy, cluster_required = [], [], [], []
+        for cluster in getattr(layout, "semantic_clusters", ()):
+            members = list(cluster.get("members", ()))
+            offsets = [(float(m.get("dx", 0.0)), float(m.get("dy", 0.0))) for m in members]
+            cluster_sids.extend(int(m.get("sid", -1)) for m in members)
+            cluster_dx.extend(dx for dx, _ in offsets)
+            cluster_dy.extend(dy for _, dy in offsets)
+            cluster_required.append(any(abs(dx) > .01 or abs(dy) > .01 for dx, dy in offsets))
+            cluster_starts.append(len(cluster_sids))
+        self._owner_cluster_starts = np.asarray(cluster_starts, dtype=np.int32)
+        self._owner_cluster_sids = np.asarray(cluster_sids, dtype=np.int32)
+        self._owner_cluster_dx = np.asarray(cluster_dx, dtype=np.float32)
+        self._owner_cluster_dy = np.asarray(cluster_dy, dtype=np.float32)
+        self._owner_cluster_required = np.asarray(cluster_required, dtype=np.bool_)
+        norwegian_rule = CONTRACT["norwegian_raw_key_cluster"]
+        raw_order = {str(value).upper(): int(order)
+                     for order, value in norwegian_rule["keys_by_order"].items()}
+        self._owner_completion_order = np.asarray([
+            raw_order.get(str(s.base_key).upper().strip(), 0) if not s.modifiers else 0
+            for s in layout.shortcuts
+        ], dtype=np.int32)
+        self._owner_completion_offsets = np.zeros((6, 2), dtype=np.float32)
+        for order, (dx, dy) in norwegian_rule["offsets_from_order_2"].items():
+            self._owner_completion_offsets[int(order)] = (float(dx), float(dy))
         self._semantic_position_edges = self._build_semantic_position_edges(layout)
         self._semantic_position_edges_array = np.asarray(
             self._semantic_position_edges, dtype=np.float32
         ).reshape((-1, 5))
         self._position_layers = np.asarray([p.layer for p in layout.positions], dtype=np.int32)
+        self._position_is_frozen = np.asarray([p.is_frozen for p in layout.positions], dtype=np.bool_)
+        self._reference_binding_mask = np.zeros(
+            (layout.n_shortcuts, layout.n_positions), dtype=np.bool_
+        )
+        self._reference_incumbent_layer_mask = np.zeros(
+            (layout.n_shortcuts, 32), dtype=np.bool_
+        )
+        for position, raw_sid in enumerate(layout.genome):
+            sid = int(raw_sid)
+            if (0 <= sid < layout.n_shortcuts and not self._position_is_frozen[position]
+                    and self._position_layers[position] != 7):
+                self._reference_binding_mask[sid, position] = True
+                self._reference_incumbent_layer_mask[sid, self._position_layers[position]] = True
         self._position_x = np.asarray([p.x for p in layout.positions], dtype=np.float32)
         self._position_y = np.asarray([p.y for p in layout.positions], dtype=np.float32)
         coordinate_positions = {
@@ -662,6 +1240,7 @@ class FitnessModel:
             semantic_cluster_multiplier=semantic_cluster_multiplier,
             semantic_cluster_pair_boost=self.semantic_cluster_pair_boost,
         )
+        self._shortcut_importance = self.arrays[10]
 
         # CUDA is the only production batch-evaluation path. Numba remains
         # available for unit tests and explicit CPU diagnostics only.
@@ -790,14 +1369,19 @@ class FitnessModel:
                 np.float32(right_alt_penalty),
             )
         layer_usage_penalty = float(getattr(self, "layer_usage_preference_penalty", 0.0))
-        preference_weights = getattr(self, "_layer_usage_preference_weights", np.asarray([]))
-        if layer_usage_penalty > 0.0 and preference_weights.size:
+        layer_cost = getattr(self, "_layer_usage_cost", np.asarray([]))
+        if layer_usage_penalty > 0.0 and layer_cost.size:
             mismatch = _layer_usage_mismatch_batch(
-                batch, self._position_layers,
-                getattr(self, "_layer_usage_preference_index", np.empty((0, 0), dtype=np.int32)),
-                preference_weights,
+                batch, self._position_layers, self._position_effort,
+                self._position_is_frozen, layer_cost, self._max_position_effort,
             )
             values[:, 2] += mismatch * np.float32(layer_usage_penalty)
+            position_mismatch = _layer_position_familiarity_batch(
+                batch, self._position_layers, self._position_is_frozen,
+                self._reference_binding_mask, self._reference_incumbent_layer_mask,
+                self._layer_usage_familiarity,
+            )
+            values[:, 2] += position_mismatch * np.float32(layer_usage_penalty)
         mouse_penalty = float(getattr(self, "mouse_layer_shortcut_penalty", 0.0))
         mouse_weights = getattr(self, "_mouse_layer_shortcut_preference_weights", np.asarray([]))
         if mouse_penalty > 0.0 and mouse_weights.size:
@@ -828,6 +1412,19 @@ class FitnessModel:
                 float(self._max_position_effort), self._position_y,
             )
             values[:, 2] += owner_mismatch * np.float32(owner_penalty)
+        thumb_usage_arrays = (
+            getattr(self, "_position_effort", None),
+            getattr(self, "_position_is_thumb", None),
+            getattr(self, "_position_is_frozen", None),
+            getattr(self, "_shortcut_importance", None),
+            getattr(self, "_access_targets", None),
+            getattr(self, "_layer_usage_counts", None),
+        )
+        if (getattr(self, "_l0_thumb_usage_enabled", False)
+                and all(array is not None for array in thumb_usage_arrays)):
+            values[:, 2] += _l0_thumb_usage_opportunity_batch(
+                batch, self._position_layers, *thumb_usage_arrays,
+            )
         return values
 
     def _append_custom_constraints(self, genomes, constraints):
@@ -874,10 +1471,44 @@ class FitnessModel:
                 custom_columns.append(_shortcut_pair_together_violation_batch(
                     batch, self._position_layers, self._monitor_left_sid, self._monitor_right_sid,
                 ))
-            elif name == "l5_hold_to_self_toggle_path":
-                custom_columns.append(_l5_hold_self_toggle_path_violation_batch(
-                    batch, self._position_layers, self._l5_hold_sid, self._l5_toggle_sid,
+            elif name == "monitor_move_pair_on_mouse_layer":
+                missing = _mouse_layer_shortcut_penalty_batch(
+                    batch, self._position_layers, self._position_x,
+                    self._position_effort, self._position_hand, self._position_is_thumb,
+                    self._access_targets, self._access_is_momentary,
+                    self._is_mouse_button, self._mouse_button, self._is_scroll_access,
+                    self._monitor_mouse_layer_preference_index,
+                    self._monitor_mouse_layer_preference_weights,
+                    0.0, self._position_y,
+                )
+                custom_columns.append((missing > 0.0).astype(np.float32).reshape(-1, 1))
+            elif name == "momentary_thumb_side_clear":
+                custom_columns.append(_momentary_thumb_side_clear_violation_batch(
+                    batch, self._position_layers, self._position_is_thumb,
+                    self._position_hand, self._access_targets,
+                    self._access_is_momentary, self._is_scroll_access,
                 ))
+            elif name == "owner_layout_contract_v1":
+                owner = _owner_layout_contract_v1_violation_batch(
+                    batch, self._position_layers, self._position_x, self._position_y,
+                    self._position_effort, self._position_hand, self._position_is_thumb,
+                    self._access_targets, self._access_is_momentary, self._is_scroll_access,
+                    self._owner_mouse_sids, self._mouse_button,
+                    self._owner_required_sids, self._owner_required_index_by_sid,
+                    self._owner_required_pair_sids,
+                    self._owner_required_pair_position_edges,
+                    self._owner_mb45_position_edges, self._owner_l1_hold_sid,
+                    self._owner_fixed_scroll_sid, self._owner_left_alt_sid,
+                    self._owner_right_alt_sid, self._owner_expected_l7,
+                )
+                semantic = _semantic_owner_contract_violation_batch(
+                    batch, self._position_layers, self._position_x, self._position_y,
+                    self._position_is_frozen, self._owner_cluster_starts,
+                    self._owner_cluster_sids, self._owner_cluster_dx,
+                    self._owner_cluster_dy, self._owner_cluster_required,
+                    self._owner_completion_order, self._owner_completion_offsets,
+                )
+                custom_columns.append(np.maximum(owner, semantic))
         custom = np.concatenate(custom_columns, axis=1) if custom_columns else np.zeros((len(batch), 0), dtype=np.float32)
         values = np.asarray(constraints, dtype=np.float32)
         if values.ndim == 1:
@@ -891,9 +1522,8 @@ class FitnessModel:
     def evaluate(self, genome: np.ndarray):
         """Return (objectives, constraints) for a single genome."""
         genome = np.asarray(genome, dtype=np.int32)
-        objectives, constraints = _single_genome(genome, *self.arrays)
-        objectives = self._add_semantic_position_score(objectives, genome)[0]
-        return objectives, self._append_custom_constraints(genome, constraints)
+        objectives, constraints = self.evaluate_batch(genome.reshape(1, -1))
+        return objectives[0], constraints[0]
 
     def evaluate_batch(self, genomes: np.ndarray):
         """Return ((batch, 3) objectives, (batch, n_constr) constraints)."""

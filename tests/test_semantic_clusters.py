@@ -469,12 +469,13 @@ def test_semantic_workflow_rows_are_high_weight():
         },),
     })()
     rows = _semantic_workflow_rows(layout, multiplier=200.0)
-    assert rows.shape == (1, 3)
+    assert rows.shape == (1, 5)
     assert rows[0, 0] == 0.0
     assert rows[0, 1] == 1.0
     # Default multiplier is 200.0; size-2 discount is 1/sqrt(2).
     # pair weight = 5.0 * 200.0 / sqrt(2) ≈ 707.1
-    assert rows[0, 2] == pytest.approx(707.1068, rel=1e-4)
+    assert tuple(rows[0, 2:4]) == (-1.0, -1.0)
+    assert rows[0, 4] == pytest.approx(707.1068, rel=1e-4)
 
 
 def test_overlapping_semantic_groups_keep_max_pair_pressure_once():
@@ -495,9 +496,9 @@ def test_overlapping_semantic_groups_keep_max_pair_pressure_once():
         ),
     })()
     rows = _semantic_workflow_rows(layout, multiplier=200.0)
-    assert rows.shape == (3, 3)
+    assert rows.shape == (3, 5)
     pair_01 = next(row for row in rows if tuple(row[:2].astype(int)) == (0, 1))
-    assert pair_01[2] == pytest.approx(8.0 * 200.0 / (2.0 ** 0.5), rel=1e-4)
+    assert pair_01[4] == pytest.approx(8.0 * 200.0 / (2.0 ** 0.5), rel=1e-4)
 
 
 def test_semantic_cluster_split_penalty_is_strong():
@@ -716,46 +717,57 @@ def test_fresh_random_population_preserves_norwegian_completion_shape():
     ]
 
 
-def test_mouse_workflow_mutation_preserves_required_groups_and_accesses_trackball_safely():
-    """Mouse placement must not dismantle relative groups or use right-thumb holds."""
+def test_warmstart_teacher_layouts_preserve_seed_and_owner_fixed_positions():
+    import json
     import random
     import numpy as np
-    from dataclasses import replace
+    from pathlib import Path
     from core.loader import build_layout
     from config import DEFAULT_CONFIG
-    from evolution import SwapMutation
-    from evolution.acceptance import build_acceptance_report
-    from evolution.arrow_cluster import analyze_arrows
-    from evolution.completion_cluster import analyze_completion_cluster
-    from run_evolution import analyze_duplicates, generate_random_layouts
+    from run_evolution import generate_random_layouts
 
     layout = build_layout("data", DEFAULT_CONFIG)
-    py_state = random.getstate()
-    np_state = np.random.get_state()
+    seed = np.asarray(
+        json.loads((Path(__file__).parents[1] / "seeds/gen25k_corrected_seed.json").read_text())["genome"],
+        dtype=np.int32,
+    )
+    frozen = np.asarray(layout.frozen_indices, dtype=np.int32)
+    python_state = random.getstate()
+    numpy_state = np.random.get_state()
     try:
-        random.seed(42003)
-        np.random.seed(42003)
-        genomes = generate_random_layouts(layout, 17)
-        mutation = SwapMutation(prob=0.0, frozen_mask=layout.frozen_mask, layout=layout)
-        reports = []
-        for genome in genomes[1:]:
-            candidate = genome.copy()
-            assert mutation._propose_mouse_workflow_layer(candidate)
-            candidate_layout = replace(layout, genome=candidate)
-            report = build_acceptance_report(
-                candidate_layout,
-                analyze_duplicates(candidate_layout),
-                analyze_completion_cluster(candidate_layout),
-                analyze_arrows(candidate_layout),
-            )
-            reports.append(report["optimizer_side_checks"])
+        random.seed(20261029)
+        np.random.seed(20261029)
+        first = generate_random_layouts(layout, 32, warmstart_genome=seed)
+        random.seed(20261029)
+        np.random.seed(20261029)
+        second = generate_random_layouts(layout, 32, warmstart_genome=seed)
     finally:
-        random.setstate(py_state)
-        np.random.set_state(np_state)
+        random.setstate(python_state)
+        np.random.set_state(numpy_state)
 
-    assert all(row["dynamic_mouse_layer_present"] for row in reports)
-    assert all(row["norwegian_completion_cluster"] for row in reports)
-    assert all(row["required_relative_layouts"] for row in reports)
+    assert first.shape == (32, layout.n_positions)
+    assert np.array_equal(first, second)
+    assert np.array_equal(first[0], seed)
+    assert np.all(first[:, frozen] == seed[frozen])
+
+
+def test_mouse_workflow_mutation_cannot_relocate_l1_role():
+    """Mouse buttons stay assigned to L1; legal groups evolve inside L1."""
+    import json
+    import numpy as np
+    from pathlib import Path
+    from tools._common import load_layout
+    from evolution import SwapMutation
+    from evolution.layout_contract import audit_layout_contract
+
+    layout = load_layout()
+    seed_path = Path(__file__).parents[1] / "seeds/gen25k_corrected_seed.json"
+    layout = layout.clone_with(genome=np.asarray(json.loads(seed_path.read_text())["genome"], dtype=np.int32))
+    candidate = layout.genome.copy()
+    mutation = SwapMutation(prob=0.0, frozen_mask=layout.frozen_mask, layout=layout)
+    assert not mutation._propose_mouse_workflow_layer(candidate)
+    assert np.array_equal(candidate, layout.genome)
+    assert audit_layout_contract(layout)["acceptance_pass"]
 
 
 def test_ordered_numeric_clusters_have_atomic_geometry_placements():

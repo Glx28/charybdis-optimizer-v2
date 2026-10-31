@@ -23,11 +23,9 @@ Core framing:
 
 - The optimizer is workflow-focused first. A workflow is what the usage data
   shows the user does together, not a fixed app or layer name.
-- Only L0 and L7 have stable roles. L0 is base typing/thumb access. L7 is
-  frozen RPG/arrows/navigation plus keyboard-system controls such as
-  Bluetooth/output selection.
-- All other layers are dynamically assigned. Do not hardcode a mouse layer,
-  scroll layer, travel layer, app layer, or system layer by number.
+- L0 is the base typing/thumb-access layer, L1 has the fixed mouse role in
+  `contracts/layout_contract_v1.json`, and L7 remains frozen with its existing
+  contents. Infer other generated-layer roles from their actual bindings.
 - Generated layers should be distinct enough to improve real workflows. A
   high-frequency "everything" layer should naturally emerge when usage data
   supports it: this is the go-to layer when the user is unsure, concentrating
@@ -78,46 +76,14 @@ Core framing:
   layer, and its access priority should follow logged usage relative to real
   workflows.
 
-Hard final-run rule:
+Hard run rule:
 
-At target generation, the whole run is invalid unless a generated non-L0/non-L7
-dynamic mouse workflow layer exists. That layer must contain MB1-MB2-MB3-MB4-MB5
-on the right side of the same layer, with no mouse button on the right-thumb
-area. It must also contain right-hand non-thumb momentary Scroll, no momentary
-mouse-layer access on the right thumb side, and a reachable toggle access path.
-L7 is excluded from generated mouse-layer candidates and cannot count as mouse
-success. Frozen L7 content is not acceptance-checked by the optimizer.
-
-L7 access is checked separately from L7 content. Frozen L7 must be reachable by
-both a momentary layer access capability and a toggle layer access capability.
-The optimizer must not inspect or fail L7 because of its frozen key contents.
-
-Momentary Scroll is part of the core mouse group. It is highly important
-because scrolling is a major trackball/mouse action. Toggle Scroll may exist,
-but it does not satisfy the generated dynamic mouse-layer condition; the
-required capability is momentary Scroll on the right side and off the
-right-thumb area. Momentary Scroll on x7 or x8 is uncomfortable and does not
-satisfy this condition.
-
-Mouse placement inside the generated mouse layer is usage-weighted rather than
-coordinate-fixed. More-used mouse buttons should get better positions unless a
-more important workflow shortcut earns that position. MB2 is more valuable than
-MB3/MB4/MB5 and should win better placement when usage does not prove otherwise.
-Mouse duplicates outside the generated mouse layer are allowed only when
-usage/access support justifies them, and they are harder to justify than
-ordinary shortcut duplicates. Mouse buttons are forbidden on right-thumb
-positions on every generated layer. Keep small soft relative biases: MB1
-left/close/same-row with MB2, and MB4 left/close/same-row with MB5.
-
-After a natural generated mouse layer exists, it should dominate mouse
-interactions and create natural cleanup pressure against mouse buttons scattered
-on other layers. Do not ban exceptions: if a workflow uses mouse buttons so
-heavily that switching to the mouse layer every time is more costly, usage data
-may justify copies on that workflow layer.
-
-This is a final acceptance constraint. Intermediate generations may explore
-without a complete mouse layer, but the target checkpoint must either pass this
-constraint or report precisely what is missing.
+The versioned owner contract is a gate for seed preparation, initialization,
+mutation, exact evaluation, archive selection, export, and promotion. Every
+saved checkpoint must pass it. L1 is the only mouse layer; L7 is frozen and
+exempt from mutable-layer checks. See the contract for fixed coordinates,
+scroll count, access, lock, thumb, shortcut, grouping, effort, and Norwegian
+layout requirements.
 
 Run discipline:
 

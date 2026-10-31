@@ -96,6 +96,7 @@ class UsageData:
     scroll_by_layer: Dict[str, int] = field(default_factory=dict)
     raw_completion_keys: Dict[str, dict] = field(default_factory=dict)
     raw_completion_total: int = 0
+    norwegian_symbol_usage: Dict[str, dict] = field(default_factory=dict)
     by_layer_shortcut: Dict[str, Dict[str, int]] = field(default_factory=dict)
     layer_shortcuts: Dict[str, dict] = field(default_factory=dict)
     by_app: Dict[str, int] = field(default_factory=dict)
@@ -122,43 +123,43 @@ class Layout:
     def __post_init__(self):
         assert self.genome.shape[0] == len(self.positions), "Genome length mismatch"
         assert self.frozen_mask.shape[0] == len(self.positions), "Frozen mask length mismatch"
-        
+
     @property
     def n_positions(self) -> int:
         return len(self.positions)
-    
+
     @property
     def n_shortcuts(self) -> int:
         return len(self.shortcuts)
-    
+
     @property
     def n_assigned(self) -> int:
         return int(np.sum(self.genome >= 0))
-    
+
     @property
     def mutable_indices(self) -> NDArray[np.int32]:
         return np.where(~self.frozen_mask)[0].astype(np.int32)
-    
+
     @property
     def frozen_indices(self) -> NDArray[np.int32]:
         return np.where(self.frozen_mask)[0].astype(np.int32)
-    
+
     def get_assigned_at(self, idx: int) -> Optional[Shortcut]:
         sid = int(self.genome[idx])
         if sid < 0 or sid >= len(self.shortcuts):
             return None
         return self.shortcuts[sid]
-    
+
     def get_position_of(self, sid: int) -> Optional[int]:
         idx = np.where(self.genome == sid)[0]
         return int(idx[0]) if len(idx) > 0 else None
-    
+
     def get_positions_on_layer(self, layer: int) -> NDArray[np.int32]:
         if layer in self.layer_to_indices:
             return self.layer_to_indices[layer]
         indices = np.array([i for i, p in enumerate(self.positions) if p.layer == layer], dtype=np.int32)
         return indices
-    
+
     def get_occupied_thumbs_from_genome(self, layer: int, visited: set = None) -> List[str]:
         """Infer occupied thumb hands from the evolved genome bindings.
 
@@ -273,7 +274,7 @@ class Layout:
             if access.is_momentary:
                 occupied.add(access.hand)
         return list(occupied)
-    
+
     def clone_with(self, genome: Optional[NDArray[np.int32]] = None) -> "Layout":
         return Layout(
             genome=genome.copy() if genome is not None else self.genome.copy(),
@@ -286,7 +287,7 @@ class Layout:
             dynamic_groups=self.dynamic_groups,
             semantic_clusters=self.semantic_clusters,
         )
-    
+
     def is_valid(self) -> bool:
         assigned = self.genome[self.genome >= 0]
         return np.all(assigned < len(self.shortcuts))
@@ -299,15 +300,15 @@ class FitnessResult:
     factor_scores: Dict[str, float]
     total_score: float
     constraints: NDArray[np.float32] = field(default_factory=lambda: np.zeros(0, dtype=np.float32))
-    
+
     @property
     def effort(self) -> float:
         return float(self.objectives[0])
-    
+
     @property
     def adjacency(self) -> float:
         return float(self.objectives[1])
-    
+
     @property
     def violations(self) -> float:
         return float(self.objectives[2])

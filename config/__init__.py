@@ -33,7 +33,6 @@ DEFAULT_CONFIG = {
         "max_retrain_samples": 9000,
         "hidden_dim": 256,
         "embedding_dim": 32,
-        "mini_eval_fraction": 0.1,
     },
     "training": {
         "require_cuda": True,
@@ -85,11 +84,12 @@ DEFAULT_CONFIG = {
         "sparse_layer_base_penalty": 0.0,
         "sparse_layer_gap_penalty": 0.0,
         "right_alt_l0_penalty": 5000.0,
-        "layer_usage_preference_penalty": 200.0,
+        "layer_usage_preference_penalty": 10000.0,
         "mouse_layer_shortcut_penalty": 10000.0,
         "mouse_layer_access_position_penalty": 2.0,
         "owner_mouse_layer_shortcut_preferences": [
             "Win+Alt+Space",
+            "Ctrl+Alt+Win+F11",
             "Ctrl+-",
             "Ctrl++",
             "Win+Shift+Left",
@@ -99,7 +99,7 @@ DEFAULT_CONFIG = {
             "Ctrl+S",
             "Ctrl+C",
         ],
-        "owner_mouse_layer_shortcut_penalty": 50000.0,
+        "owner_mouse_layer_shortcut_penalty": 500000.0,
         "missing_important_threshold": 6.0,
         "toggle_effort_multiplier": 4.0,
         "violation_sub_weights": {

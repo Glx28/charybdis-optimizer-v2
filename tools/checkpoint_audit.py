@@ -18,7 +18,7 @@ from tools._common import (
     mouse_layer_quality_warnings,
     resolve_checkpoint_path,
 )
-from evolution.acceptance import _dynamic_mouse_layer_report
+from evolution.layout_contract import audit_layout_contract
 
 
 def _shortcut_usage_count(layout, shortcut):
@@ -173,10 +173,10 @@ def main():
     best_exact = ckpt.get("best_exact", {})
     pop_exact = ckpt.get("population_best_exact", {})
     acc = ckpt.get("acceptance_report", {})
-    current_mouse = _dynamic_mouse_layer_report(layout)
+    current_mouse = audit_layout_contract(layout)
     checks = acc.get("checks", {})
     checks = dict(checks)
-    checks["dynamic_mouse_layer_present"] = bool(current_mouse.get("acceptance_pass", False))
+    checks["owner_layout_contract_v1"] = bool(current_mouse.get("acceptance_pass", False))
     pending_checks = set()
     if acc.get("external_export_validation_pending", False):
         pending_checks.add("norwegian_export_bad_literal_count_zero")
@@ -229,8 +229,8 @@ def main():
 
     # Mouse/arrow/Norwegian quick status
     print("--- Key Subsystem Status ---")
-    print(f"  Mouse layer present: {checks.get('dynamic_mouse_layer_present', False)}")
-    print(f"  Scroll mode access: {checks.get('scroll_mode_access_present', False)}")
+    print(f"  L1 mouse contract: {checks.get('owner_layout_contract_v1', False)}")
+    print(f"  Exact three-scroll rule: {current_mouse.get('checks', {}).get('exactly_three_momentary_scrolls', False)}")
     print(f"  L7 access: {checks.get('layer7_momentary_and_toggle_access', False)}")
     print("  Raw arrow placement: diagnostic only (L7 frozen fallback)")
     print(f"  Norwegian cluster: {checks.get('norwegian_completion_cluster', False)}")

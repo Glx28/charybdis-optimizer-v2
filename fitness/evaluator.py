@@ -77,7 +77,7 @@ class FitnessEvaluator:
             if right_alt_l0_penalty is None else right_alt_l0_penalty
         )
         self.layer_usage_preference_penalty = float(
-            DEFAULT_CONFIG["fitness"].get("layer_usage_preference_penalty", 200.0)
+            DEFAULT_CONFIG["fitness"].get("layer_usage_preference_penalty", 10000.0)
             if layer_usage_preference_penalty is None else layer_usage_preference_penalty
         )
         self.mouse_layer_shortcut_penalty = float(
@@ -94,7 +94,7 @@ class FitnessEvaluator:
             else owner_mouse_layer_shortcut_preferences
         )
         self.owner_mouse_layer_shortcut_penalty = float(
-            DEFAULT_CONFIG["fitness"].get("owner_mouse_layer_shortcut_penalty", 50000.0)
+            DEFAULT_CONFIG["fitness"].get("owner_mouse_layer_shortcut_penalty", 1000.0)
             if owner_mouse_layer_shortcut_penalty is None else owner_mouse_layer_shortcut_penalty
         )
 
@@ -162,8 +162,20 @@ class FitnessEvaluator:
             "same_side_hold_flow": 0.0,
         }
 
+    @staticmethod
+    def _total_score(objectives: np.ndarray) -> float:
+        """Sum float32 objective channels in float64 so small changes survive."""
+        return float(np.sum(np.asarray(objectives, dtype=np.float64)))
+
     def evaluate(self, layout: Layout) -> FitnessResult:
-        if self.model is None or self.model.layout is not layout:
+        same_model_inputs = (
+            self.model is not None
+            and layout.positions is self.model.layout.positions
+            and layout.shortcuts is self.model.layout.shortcuts
+            and layout.frozen_mask is self.model.layout.frozen_mask
+            and layout.usage_data is self.model.layout.usage_data
+        )
+        if not same_model_inputs:
             # Build a temporary model for this layout (used by tests with ad-hoc layouts).
             model = FitnessModel(
                 layout=layout,
@@ -193,7 +205,7 @@ class FitnessEvaluator:
         else:
             objectives, constraints = self.model.evaluate(layout.genome)
 
-        total = float(np.sum(objectives))
+        total = self._total_score(objectives)
         return FitnessResult(
             objectives=objectives,
             constraints=constraints,

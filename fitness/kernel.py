@@ -56,16 +56,41 @@ def _chain_rows(layout, source: dict, min_count: int, multiplier: float) -> np.n
         count = data.get("count", 0) if isinstance(data, dict) else 0
         if count < min_count or len(parts) < min_count:
             continue
-        for a, b in zip(parts, parts[1:]):
-            sid_a = lookup.get(a)
-            if sid_a is None:
-                sid_a = lookup.get(normalizer(a), -1)
-            sid_b = lookup.get(b)
-            if sid_b is None:
-                sid_b = lookup.get(normalizer(b), -1)
-            if sid_a is not None and sid_b is not None and sid_a >= 0 and sid_b >= 0:
-                rows.append((int(sid_a), int(sid_b), float(count) * multiplier))
-    return np.asarray(rows, dtype=np.float32).reshape((-1, 3)) if rows else np.empty((0, 3), dtype=np.float32)
+        sids = []
+        for part in parts:
+            sid = lookup.get(part)
+            if sid is None:
+                sid = lookup.get(normalizer(part), -1)
+            sids.append(int(sid))
+        if any(sid < 0 for sid in sids):
+            continue
+
+        layer_paths = data.get("by_layer_path") or {}
+        valid_paths = []
+        if isinstance(layer_paths, dict):
+            for path, raw_count in layer_paths.items():
+                try:
+                    layers = [int(layer) for layer in str(path).split("->")]
+                    path_count = float(raw_count)
+                except (TypeError, ValueError):
+                    continue
+                if len(layers) == len(sids) and path_count > 0 and all(0 <= layer < 32 for layer in layers):
+                    valid_paths.append((layers, path_count))
+
+        if valid_paths:
+            layered_count = 0.0
+            for layers, path_count in valid_paths:
+                layered_count += path_count
+                for i in range(len(sids) - 1):
+                    rows.append((sids[i], sids[i + 1], layers[i], layers[i + 1], path_count * multiplier))
+            legacy_count = max(0.0, float(count) - layered_count)
+            if legacy_count > 0.0:
+                for sid_a, sid_b in zip(sids, sids[1:]):
+                    rows.append((sid_a, sid_b, -1, -1, legacy_count * multiplier))
+        else:
+            for sid_a, sid_b in zip(sids, sids[1:]):
+                rows.append((sid_a, sid_b, -1, -1, float(count) * multiplier))
+    return np.asarray(rows, dtype=np.float32).reshape((-1, 5)) if rows else np.empty((0, 5), dtype=np.float32)
 
 
 def _semantic_workflow_rows(layout, multiplier: float = 200.0,
@@ -113,8 +138,8 @@ def _semantic_workflow_rows(layout, multiplier: float = 200.0,
             for j in range(i + 1, n_sids):
                 pair = (min(sids[i], sids[j]), max(sids[i], sids[j]))
                 pair_weights[pair] = max(pair_weights.get(pair, 0.0), pair_weight)
-    rows = [(a, b, weight) for (a, b), weight in sorted(pair_weights.items())]
-    return np.asarray(rows, dtype=np.float32).reshape((-1, 3)) if rows else np.empty((0, 3), dtype=np.float32)
+    rows = [(a, b, -1, -1, weight) for (a, b), weight in sorted(pair_weights.items())]
+    return np.asarray(rows, dtype=np.float32).reshape((-1, 5)) if rows else np.empty((0, 5), dtype=np.float32)
 
 
 def _workflow_rows_with_semantic(layout, multiplier: float = 200.0,
@@ -148,12 +173,29 @@ def _sequence_rows(layout) -> np.ndarray:
             sid_b = lookup.get(normalizer(parts[1]), -1)
         if sid_a < 0 or sid_b < 0:
             continue
-        count = float(data.get("count", 0))
         avg_gap = float(data.get("avg_gap_ms", 5000))
         confidence = float(data.get("confidence", 1.0))
         speed_weight = max(0.5, 2.0 - avg_gap / 2000.0)
-        rows.append((sid_a, sid_b, count * speed_weight * confidence * 5.0))
-    return np.asarray(rows, dtype=np.float32).reshape((-1, 3)) if rows else np.empty((0, 3), dtype=np.float32)
+        layer_pairs = data.get("by_layer_pair") or {}
+        added_layer_rows = False
+        if isinstance(layer_pairs, dict):
+            for pair, raw_count in layer_pairs.items():
+                try:
+                    source_layer, target_layer = (int(part) for part in str(pair).split("->", 1))
+                    count = float(raw_count)
+                except (TypeError, ValueError):
+                    continue
+                if count <= 0 or not (0 <= source_layer < 32 and 0 <= target_layer < 32):
+                    continue
+                rows.append((sid_a, sid_b, source_layer, target_layer,
+                             count * speed_weight * confidence * 5.0))
+                added_layer_rows = True
+        if not added_layer_rows:
+            count = float(data.get("count", 0))
+            if count > 0:
+                rows.append((sid_a, sid_b, -1, -1,
+                             count * speed_weight * confidence * 5.0))
+    return np.asarray(rows, dtype=np.float32).reshape((-1, 5)) if rows else np.empty((0, 5), dtype=np.float32)
 
 
 @lru_cache(maxsize=4096)
@@ -233,7 +275,20 @@ def _app_workflow_rows(layout, app_map: Dict[object, int]) -> np.ndarray:
     return np.asarray(rows, dtype=np.float32).reshape((-1, 3)) if rows else np.empty((0, 3), dtype=np.float32)
 
 
+_DUPLICATE_SUPPORT_CACHE = {}
+
+
 def _shortcut_duplicate_support(layout) -> np.ndarray:
+    # Usage-derived support depends on the immutable shortcut catalog and
+    # usage log, not on a candidate genome. Population initialization audits
+    # many layouts against those same inputs; memoize the expensive app/workflow
+    # matching instead of rescanning every usage row per candidate.
+    signature = tuple((s.sid, s.keys, s.app) for s in layout.shortcuts)
+    cache_key = (id(layout.usage_data), signature)
+    cached = _DUPLICATE_SUPPORT_CACHE.get(cache_key)
+    if cached is not None and cached[0] is layout.usage_data:
+        return cached[1].copy()
+
     support = np.zeros(layout.n_shortcuts, dtype=np.float32)
     lookup = _sid_lookup(layout)
 
@@ -284,7 +339,11 @@ def _shortcut_duplicate_support(layout) -> np.ndarray:
             if any(_app_matches(shortcut.app, app) for app in cluster_apps):
                 support[shortcut.sid] += min(0.35, 0.05 * float(data.get("count", 0)))
 
-    return np.minimum(support, 1.5).astype(np.float32)
+    result = np.minimum(support, 1.5).astype(np.float32)
+    if len(_DUPLICATE_SUPPORT_CACHE) >= 16:
+        _DUPLICATE_SUPPORT_CACHE.pop(next(iter(_DUPLICATE_SUPPORT_CACHE)))
+    _DUPLICATE_SUPPORT_CACHE[cache_key] = (layout.usage_data, result.copy())
+    return result
 
 
 def _blind_rows(layout) -> np.ndarray:
@@ -651,7 +710,12 @@ def precompute(layout, weights: dict, violation_weights: dict, missing_important
         shortcut_access_target, shortcut_access_momentary, shortcut_scroll_mode_access, shortcut_usage_count,
         app_usage_weight, _group_matrix(layout), _sequence_rows(layout), _app_workflow_rows(layout, app_map),
         _shortcut_duplicate_support(layout),
-        _chain_rows(layout, layout.usage_data.chains, 2, 1.0),
+        # `chains` are overlapping sliding windows (2–5 actions). Feeding
+        # each window's adjacent edges into proximity re-counts the same
+        # observed transition several times. `shortcut_sequences` is the
+        # canonical direct-transition signal; workflow rows handle longer
+        # legacy groups that lack layer attribution.
+        np.empty((0, 5), dtype=np.float32),
         _workflow_rows_with_semantic(layout, multiplier=semantic_cluster_multiplier,
                                      pair_boost=semantic_cluster_pair_boost),
         _blind_rows(layout), reference_genome, objective_weights, violation_weight_arr,
@@ -686,6 +750,7 @@ if NUMBA_AVAILABLE:
         n_apps = app_usage_weight.shape[0]
 
         sid_pos = np.full(n_short, -1, dtype=np.int32)
+        sid_pos_by_layer = np.full((n_short, 32), -1, dtype=np.int32)
         sid_layer_seen = np.zeros((n_short, 32), dtype=np.bool_)
         assigned = np.zeros(n_short, dtype=np.bool_)
         sid_counts = np.zeros(n_short, dtype=np.int32)
@@ -695,7 +760,6 @@ if NUMBA_AVAILABLE:
         trackball = 0.0
         mouse_effective_access = 0.0
         mouse_workflow = 0.0
-        workflow = 0.0
         hand_bias = 0.0
         mouse_layer_access = 0.0
         finger_load = np.zeros(8, dtype=np.float32)
@@ -931,37 +995,10 @@ if NUMBA_AVAILABLE:
         group_sum_x = np.zeros(n_key_groups, dtype=np.float32)
         group_sum_y = np.zeros(n_key_groups, dtype=np.float32)
 
-        # Pre-scan: identify the candidate mouse layer before the effort loop so
-        # mouse button importance can be boosted dynamically on that layer.
-        # The candidate is the non-L0/L7 layer with the most right-hand non-thumb
-        # mouse buttons. This mirrors the natural_mouse_layer logic but runs early
-        # using only raw counts — no penalty computation needed here.
-        _mouse_right_count = np.zeros(32, dtype=np.int32)
-        for i in range(n_pos):
-            _sid = genome[i]
-            if _sid < 0 or _sid >= n_short:
-                continue
-            if not shortcut_is_mouse[_sid]:
-                continue
-            _btn = shortcut_mouse_button[_sid]
-            if _btn <= 0:
-                continue
-            _layer = pos_layer[i]
-            if _layer <= 0 or _layer == 7 or _layer >= 32:
-                continue
-            if pos_hand[i] == 1 and not pos_is_thumb[i]:  # right non-thumb
-                _mouse_right_count[_layer] += 1
-        candidate_mouse_layer = -1
-        _best_mc = 0
-        for _l in range(1, 32):
-            if _l == 7:
-                continue
-            if _mouse_right_count[_l] > _best_mc:
-                _best_mc = _mouse_right_count[_l]
-                candidate_mouse_layer = _l
-        # Only treat it as a candidate if at least 2 mouse buttons are there
-        if _best_mc < 2:
-            candidate_mouse_layer = -1
+        # The owner contract assigns the mouse role to L1. Invalid candidates
+        # fail the hard contract independently; never infer a mouse role from
+        # whichever layer happens to contain the most buttons.
+        candidate_mouse_layer = 1
 
         for i in range(n_pos):
             sid = genome[i]
@@ -974,6 +1011,8 @@ if NUMBA_AVAILABLE:
                 sid_mutable_counts[sid] += 1
             sid_pos[sid] = i
             layer = pos_layer[i]
+            if 0 <= layer < 32:
+                sid_pos_by_layer[sid, layer] = i
             finger = pos_finger[i]
             if 0 <= layer < 32:
                 layer_sid_counts[layer, sid] += 1
@@ -981,11 +1020,7 @@ if NUMBA_AVAILABLE:
                 sid_layer_seen[sid, layer] = True
 
             imp = shortcut_importance[sid]
-            # Dynamic mouse-layer importance boost: when a mouse button is on the
-            # candidate mouse layer, its importance is boosted 5x. This makes
-            # effort-ordering within the mouse layer critical — MB1 at effort=1.0
-            # is 5x as bad as MB1 elsewhere. On non-mouse layers the static
-            # importance applies (lower signal, placement is less constrained).
+            # Boost mouse-button effort only on the contract-defined L1 role.
             if shortcut_is_mouse[sid] and shortcut_mouse_button[sid] > 0 and layer == candidate_mouse_layer:
                 imp = imp * 5.0
             access_cost = layer_access_cost[layer] if 0 <= layer < 32 else 0.0
@@ -1000,21 +1035,17 @@ if NUMBA_AVAILABLE:
                 # L0 thumb shortcuts are allowed, but must earn base-layer
                 # real estate from usage. This discourages random low-use app
                 # shortcuts on thumbs without banning genuinely frequent ones.
-                # Capped so that occupying the slot with any valid shortcut is
-                # never scored worse (in violations_raw terms) than leaving it
-                # empty would now cost via empty_pos_waste's L0 multiplier —
-                # otherwise evolution is incentivized to evacuate rather than
-                # fill L0 thumb slots.
+                # Empty L0 slots have no occupancy reward. Charge low-use
+                # actions in the effort objective for consuming scarce
+                # base-layer thumb capacity; real observed use reduces this
+                # opportunity cost. Keeping this out of access_layout avoids
+                # burying the per-binding signal under large access penalties.
                 _uc_l0 = int(shortcut_usage_count[sid])
-                usage_relief = log1p_lut[_uc_l0 if _uc_l0 < lut_size else lut_size - 1] * 0.12
-                if usage_relief > 0.85:
-                    usage_relief = 0.85
-                _l0_occupy_raw = imp * pos_effort_waste[i] * (1.0 - usage_relief) * 18.0
-                if violation_weights[13] > 0.0:
-                    _l0_occupy_cap = (violation_weights[16] / violation_weights[13]) * pos_effort_waste[i] * 3.0
-                    if _l0_occupy_raw > _l0_occupy_cap:
-                        _l0_occupy_raw = _l0_occupy_cap
-                access_layout += _l0_occupy_raw
+                usage_relief = log1p_lut[_uc_l0 if _uc_l0 < lut_size else lut_size - 1] * 0.14
+                if usage_relief > 0.95:
+                    usage_relief = 0.95
+                _l0_occupy_raw = pos_effort_waste[i] * imp * (1.0 - usage_relief)
+                effort += _l0_occupy_raw
             # Quadratic effort-importance: high-imp keys at high-effort positions are
             # punished superlinearly. imp×pos_eff×(1+imp×pos_eff×0.5) grows ~imp²
             # while access_cost stays linear (layer structure is harder to change).
@@ -1222,30 +1253,32 @@ if NUMBA_AVAILABLE:
         for r in range(sequence_rows.shape[0]):
             sid_a = int(sequence_rows[r, 0])
             sid_b = int(sequence_rows[r, 1])
-            pos_a = sid_pos[sid_a]
-            pos_b = sid_pos[sid_b]
+            layer_a = int(sequence_rows[r, 2])
+            layer_b = int(sequence_rows[r, 3])
+            pos_a = sid_pos_by_layer[sid_a, layer_a] if 0 <= layer_a < 32 else sid_pos[sid_a]
+            pos_b = sid_pos_by_layer[sid_b, layer_b] if 0 <= layer_b < 32 else sid_pos[sid_b]
             if pos_a < 0 or pos_b < 0:
                 continue
             if pos_layer[pos_a] == pos_layer[pos_b]:
-                proximity = 1.0 - dist[pos_a, pos_b] * 0.2
+                proximity = 1.0 / (1.0 + dist[pos_a, pos_b] * 0.2)
             else:
-                proximity = 0.3 - dist[pos_a, pos_b] * 0.2
-            if proximity > 0.0:
-                adjacency += sequence_rows[r, 2] * proximity
+                proximity = 0.3 / (1.0 + dist[pos_a, pos_b] * 0.2)
+            adjacency += sequence_rows[r, 4] * proximity
 
         for r in range(chain_rows.shape[0]):
             sid_a = int(chain_rows[r, 0])
             sid_b = int(chain_rows[r, 1])
-            pos_a = sid_pos[sid_a]
-            pos_b = sid_pos[sid_b]
+            layer_a = int(chain_rows[r, 2])
+            layer_b = int(chain_rows[r, 3])
+            pos_a = sid_pos_by_layer[sid_a, layer_a] if 0 <= layer_a < 32 else sid_pos[sid_a]
+            pos_b = sid_pos_by_layer[sid_b, layer_b] if 0 <= layer_b < 32 else sid_pos[sid_b]
             if pos_a < 0 or pos_b < 0:
                 continue
             if pos_layer[pos_a] == pos_layer[pos_b]:
-                proximity = 1.0 - dist[pos_a, pos_b] * 0.2
+                proximity = 1.0 / (1.0 + dist[pos_a, pos_b] * 0.2)
             else:
-                proximity = 0.3 - dist[pos_a, pos_b] * 0.2
-            if proximity > 0.0:
-                adjacency += chain_rows[r, 2] * 5.0 * 2.0 * proximity
+                proximity = 0.3 / (1.0 + dist[pos_a, pos_b] * 0.2)
+            adjacency += chain_rows[r, 4] * 5.0 * 2.0 * proximity
 
         for sid_a in range(n_short):
             pos_a = sid_pos[sid_a]
@@ -1283,14 +1316,6 @@ if NUMBA_AVAILABLE:
                     if app_layer_importance[app_b, layer] < shared:
                         shared = app_layer_importance[app_b, layer]
                     adjacency += weight * math.log1p(shared) * 2.0
-
-        for r in range(workflow_rows.shape[0]):
-            sid_a = int(workflow_rows[r, 0])
-            sid_b = int(workflow_rows[r, 1])
-            pos_a = sid_pos[sid_a]
-            pos_b = sid_pos[sid_b]
-            if pos_a >= 0 and pos_b >= 0 and pos_layer[pos_a] != pos_layer[pos_b]:
-                workflow += workflow_rows[r, 2] * 10.0
 
         # Violations
         duplicate = 0.0
@@ -1439,8 +1464,6 @@ if NUMBA_AVAILABLE:
 
         thumb_occ = 0.0
         for target_layer in range(32):
-            if direct_left_thumb_momentary[target_layer] and direct_right_thumb_momentary[target_layer]:
-                continue
             restrict_left = direct_left_thumb_momentary[target_layer]
             restrict_right = direct_right_thumb_momentary[target_layer]
             if not restrict_left and not restrict_right:
@@ -1454,15 +1477,9 @@ if NUMBA_AVAILABLE:
                 if (pos_hand[i] == 0 and restrict_left) or (
                     pos_hand[i] == 1 and restrict_right
                 ):
-                    if reachable_toggle_access[target_layer]:
-                        # Toggle access lets the user release the momentary
-                        # thumb, so this is allowed, but it is still awkward:
-                        # treat that same-side thumb area as effort >= 4.
-                        effort_gap = 4.0 - pos_effort[i]
-                        if effort_gap > 0.0:
-                            thumb_occ += effort_gap * (1.0 + shortcut_importance[sid] * 0.5)
-                    else:
-                        thumb_occ += 1.0 + shortcut_importance[sid] * 0.5
+                    if shortcut_access_target[sid] == 0:
+                        continue
+                    thumb_occ += 1.0 + shortcut_importance[sid] * 0.5
 
         for layer in range(1, 32):
             demand = layer_demand[layer]
@@ -1757,7 +1774,7 @@ if NUMBA_AVAILABLE:
             ):
                 natural_mouse_layer = layer
 
-        # Pass 2: per-candidate-layer soft scoring (dynamic_mouse_layer).
+        # Pass 2: score the fixed L1 mouse role (legacy metric name retained).
         # natural_mouse_layer_penalty tracks the candidate_penalty of the
         # SPECIFIC layer already accepted as natural_mouse_layer (Pass 1),
         # separately from the layer-wide minimum. Without this, once a real
@@ -1786,16 +1803,10 @@ if NUMBA_AVAILABLE:
                     duplicate_violation = True
             missing_buttons = 5 - button_count
             candidate_penalty = float(missing_buttons) * 200000.0
-            # Duplicate mouse-button policy: a second copy of the same button
-            # on this layer is only acceptable as one left-side + one
-            # right-side pair, and only when this layer is the actual,
-            # currently-recognized dynamic mouse layer (natural_mouse_layer,
-            # settled in Pass 1 above) — not merely "looks complete" by a
-            # narrower subset of conditions. Two right-side copies, or any
-            # duplicate on a layer that isn't natural_mouse_layer, pay a heavy
-            # penalty so evolution keeps a single right-side copy instead of
-            # scattering same-layer spam.
-            pair_bonus_eligible = layer == natural_mouse_layer
+            # The legacy left+right mouse-button pair exception is limited to
+            # the owner-defined L1 role. A different layer cannot earn a mouse
+            # role by accumulating buttons and scroll bindings.
+            pair_bonus_eligible = layer == 1 and layer == natural_mouse_layer
             for button in range(1, 6):
                 rc = mouse_button_right_count[layer, button]
                 lc = mouse_button_left_count[layer, button]
@@ -1920,11 +1931,10 @@ if NUMBA_AVAILABLE:
             natural_mouse_layer = -1
 
         # Global same-layer-duplicate rule: no shortcut may appear more than
-        # once on the same layer. L7 is fully excluded (frozen). The dynamic
-        # mouse layer allows exactly one extra copy of a core mouse button, as
-        # one left-side + one right-side placement — never two on the same
-        # side, and only on the currently-recognized natural_mouse_layer, not
-        # merely a layer that happens to hold mouse buttons.
+        # once on the same layer. L7 is fully excluded (frozen). Only L1 can
+        # allow one left+right mouse-button pair; other layers get no mouse
+        # duplicate exception even if legacy diagnostics recognize a complete
+        # mouse-like workflow there.
         same_layer_duplicate = 0.0
         for layer in range(32):
             if layer == 7:
@@ -1943,7 +1953,8 @@ if NUMBA_AVAILABLE:
                     continue
                 cap = 1
                 if (
-                    layer == natural_mouse_layer
+                    layer == 1
+                    and layer == natural_mouse_layer
                     and shortcut_is_mouse[sid]
                     and shortcut_mouse_button[sid] > 0
                 ):
@@ -2066,7 +2077,7 @@ if NUMBA_AVAILABLE:
                 access_bonus += 0.25
             everything_layer = math.log1p(best_everything_value) * coverage * access_bonus
 
-        # Empty-position penalty.
+        # Empty-position penalty on generated layers only.
         # Each mutable, non-L7, unassigned slot on a reachable layer receives a
         # sigmoid-weighted penalty that rises sharply for the best
         # (lowest-effort) positions and stays negligible for far/hard positions.
@@ -2078,9 +2089,8 @@ if NUMBA_AVAILABLE:
         #   demand_scale = 1 + log1p(layer_demand[L]) * 0.1
         #   penalty   += gate * layer_factor * demand_scale
         #
-        # Excluded: L7 (frozen), frozen positions, unreachable layers. L0 is
-        # NOT excluded: it is the only zero-cost, always-reachable layer, so an
-        # empty L0 slot gets an extra multiplier rather than a pass.
+        # Excluded: L0 (base-layer capacity is valuable even when intentionally
+        # left open), L7 (frozen), frozen positions, and unreachable layers.
         # Soft pressure only; never a hard acceptance constraint.
         # Empty-position penalty added directly to effort objective so it isn't
         # drowned by the violation scale factor (2.3e12 vs effort scale ~39k).
@@ -2105,7 +2115,7 @@ if NUMBA_AVAILABLE:
             if pos_is_frozen[i]:
                 continue
             layer = pos_layer[i]
-            if layer == 7:
+            if layer == 0 or layer == 7:
                 continue
             if layer_access_cost[layer] >= 999999.0:
                 continue
@@ -2119,8 +2129,6 @@ if NUMBA_AVAILABLE:
             ld = layer_demand[layer]
             demand_scale = 1.0 + ld / (1.0 + ld * 2.0) * 0.6
             _empty_penalty = gate * layer_factor * demand_scale * 100.0
-            if layer == 0:
-                _empty_penalty *= 3.0
             effort += _empty_penalty
 
         # Layer graph: reachability and depth penalty.
@@ -2199,17 +2207,14 @@ if NUMBA_AVAILABLE:
         # Empty position penalty: waste = 200*exp(-2*eff). Prime slots (eff≈0) left
         # empty cost ~200, far slots (eff≥4) cost ~0. This pushes high-value shortcuts
         # into home-row positions on each layer (especially mouse layer MB1/MB2/scroll).
-        # L7 is exempt (frozen/arrows). L0 is NOT exempt: it is the only zero-cost,
-        # always-reachable layer, so an empty L0 slot is worse than an equally-effort
-        # empty slot elsewhere and gets an extra multiplier.
+        # L0 is exempt because base-layer capacity may intentionally remain open;
+        # L7 is exempt because it is frozen. Other reachable generated layers
+        # retain pressure toward useful bindings in their best positions.
         empty_pos_waste = 0.0
         for i in range(n_pos):
             lyr = pos_layer[i]
-            if genome[i] < 0 and not pos_is_frozen[i] and lyr != 7:
-                if lyr == 0:
-                    empty_pos_waste += pos_effort_waste[i] * 3.0
-                else:
-                    empty_pos_waste += pos_effort_waste[i]
+            if genome[i] < 0 and not pos_is_frozen[i] and lyr not in (0, 7):
+                empty_pos_waste += pos_effort_waste[i]
 
         layer_access_thumb_preference = 0.0
         same_side_hold_flow = 0.0
@@ -2305,17 +2310,25 @@ if NUMBA_AVAILABLE:
         for r in range(chain_rows.shape[0]):
             sid_a = int(chain_rows[r, 0])
             sid_b = int(chain_rows[r, 1])
+            layer_a = int(chain_rows[r, 2])
+            layer_b = int(chain_rows[r, 3])
+            if layer_a >= 0 or layer_b >= 0:
+                continue
             pos_a = sid_pos[sid_a]
             pos_b = sid_pos[sid_b]
             if pos_a >= 0 and pos_b >= 0 and pos_layer[pos_a] != pos_layer[pos_b]:
-                workflow += chain_rows[r, 2] * 10.0
+                workflow += chain_rows[r, 4] * 10.0
         for r in range(workflow_rows.shape[0]):
             sid_a = int(workflow_rows[r, 0])
             sid_b = int(workflow_rows[r, 1])
+            layer_a = int(workflow_rows[r, 2])
+            layer_b = int(workflow_rows[r, 3])
+            if layer_a >= 0 or layer_b >= 0:
+                continue
             pos_a = sid_pos[sid_a]
             pos_b = sid_pos[sid_b]
             if pos_a >= 0 and pos_b >= 0 and pos_layer[pos_a] != pos_layer[pos_b]:
-                workflow += workflow_rows[r, 2] * 10.0
+                workflow += workflow_rows[r, 4] * 10.0
         for r in range(app_workflow_rows.shape[0]):
             app_a = int(app_workflow_rows[r, 0])
             app_b = int(app_workflow_rows[r, 1])

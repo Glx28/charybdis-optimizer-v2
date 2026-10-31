@@ -12,6 +12,7 @@ from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple
 
 from core import Layout
+from evolution.layout_contract import audit_layout_contract
 
 
 FAKE_SCROLL_KEYS = {"ScrollUp", "ScrollDown"}
@@ -253,26 +254,6 @@ def _momentary_hold_target_position_report(layout: Layout) -> Dict:
     return {"acceptance_pass": not conflicts, "count": len(conflicts), "conflicts": conflicts}
 
 
-def _l5_hold_to_self_toggle_report(layout: Layout) -> Dict:
-    """Require L0 hold entry and an unmasked toggle control on L5 itself."""
-    access_rows = _layer_access_assignments(layout)
-    l0_holds = [row for row in access_rows
-                if row["keys"] == "@access:L5:hold"
-                and row["source_layer"] == 0 and row["target_layer"] == 5]
-    l5_toggles = [row for row in access_rows
-                  if row["keys"] == "@access:L5:toggle"
-                  and row["source_layer"] == 5 and row["target_layer"] == 5]
-    masked = [row for row in _momentary_hold_target_position_report(layout)["conflicts"]
-              if row["hold_keys"] == "@access:L5:hold" and row["target_layer"] == 5
-              and row["target_keys"] == "@access:L5:toggle"]
-    return {
-        "acceptance_pass": bool(l0_holds and l5_toggles and not masked),
-        "l0_hold_positions": l0_holds,
-        "l5_self_toggle_positions": l5_toggles,
-        "masked_self_toggle_conflicts": masked,
-    }
-
-
 def _owner_shortcut_layer_report(layout: Layout, mouse_layer: Optional[int]) -> Dict:
     """Verify owner-priority actions exist where intended and remain discoverable."""
     cmdpal = _find_assigned_keys(layout, "Win+Alt+Space")
@@ -320,6 +301,11 @@ def _owner_shortcut_layer_report(layout: Layout, mouse_layer: Optional[int]) -> 
         "monitor_shared_layers": monitor_shared_layers,
         "monitor_move_pair_together": bool(
             monitor_left and monitor_right and monitor_shared_layers
+        ),
+        "monitor_move_pair_on_mouse_layer": bool(
+            mouse_layer is not None
+            and monitor_left and monitor_right
+            and all(row["layer"] == mouse_layer for row in monitor_left + monitor_right)
         ),
     }
 
@@ -618,20 +604,7 @@ def _dynamic_mouse_layer_report(layout: Layout) -> Dict:
 
 
 def _no_same_layer_duplicates_report(layout: Layout) -> Dict:
-    """No shortcut may appear more than once on the same layer.
-
-    Exactly two exceptions: Layer 7 is frozen and fully excluded, and the
-    dynamic mouse layer allows exactly one extra copy of a core mouse button
-    (MB1-MB5), as one left-side + one right-side placement only — never two
-    copies on the same side. The mouse exception is tied to the layer's live,
-    fully-qualifying dynamic-mouse-layer status this generation (the same
-    layer `_dynamic_mouse_layer_report` identifies as `mouse_layer`), not
-    merely to whether the layer holds mouse buttons: if the layer stops fully
-    qualifying as the dynamic mouse layer, its left-side copy immediately
-    becomes an ordinary same-layer duplicate here too.
-    """
-    dynamic_mouse = _dynamic_mouse_layer_report(layout)
-    natural_layer = dynamic_mouse.get("mouse_layer")
+    """No shortcut repeats on a layer, except the established L1 mouse pair."""
 
     counts: Dict[Tuple[int, int], List[Dict]] = {}
     scroll_access_counts: Dict[int, List[Dict]] = {}
@@ -664,7 +637,7 @@ def _no_same_layer_duplicates_report(layout: Layout) -> Dict:
         if len(rows) <= 1:
             continue
         cap = 1
-        if layer == natural_layer and rows[0]["keys"] in MOUSE_BUTTON_KEYS:
+        if layer == 1 and rows[0]["keys"] in MOUSE_BUTTON_KEYS:
             right_ct = sum(1 for r in rows if r["hand"] == "right")
             left_ct = sum(1 for r in rows if r["hand"] != "right")
             if len(rows) == 2 and right_ct == 1 and left_ct == 1:
@@ -710,12 +683,10 @@ def _global_right_thumb_mouse_button_report(layout: Layout) -> Dict:
 def _momentary_only_thumb_clearance_report(layout: Layout) -> Dict:
     """Check thumb areas occupied by momentary access to a layer.
 
-    If a non-L0/non-L7 layer has reachable toggle access, both thumb areas are
-    available, but same-side thumb assignments are reported as effort-floor
-    positions because the thumb still has to do access/mode work. If it has
-    direct thumb momentary access from both sides, both thumb areas are freely
-    available. Otherwise, every thumb side used for direct reachable momentary
-    access to that layer is restricted and must be empty on the target layer.
+    Every thumb side used for reachable momentary access to a layer is occupied
+    while that access is held, even when the layer also has toggle access. A
+    side with no such hold remains available. L0-return layer keys are the sole
+    thumb-area exception.
     """
     access_rows = _layer_access_assignments(layout)
     reachable_layers = _reachable_layers_from_access_rows(access_rows)
@@ -726,36 +697,10 @@ def _momentary_only_thumb_clearance_report(layout: Layout) -> Dict:
             row for row in access_rows
             if row["target_layer"] == layer and row["source_layer"] in reachable_layers
         ]
-        toggles = [row for row in incoming if not row["momentary"]]
         thumb_momentary_hands: Set[str] = {
             row["hand"] for row in incoming
             if row["momentary"] and row["thumb"]
         }
-        if toggles:
-            effort_floor_assignments = []
-            if thumb_momentary_hands != {"left", "right"}:
-                for idx, pos, shortcut in _assigned_shortcuts(layout):
-                    if pos.layer == layer and pos.is_thumb and pos.hand in thumb_momentary_hands:
-                        effort_floor_assignments.append({
-                            "keys": shortcut.keys,
-                            "idx": int(idx),
-                            "layer": int(pos.layer),
-                            "x": float(pos.x),
-                            "y": float(pos.y),
-                            "hand": pos.hand,
-                            "native_effort": float(pos.effort),
-                            "effective_effort_floor": 4.0,
-                        })
-            rows.append({
-                "layer": layer,
-                "rule_applies": False,
-                "reason": "reachable_toggle_access_present",
-                "momentary_thumb_hands": sorted(thumb_momentary_hands),
-                "toggle_access": toggles,
-                "effort_floor_assignments": effort_floor_assignments,
-                "acceptance_pass": True,
-            })
-            continue
         if len(thumb_momentary_hands) == 0:
             rows.append({
                 "layer": layer,
@@ -765,19 +710,12 @@ def _momentary_only_thumb_clearance_report(layout: Layout) -> Dict:
                 "acceptance_pass": True,
             })
             continue
-        if thumb_momentary_hands == {"left", "right"}:
-            rows.append({
-                "layer": layer,
-                "rule_applies": False,
-                "reason": "both_thumb_sides_momentary_access_present",
-                "momentary_thumb_hands": sorted(thumb_momentary_hands),
-                "acceptance_pass": True,
-            })
-            continue
         occupied_assignments = []
         restricted_hands = sorted(thumb_momentary_hands)
         for idx, pos, shortcut in _assigned_shortcuts(layout):
             if pos.layer == layer and pos.is_thumb and pos.hand in thumb_momentary_hands:
+                if shortcut.is_layer_access and shortcut.access_target_layer == 0:
+                    continue
                 occupied_assignments.append({
                     "keys": shortcut.keys,
                     "idx": int(idx),
@@ -791,6 +729,7 @@ def _momentary_only_thumb_clearance_report(layout: Layout) -> Dict:
             "rule_applies": True,
             "restricted_hands": restricted_hands,
             "occupied_hand": restricted_hands[0] if len(restricted_hands) == 1 else None,
+            "l0_return_thumb_exception": True,
             "violating_assignments": occupied_assignments,
             "acceptance_pass": len(occupied_assignments) == 0,
         }
@@ -996,17 +935,13 @@ def build_acceptance_report(
     unsupported = duplicate_report.get("unsupported_duplicates", [])
     fake_scroll = _fake_scroll_assignments(layout)
     scroll_access = _scroll_mode_access(layout)
-    dynamic_mouse = _dynamic_mouse_layer_report(layout)
-    owner_shortcuts = _owner_shortcut_layer_report(
-        layout, dynamic_mouse.get("mouse_layer")
-    )
+    owner_shortcuts = _owner_shortcut_layer_report(layout, 1)
     hold_target_positions = _momentary_hold_target_position_report(layout)
-    l5_hold_to_self_toggle = _l5_hold_to_self_toggle_report(layout)
+    owner_contract = audit_layout_contract(layout)
     right_thumb_mouse = _global_right_thumb_mouse_button_report(layout)
     thumb_clearance = _momentary_only_thumb_clearance_report(layout)
     win_s = _find_assigned_keys(layout, "Win+S")
     mutable_bt = _mutable_bluetooth_assignments(layout)
-    layer7_access = _layer7_access_report(layout)
     transparent = _transparent_keys_report(layout)
     no_same_layer_dup = _no_same_layer_duplicates_report(layout)
     windows_shortcuts = _windows_shortcut_report(layout)
@@ -1025,15 +960,11 @@ def build_acceptance_report(
         "unsupported_duplicates_near_zero": len(unsupported) == 0,
         "no_fake_scroll_keypresses": len(fake_scroll) == 0,
         "scroll_mode_access_present": len(scroll_access) > 0,
-        "dynamic_mouse_layer_present": bool(dynamic_mouse.get("acceptance_pass")),
-        "cmdpal_on_dynamic_mouse_layer": owner_shortcuts["cmdpal_on_mouse_layer"],
-        "zoom_controls_present_together": owner_shortcuts["zoom_controls_present_together"],
-        "monitor_move_pair_together": owner_shortcuts["monitor_move_pair_together"],
+        "l1_mouse_contract": owner_contract["acceptance_pass"],
         "momentary_hold_target_positions_clear": hold_target_positions["acceptance_pass"],
-        "l5_hold_to_self_toggle_path": l5_hold_to_self_toggle["acceptance_pass"],
+        "owner_layout_contract_v1": owner_contract["acceptance_pass"],
         "no_mouse_buttons_on_right_thumb_area_global": bool(right_thumb_mouse.get("acceptance_pass")),
         "momentary_only_thumb_side_clear": bool(thumb_clearance.get("acceptance_pass")),
-        "layer7_momentary_and_toggle_access": bool(layer7_access.get("acceptance_pass")),
         "no_mutable_bluetooth_or_output_keys": len(mutable_bt) == 0,
         "win_s_present": len(win_s) > 0,
         "no_same_layer_duplicates": bool(no_same_layer_dup.get("acceptance_pass")),
@@ -1056,39 +987,22 @@ def build_acceptance_report(
         numeric_distances["unsupported_duplicates_count"] = len(unsupported)
     if not optimizer_side_checks["scroll_mode_access_present"]:
         numeric_distances["scroll_access_count"] = 0
-    if not optimizer_side_checks["dynamic_mouse_layer_present"]:
-        best = dynamic_mouse.get("best_candidate")
-        if best:
-            numeric_distances["mouse_missing_buttons"] = best.get("missing_buttons", [])
-            numeric_distances["mouse_non_right_placements"] = len(best.get("non_right_button_placements", []))
-            numeric_distances["mouse_right_thumb_placements"] = len(best.get("right_thumb_button_placements", []))
-            numeric_distances["mouse_right_scroll_ok"] = bool(best.get("right_momentary_scroll_access"))
-            numeric_distances["mouse_toggle_access_ok"] = bool(best.get("reachable_toggle_access"))
-        else:
-            numeric_distances["mouse_no_candidate_layer"] = True
+    if not optimizer_side_checks["l1_mouse_contract"]:
+        numeric_distances["owner_layout_contract_failed_checks"] = owner_contract["failed_checks"]
     if not optimizer_side_checks["no_mouse_buttons_on_right_thumb_area_global"]:
         numeric_distances["global_right_thumb_mouse_button_count"] = len(
             right_thumb_mouse.get("placements", [])
         )
     if not optimizer_side_checks["momentary_only_thumb_side_clear"]:
         numeric_distances["thumb_clearance_violations"] = len(thumb_clearance.get("violations", []))
-    if not optimizer_side_checks["layer7_momentary_and_toggle_access"]:
-        numeric_distances["l7_momentary_access_count"] = len(layer7_access.get("reachable_momentary_access", []))
-        numeric_distances["l7_toggle_access_count"] = len(layer7_access.get("reachable_toggle_access", []))
     if not optimizer_side_checks["no_same_layer_duplicates"]:
         numeric_distances["same_layer_duplicate_offenders"] = len(no_same_layer_dup.get("offenders", []))
     if not optimizer_side_checks["required_relative_layouts"]:
         numeric_distances["required_relative_layout_failures"] = len(relative_layouts["failures"])
-    if not optimizer_side_checks["cmdpal_on_dynamic_mouse_layer"]:
-        numeric_distances["cmdpal_mouse_layer_positions_missing"] = 1
-    if not optimizer_side_checks["zoom_controls_present_together"]:
-        numeric_distances["zoom_control_shared_layers"] = owner_shortcuts["zoom_shared_layers"]
-    if not optimizer_side_checks["monitor_move_pair_together"]:
-        numeric_distances["monitor_shortcut_shared_layers"] = owner_shortcuts["monitor_shared_layers"]
     if not optimizer_side_checks["momentary_hold_target_positions_clear"]:
         numeric_distances["momentary_hold_target_position_conflicts"] = hold_target_positions["count"]
 
-    failure_guidance = list(dynamic_mouse.get("failure_guidance", []))
+    failure_guidance = []
     if not optimizer_side_checks["no_mouse_buttons_on_right_thumb_area_global"]:
         failure_guidance.append("Move all mouse buttons off right-thumb positions on generated layers.")
     if not optimizer_side_checks["no_same_layer_duplicates"]:
@@ -1098,14 +1012,13 @@ def build_acceptance_report(
             "Remove same-layer duplicate shortcuts (only the dynamic mouse layer's "
             f"MB1-MB5 may have one left+one right copy): {preview}"
         )
-    if not optimizer_side_checks["cmdpal_on_dynamic_mouse_layer"]:
-        failure_guidance.append("Place Win+Alt+Space on the dynamically identified mouse layer.")
-    if not optimizer_side_checks["zoom_controls_present_together"]:
-        failure_guidance.append("Keep Ctrl+- and Ctrl++ present together on one reachable layer.")
-    if not optimizer_side_checks["monitor_move_pair_together"]:
-        failure_guidance.append("Keep both monitor-move shortcuts together on one reachable layer.")
     if not optimizer_side_checks["momentary_hold_target_positions_clear"]:
         failure_guidance.append("Move target-layer actions away from keys occupied by momentary holds.")
+    if not optimizer_side_checks["owner_layout_contract_v1"]:
+        failure_guidance.append(
+            "Repair the versioned L1 mouse, access, scroll, and thumb contract; "
+            "see details.owner_layout_contract_v1.failed_checks."
+        )
     if not optimizer_side_checks["required_relative_layouts"]:
         names = ", ".join(str(row["name"]) for row in relative_layouts["failures"])
         failure_guidance.append(f"Restore declared relative placement for semantic groups: {names}.")
@@ -1135,13 +1048,12 @@ def build_acceptance_report(
             "win_s_positions": win_s,
             "fake_scroll_assignments": fake_scroll,
             "scroll_mode_access": scroll_access,
-            "dynamic_mouse_layer": dynamic_mouse,
+            "mouse_layer": {"required_layer": 1, "source": "versioned owner contract"},
             "owner_shortcuts": owner_shortcuts,
             "momentary_hold_target_positions": hold_target_positions,
-            "l5_hold_to_self_toggle_path": l5_hold_to_self_toggle,
+            "owner_layout_contract_v1": owner_contract,
             "global_right_thumb_mouse_buttons": right_thumb_mouse,
             "momentary_only_thumb_clearance": thumb_clearance,
-            "layer7_access": layer7_access,
             "mutable_bluetooth_or_output_assignments": mutable_bt,
             "transparent_keys": transparent,
             "no_same_layer_duplicates": no_same_layer_dup,

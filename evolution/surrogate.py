@@ -335,8 +335,18 @@ class SurrogateManager:
             ).astype(np.float32)
         else:
             combined = exact_scores.astype(np.float32)
-        for i in range(len(layouts)):
-            self.exact_cache.append((layouts[i].copy(), combined[i].copy()))
+        self.exact_cache.extend(
+            (layout.copy(), score.copy())
+            for layout, score in zip(layouts, combined)
+        )
+        # `max_retrain_samples` is also the cache bound. Previously it only
+        # limited each sampled training batch while this list grew forever;
+        # long runs accumulated millions of genomes and spent increasing time
+        # sampling/copying them. Keep the newest exact labels for the local model.
+        if self.max_retrain_samples > 0:
+            excess = len(self.exact_cache) - self.max_retrain_samples
+            if excess > 0:
+                del self.exact_cache[:excess]
 
     def retrain(self):
         if len(self.exact_cache) < 100:

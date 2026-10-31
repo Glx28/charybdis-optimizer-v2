@@ -68,7 +68,7 @@ function run(config = {}) {
     }
     const empty = {
       timestamp: new Date().toISOString(),
-      total_events: 0, period_days: 0,
+      total_events: 0, malformed_event_lines: 0, period_days: 0,
       shortcuts: {}, sequences: {}, shortcut_sequences: {}, chains: {}, workflows: {},
       shortcut_workflows: {}, app_sequences: {}, app_workflows: {}, by_app: {}, by_layer: {},
       by_layer_shortcut: {}, layer_shortcuts: {},
@@ -83,9 +83,10 @@ function run(config = {}) {
   let raw = fs.readFileSync(usageLog, "utf-8");
   if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
   let lines = raw.split(/\r?\n/).filter(Boolean);
+  let usageSinceMs = null;
   if (usageSince) {
-    const sinceMs = Date.parse(usageSince);
-    if (!Number.isFinite(sinceMs)) {
+    usageSinceMs = Date.parse(usageSince);
+    if (!Number.isFinite(usageSinceMs)) {
       return {
         success: false,
         output: { summary: `Invalid usage cutoff timestamp: ${usageSince}` },
@@ -93,14 +94,42 @@ function run(config = {}) {
         warnings,
       };
     }
-    lines = lines.filter((line) => {
-      try {
-        const ts = Date.parse(JSON.parse(line).ts);
-        return Number.isFinite(ts) && ts >= sinceMs;
-      } catch {
-        return false;
+  }
+  let malformedEventLines = 0;
+  let repairedPaddedEventLines = 0;
+  const events = [];
+  for (const line of lines) {
+    let event;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      // Recover records written with a NUL-filled prefix by a concurrent or
+      // interrupted Windows append. Only accept when the remaining line is a
+      // complete JSON value; never trim NULs elsewhere in the record.
+      const unpadded = line.replace(/^\u0000+/, "");
+      if (unpadded === line) {
+        malformedEventLines++;
+        continue;
       }
-    });
+      try {
+        event = JSON.parse(unpadded);
+        repairedPaddedEventLines++;
+      } catch {
+        malformedEventLines++;
+        continue;
+      }
+    }
+    if (usageSinceMs !== null) {
+      const ts = Date.parse(event.ts);
+      if (!Number.isFinite(ts) || ts < usageSinceMs) continue;
+    }
+    events.push(event);
+  }
+  if (malformedEventLines > 0) {
+    warnings.push(`${malformedEventLines} malformed JSON event line(s) skipped`);
+  }
+  if (repairedPaddedEventLines > 0) {
+    warnings.push(`${repairedPaddedEventLines} NUL-padded JSON event line(s) recovered`);
   }
   const shortcuts = {};
   const sequences = {};
@@ -153,6 +182,14 @@ function run(config = {}) {
   function addMapCount(obj, key, inc = 1) {
     if (!key) return;
     obj[key] = (obj[key] || 0) + inc;
+  }
+
+  function addLayerPathCount(row, layers) {
+    if (!Array.isArray(layers) || layers.length < 2) return;
+    const path = layers.map(value => String(value));
+    if (!path.every(value => /^\d+$/.test(value))) return;
+    if (!row.by_layer_path) row.by_layer_path = {};
+    addMapCount(row.by_layer_path, path.join("->"));
   }
 
   function rawCompletionBaseName(keys, explicitBase) {
@@ -214,7 +251,7 @@ function run(config = {}) {
     return [...new Set((apps || []).filter(Boolean).map(a => String(a).toLowerCase()))].sort().join(" + ");
   }
 
-  function addShortcutSequence(from, to, gapMs, fromApp, toApp, sameApp) {
+  function addShortcutSequence(from, to, gapMs, fromApp, toApp, sameApp, fromLayer, toLayer) {
     const keyA = maybeNormalizeKeys(from);
     const keyB = maybeNormalizeKeys(to);
     if (!keyA || !keyB) return;
@@ -226,10 +263,19 @@ function run(config = {}) {
         same_app_count: 0,
         cross_app_count: 0,
         apps: {},
+        by_layer_pair: {},
       };
     }
     const row = shortcutSequences[seqKey];
     row.count++;
+    if (fromLayer !== undefined && fromLayer !== null && toLayer !== undefined && toLayer !== null) {
+      const sourceLayer = String(fromLayer);
+      const targetLayer = String(toLayer);
+      if (/^\d+$/.test(sourceLayer) && /^\d+$/.test(targetLayer)) {
+        const layerPair = `${sourceLayer}->${targetLayer}`;
+        row.by_layer_pair[layerPair] = (row.by_layer_pair[layerPair] || 0) + 1;
+      }
+    }
     if (gapMs || gapMs === 0) row.gaps.push(Number(gapMs) || 0);
     const isSameApp = sameApp !== undefined ? !!sameApp : fromApp && toApp && fromApp === toApp;
     if (isSameApp) row.same_app_count++;
@@ -255,6 +301,7 @@ function run(config = {}) {
         apps: {},
         app_count: 0,
         layer_count: 0,
+        by_layer_path: {},
       };
     }
     const row = shortcutWorkflows[wfKey];
@@ -263,6 +310,7 @@ function run(config = {}) {
     for (const appName of apps || []) addMapCount(row.apps, appName);
     row.app_count = Math.max(row.app_count, new Set((apps || []).filter(Boolean)).size);
     row.layer_count = Math.max(row.layer_count, new Set((layers || []).map(String)).size);
+    addLayerPathCount(row, layers || []);
 
     const uniqueApps = new Set((apps || []).filter(Boolean).map(a => String(a).toLowerCase()));
     if (uniqueApps.size >= 2) {
@@ -273,9 +321,10 @@ function run(config = {}) {
       addAppWorkflow(apps, switchCount, normKeys.length, spanMs);
     }
 
-    if (!chains[wfKey]) chains[wfKey] = { count: 0, total_ms: 0 };
+    if (!chains[wfKey]) chains[wfKey] = { count: 0, total_ms: 0, by_layer_path: {} };
     chains[wfKey].count++;
     chains[wfKey].total_ms += Number(spanMs) || 0;
+    addLayerPathCount(chains[wfKey], layers || []);
   }
 
   function addAppSequence(fromApp, toApp, prevDurationMs) {
@@ -298,10 +347,7 @@ function run(config = {}) {
     appWorkflows[clusterKey].total_span_ms += Number(spanMs) || 0;
   }
 
-  for (const line of lines) {
-    let entry;
-    try { entry = JSON.parse(line); } catch { continue; }
-
+  for (const entry of events) {
     const ts = entry.ts;
     const eventType = entry.type || "shortcut";
     const app = entry.app || "unknown";
@@ -369,6 +415,8 @@ function run(config = {}) {
         entry.from_app || app,
         entry.to_app || app,
         entry.same_app,
+        entry.from_layer,
+        entry.to_layer,
       );
       continue;
     }
@@ -559,7 +607,10 @@ function run(config = {}) {
 
     // Sequence confidence: collect raw gap_ms per sequence for CV computation
     if (entry.prev && entry.gap_ms) {
-      addShortcutSequence(entry.prev, keys, entry.gap_ms, app, app, true);
+      addShortcutSequence(
+        entry.prev, keys, entry.gap_ms, entry.prev_app || app, app, entry.prev_app ? entry.prev_app === app : true,
+        entry.prev_layer, layer,
+      );
     }
 
     // Sequence tracking (existing)
@@ -581,9 +632,10 @@ function run(config = {}) {
       const spanMs = new Date(win[winSize - 1].ts) - new Date(win[0].ts);
       if (spanMs > 10000) continue;
       const chainKey = win.map(e => e.keys).join(" -> ");
-      if (!chains[chainKey]) chains[chainKey] = { count: 0, total_ms: 0 };
+      if (!chains[chainKey]) chains[chainKey] = { count: 0, total_ms: 0, by_layer_path: {} };
       chains[chainKey].count++;
       chains[chainKey].total_ms += spanMs;
+      addLayerPathCount(chains[chainKey], win.map(event => event.layer || "0"));
       if (winSize >= 3) {
         addShortcutWorkflow(
           win.map(e => e.keys),
@@ -672,10 +724,11 @@ function run(config = {}) {
       const apps = new Set(window.map(e => e.app));
       if (apps.size > 1) continue;
       const wfKey = window.map(e => e.keys).join(" -> ");
-      if (!workflows[wfKey]) workflows[wfKey] = { count: 0, apps: {} };
+      if (!workflows[wfKey]) workflows[wfKey] = { count: 0, apps: {}, by_layer_path: {} };
       workflows[wfKey].count++;
       const app = window[0].app;
       workflows[wfKey].apps[app] = (workflows[wfKey].apps[app] || 0) + 1;
+      addLayerPathCount(workflows[wfKey], window.map(event => event.layer || "0"));
     }
   }
   // Filter: only keep workflows with count >= 3
@@ -692,6 +745,7 @@ function run(config = {}) {
         apps: {},
         app_count: 0,
         layer_count: 0,
+        by_layer_path: {},
       };
     }
     shortcutWorkflows[wfKey].count += wfData.count || 0;
@@ -699,6 +753,9 @@ function run(config = {}) {
       shortcutWorkflows[wfKey].apps[appName] = (shortcutWorkflows[wfKey].apps[appName] || 0) + count;
     }
     shortcutWorkflows[wfKey].app_count = Math.max(shortcutWorkflows[wfKey].app_count, Object.keys(wfData.apps || {}).length);
+    for (const [path, count] of Object.entries(wfData.by_layer_path || {})) {
+      addMapCount(shortcutWorkflows[wfKey].by_layer_path, path, count);
+    }
   }
 
   for (const [seqKey, seq] of Object.entries(shortcutSequences)) {
@@ -715,6 +772,7 @@ function run(config = {}) {
     const crossAppBoost = seq.cross_app_count > 0 ? 1.1 : 1.0;
     seq.confidence = Math.round(Math.min(1.0, countConfidence * consistency * speedConfidence * crossAppBoost) * 100) / 100;
     seq.apps = Object.fromEntries(Object.entries(seq.apps || {}).sort((a, b) => b[1] - a[1]));
+    seq.by_layer_pair = Object.fromEntries(Object.entries(seq.by_layer_pair || {}).sort((a, b) => b[1] - a[1]));
     delete seq.gaps;
     if (!sequences[seqKey]) sequences[seqKey] = { count: seq.count, avg_gap_ms: seq.avg_gap_ms };
   }
@@ -792,7 +850,9 @@ function run(config = {}) {
 
   const output = {
     timestamp: new Date().toISOString(),
-    total_events: lines.length,
+    total_events: events.length,
+    malformed_event_lines: malformedEventLines,
+    repaired_padded_event_lines: repairedPaddedEventLines,
     period_days: periodDays,
     usage_since_ts: usageSince,
     first_event_ts: earliest,
@@ -848,7 +908,7 @@ function run(config = {}) {
   const nBlind = blindSpots.length;
   return {
     success: true,
-    output: { summary: `${lines.length} events, ${Object.keys(shortcuts).length} unique shortcuts, ${periodDays} days, ${nBlind} blind spots` },
+    output: { summary: `${events.length} events, ${Object.keys(shortcuts).length} unique shortcuts, ${periodDays} days, ${nBlind} blind spots` },
     errors, warnings,
   };
 }
@@ -996,5 +1056,8 @@ module.exports = { run, normalizeKeys };
 if (require.main === module) {
   const result = run({});
   console.log("Usage aggregation:", result.output.summary);
+  for (const warning of result.warnings || []) {
+    console.warn("Usage aggregation warning:", warning);
+  }
   if (!result.success) process.exitCode = 1;
 }

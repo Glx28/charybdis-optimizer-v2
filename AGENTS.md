@@ -28,9 +28,9 @@ as sufficient.
 
 ## Dynamic Layer Assignment
 
-Only L0 and L7 have stable semantic roles. L0 is base typing/thumb access. L7 is frozen RPG/arrows/navigation plus keyboard-system controls such as Bluetooth/output selection.
+L0 is base typing/thumb access, L1 is the fixed mouse surface, and L7 is the frozen RPG/arrows/navigation and keyboard-system layer. The owner contract in `contracts/layout_contract_v1.json` is authoritative for L1 and must be enforced by generation, evaluation, archive selection, export, and promotion.
 
-Every other layer is dynamically assigned during each generation. Do not encode assumptions such as a fixed mouse layer, scroll layer, travel layer, app layer, code layer, Excel layer, DMS layer, or system layer by layer number.
+Every layer other than L1 and frozen L7 remains dynamically assigned. Do not hardcode other workflow roles by layer number.
 
 This optimizer is workflow-focused first. A workflow is the set of apps,
 shortcuts, mouse actions, scroll-mode actions, and app transitions that usage
@@ -112,78 +112,30 @@ frequent application shortcuts; keep bare RightAlt (Norwegian AltGr) on a
 reachable non-L0 layer. Do not place both Alt keys on L0. Score RightAlt on L0
 as a major violation while preserving the AltGr key in the layout.
 
-Owner placement preference: physical thumb coordinate x3,y4 is lower effort
-than before (0.5) and receives a strong soft reward when it provides direct
-L0 access to the dynamically identified mouse-button layer. Keep LeftAlt on
-L0, but allow it to move to another L0 thumb so x3,y4 can serve that access.
-Owner also requested an L7 self-toggle at x8,y4; this is the sole explicit
-owner-authorized change to otherwise frozen L7 content. Preserve other L7
-fallback and exit-to-base bindings.
+The owner contract fixes L0 x3,y4 as an ordinary momentary hold to L1; fixes L1 MB1, MB2, and momentary Scroll at x8,y2, x9,y2, and x10,y2; requires all five mouse buttons, an L1 self-lock, exactly two additional current-layer scroll holds, ordinary hold access to every generated layer, strict path-based thumb clearance, and named low-effort L1 shortcuts. L7 remains byte-for-byte frozen and is exempt from mutable-layer contract checks. Do not infer or assign another mouse layer. See `contracts/layout_contract_v1.json` for the complete versioned rules.
 
-At target generation, the whole run is invalid unless a generated non-L0/non-L7
-dynamic mouse workflow layer exists. That layer must contain every core mouse
-button, MB1-MB2-MB3-MB4-MB5, accessible on the right side of that same dynamic
-mouse layer, with no mouse button occupying the right-thumb area. Mouse-button
-placement on that layer is usage-weighted: more-used mouse buttons should earn
-better physical positions, but they still compete with highly used workflow
-shortcuts. It must also contain right-hand non-thumb momentary Scroll capability, have
-no momentary mouse-layer access on the right thumb side, and have a reachable toggle access path. L7
-is excluded from generated mouse-layer candidates and must not count as mouse
-workflow success. Frozen L7 content is not an optimizer acceptance surface.
-This is a final acceptance constraint, not a requirement that every intermediate
-generation already has the complete mouse layer.
+Do not create static or dynamic groups for `ScrollUp`/`ScrollDown`; they are fake wheel-direction keypresses, not real shortcuts.
 
-L7 access is checked separately from L7 content. L7 must be reachable by both a
-momentary layer access capability and a toggle layer access capability.
-
-Momentary Scroll is part of the core mouse group for the generated mouse layer.
-Because scrolling is a major part of mouse/trackball use, the dynamic mouse
-layer is invalid without a right-hand non-thumb momentary Scroll capability on
-that same layer. Momentary Scroll on x7 or x8 is considered uncomfortable and
-does not satisfy the generated mouse-layer condition. Prefer momentary Scroll
-over toggle Scroll for this condition.
-Do not create static or dynamic groups for `ScrollUp`/`ScrollDown`; those are
-fake wheel-direction keypresses, not real shortcuts.
-
-Mouse buttons may appear on other generated layers only when usage/access data
-justifies them, and mouse duplicates are harder to justify than ordinary
-shortcut duplicates. Mouse buttons are forbidden on right-thumb positions on
-every generated layer, not only on the dynamic mouse layer. The dynamic mouse
-layer receives the primary mouse-workflow bonus. Within that layer, MB2 is
-more valuable than MB3/MB4/MB5 and should win better placement when usage does
-not prove otherwise. MB1/MB2 and MB4/MB5 each form an inner group of the mouse
-group, scoped to the settled dynamic mouse layer only: MB1 must sit left of
-MB2, and MB4 must sit left of MB5, with a same-row proximity bonus for each
-pair. Left-right order is firmly enforced (a large penalty applies when the
-order is reversed), but this remains soft scoring pressure, not a hard
-constraint or fixed coordinates — a strong enough workflow reason can still
-displace it.
-
-Once a natural generated mouse layer exists, it should dominate mouse
-interactions. Mouse buttons on other layers receive lower value and extra
-cleanup pressure so random scatter disappears naturally. Exceptions are still
-allowed when usage/access data shows a workflow uses mouse buttons so heavily
-that switching to the mouse layer every time would be too costly.
-
-No shortcut may appear more than once on the same layer. This is a global,
-absolute rule with exactly two exceptions. First, layer 7 is frozen and
-entirely excluded from this rule. Second, the dynamic mouse layer allows
-exactly one extra copy of a core mouse button (MB1-MB5), and only as one
-left-side plus one right-side placement — never two copies on the same side.
-This mouse exception is tied to the layer's live, fully-qualifying
-dynamic-mouse-layer status for the current generation, not merely to whether
-the layer holds mouse buttons: if the layer stops fully qualifying as the
-dynamic mouse layer for any reason (for example Scroll or toggle access
-moving away from it), its left-side mouse-button copy immediately becomes an
-ordinary same-layer duplicate violation. There is no post-hoc repair or
-deletion of the orphaned copy; feasibility-first selection removes it over
-generations, the same mechanism already used for every other hard constraint
-in this document.
+No shortcut may appear more than once on the same layer. L7 is frozen and excluded from this rule. Preserve the existing duplicate restrictions on mutable layers; the L1 contract does not authorize arbitrary mouse-button duplication.
 
 The logger and aggregation pipeline must preserve active-layer shortcut counts
 (`by_layer_shortcut` and `layer_shortcuts`) so future runs can learn what was
 actually used while a layer was active. These counts are evidence, not stable
 semantic layer roles.
+
+Layer familiarity is per shortcut and per layer. Repeated observed use builds a
+bounded memory weight; each mutable copy on a layer with lower observed use pays
+more, especially at low-effort positions. Mature bindings also resist moving
+away from their incumbent coordinate on that same layer until use supports
+another layer. Low-use duplicates should move to a high-effort position or
+another layer, even when the shortcut is popular elsewhere. Frozen bindings,
+L7, layer-access controls, and mouse controls are exempt. Norwegian symbol
+events feed the same model through produced-output counts by layer. Do not
+collapse counts across layers before scoring.
+
+Shortcut sequences and workflow chains provide a continuous distance signal:
+far-apart pairs still receive a smaller closeness reward so mutation can improve
+their placement incrementally. Apply the same formula in CPU and CUDA kernels.
 
 `layout.layer_access` is a legacy static access field. It is NOT the source of
 truth for evolved layouts. New layout data should leave it empty. Layer-access shortcuts are
@@ -197,28 +149,14 @@ Helper functions that read `layout.layer_access` are explicitly marked as
 "Legacy/static fallback only" and must not be called from scoring or acceptance
 paths.
 
-Transparent/empty keys are generally penalized according to position value.
-An empty slot on a prime, low-effort position is especially costly; an empty
-slot on a far, high-effort position incurs only a small penalty. The penalty
-uses a sigmoid-weighted position-value function: `pos_value = 1/(1+effort)`,
-gate = sigmoid(8×(pos_value − 0.5)), scaled by layer access cost and layer
-demand. Cheap-access, high-demand layers produce stronger empty-position
-pressure. L7 (frozen), frozen positions, and positions on unreachable layers
-are excluded from this penalty. This is a soft scoring pressure (violation
-sub-weight `empty_position`, default 3.0), not a hard acceptance constraint.
-Intentional transparent fall-through is not banned, but it competes against
-placing useful actions at each position.
-
-L0 is deliberately NOT excluded from empty-position pressure, and gets an
-extra multiplier on top: it is the only zero-cost, always-reachable layer, so
-every L0 key is high-value and should be fiercely contested. An empty L0 slot
-must never be cheaper than filling it with any valid shortcut — the L0-thumb
-occupied-position penalty (which discourages low-usage shortcuts from
-squatting on L0 thumb slots) is capped so it can never exceed what leaving
-the same slot empty would cost. This is still soft pressure, not a hard
-constraint, matching how mouse-layer effort quality is handled — but it
-should be strong enough that a mutable L0 position sitting empty for
-thousands of generations should not happen.
+Transparent/empty positions on reachable generated layers are scored by
+position value. An empty slot on a prime, low-effort position has a larger
+penalty; a far, high-effort slot has a smaller one. L0 is excluded: empty base
+positions are valid, and filling them with arbitrary low-use shortcuts must not
+earn a reward. L7 is frozen, frozen positions, and unreachable layers are also
+excluded. L0 thumb bindings instead pay a soft opportunity cost that decreases
+with observed shortcut use. This uses the logger's measured counts; it does not
+make any binding or coordinate a hard rule.
 
 A layer's return-to-L0 toggle existing at all is a hard constraint
 (`toggle_back_to_l0`), but existing is not enough: if that toggle is placed

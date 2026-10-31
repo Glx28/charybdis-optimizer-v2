@@ -8,10 +8,10 @@
 // The Python wrapper does not enforce these at runtime; the source layout
 // must fit. These are generous for the Charybdis v2 layout.
 #define MAX_POS 1024
-#define MAX_SHORT 512
-#define MAX_APPS 128
-#define MAX_KEY_GROUPS 128
-#define MAX_LAYERS 32
+#define MAX_SHORT 320
+#define MAX_APPS 32
+#define MAX_KEY_GROUPS 96
+#define MAX_LAYERS 16
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -37,6 +37,7 @@ __device__ inline float max_f(float a, float b) { return a > b ? a : b; }
 // -----------------------------------------------------------------------------
 struct PerThreadScratch {
     int sid_pos[MAX_SHORT];
+    int sid_pos_by_layer[MAX_SHORT][MAX_LAYERS];
     bool sid_layer_seen[MAX_SHORT][MAX_LAYERS];
     bool assigned[MAX_SHORT];
     int sid_counts[MAX_SHORT];
@@ -199,6 +200,7 @@ __device__ void evaluate_single(
         s->sid_mutable_counts[i] = 0;
         s->raw_base_assigned_count[i] = 0;
         for (int l = 0; l < MAX_LAYERS; l++) {
+            s->sid_pos_by_layer[i][l] = -1;
             s->sid_layer_seen[i][l] = false;
         }
     }
@@ -492,31 +494,10 @@ __device__ void evaluate_single(
         }
     }
 
-    // Candidate mouse layer pre-scan
-    int mouse_right_count[MAX_LAYERS];
-    for (int l = 0; l < MAX_LAYERS; l++) mouse_right_count[l] = 0;
-    for (int i = 0; i < n_pos; i++) {
-        int sid = genome[i];
-        if (sid < 0 || sid >= n_short) continue;
-        if (!shortcut_is_mouse[sid]) continue;
-        int btn = shortcut_mouse_button[sid];
-        if (btn <= 0) continue;
-        int layer = pos_layer[i];
-        if (layer <= 0 || layer == 7 || layer >= MAX_LAYERS) continue;
-        if (pos_hand[i] == 1 && !pos_is_thumb[i]) {
-            mouse_right_count[layer]++;
-        }
-    }
-    int candidate_mouse_layer = -1;
-    int best_mc = 0;
-    for (int l = 1; l < MAX_LAYERS; l++) {
-        if (l == 7) continue;
-        if (mouse_right_count[l] > best_mc) {
-            best_mc = mouse_right_count[l];
-            candidate_mouse_layer = l;
-        }
-    }
-    if (best_mc < 2) candidate_mouse_layer = -1;
+    // The versioned owner contract assigns the mouse role to L1. Invalid
+    // candidates fail the hard contract independently; never infer a role
+    // from whichever layer happens to contain the most buttons.
+    const int candidate_mouse_layer = 1;
 
 
     // -------------------------------------------------------------------------
@@ -535,6 +516,7 @@ __device__ void evaluate_single(
         int layer = pos_layer[i];
         int finger = pos_finger[i];
         if (layer >= 0 && layer < MAX_LAYERS && sid < MAX_SHORT) {
+            s->sid_pos_by_layer[sid][layer] = i;
             s->layer_sid_counts[layer][sid]++;
         }
         if (layer >= 0 && layer < MAX_LAYERS && !pos_is_frozen[i] && layer != 7) {
@@ -542,6 +524,7 @@ __device__ void evaluate_single(
         }
 
         float imp = shortcut_importance[sid];
+        // Boost mouse-button effort only on the contract-defined L1 role.
         if (shortcut_is_mouse[sid] && shortcut_mouse_button[sid] > 0 && layer == candidate_mouse_layer) {
             imp = imp * 5.0f;
         }
@@ -556,19 +539,15 @@ __device__ void evaluate_single(
         }
         if (layer == 0 && pos_is_thumb[i] && !pos_is_frozen[i] && shortcut_access_target[sid] < 0) {
             int uc_l0 = (int)shortcut_usage_count[sid];
-            float usage_relief = log1p_lookup(uc_l0, log1p_lut, lut_size) * 0.12f;
-            if (usage_relief > 0.85f) usage_relief = 0.85f;
-            // Capped so occupying is never scored worse (in violations_raw terms)
-            // than leaving the slot empty now costs via empty_pos_waste's L0
-            // multiplier — see the matching comment in fitness/kernel.py.
-            float l0_occupy_raw = imp * pos_effort_waste[i] * (1.0f - usage_relief) * 18.0f;
-            if (violation_weights[13] > 0.0f) {
-                float l0_occupy_cap = (violation_weights[16] / violation_weights[13]) * pos_effort_waste[i] * 3.0f;
-                if (l0_occupy_raw > l0_occupy_cap) {
-                    l0_occupy_raw = l0_occupy_cap;
-                }
-            }
-            access_layout += l0_occupy_raw;
+            float usage_relief = log1p_lookup(uc_l0, log1p_lut, lut_size) * 0.14f;
+            if (usage_relief > 0.95f) usage_relief = 0.95f;
+            // Empty L0 slots have no occupancy reward. Charge low-use actions
+            // in the effort objective for consuming scarce base-layer thumb
+            // capacity; real observed use reduces this opportunity cost.
+            // Keep this out of access_layout so large access penalties cannot
+            // erase this per-binding signal at float32 precision.
+            float l0_occupy_raw = pos_effort_waste[i] * imp * (1.0f - usage_relief);
+            effort += l0_occupy_raw;
         }
         float pos_cost = pos_eff * imp * (1.0f + pos_eff * imp * 0.5f);
         effort += pos_cost + imp * access_cost;
@@ -824,39 +803,43 @@ __device__ void evaluate_single(
     }
 
     for (int r = 0; r < n_sequence_rows; r++) {
-        int sid_a = (int)sequence_rows[r * 3 + 0];
-        int sid_b = (int)sequence_rows[r * 3 + 1];
-        float weight = sequence_rows[r * 3 + 2];
-        int pos_a = s->sid_pos[sid_a];
-        int pos_b = s->sid_pos[sid_b];
+        int sid_a = (int)sequence_rows[r * 5 + 0];
+        int sid_b = (int)sequence_rows[r * 5 + 1];
+        int layer_a = (int)sequence_rows[r * 5 + 2];
+        int layer_b = (int)sequence_rows[r * 5 + 3];
+        float weight = sequence_rows[r * 5 + 4];
+        int pos_a = layer_a >= 0 && layer_a < MAX_LAYERS
+            ? s->sid_pos_by_layer[sid_a][layer_a] : s->sid_pos[sid_a];
+        int pos_b = layer_b >= 0 && layer_b < MAX_LAYERS
+            ? s->sid_pos_by_layer[sid_b][layer_b] : s->sid_pos[sid_b];
         if (pos_a < 0 || pos_b < 0) continue;
         float proximity;
         if (pos_layer[pos_a] == pos_layer[pos_b]) {
-            proximity = 1.0f - dist[pos_a * n_pos + pos_b] * 0.2f;
+            proximity = 1.0f / (1.0f + dist[pos_a * n_pos + pos_b] * 0.2f);
         } else {
-            proximity = 0.3f - dist[pos_a * n_pos + pos_b] * 0.2f;
+            proximity = 0.3f / (1.0f + dist[pos_a * n_pos + pos_b] * 0.2f);
         }
-        if (proximity > 0.0f) {
-            adjacency += weight * proximity;
-        }
+        adjacency += weight * proximity;
     }
 
     for (int r = 0; r < n_chain_rows; r++) {
-        int sid_a = (int)chain_rows[r * 3 + 0];
-        int sid_b = (int)chain_rows[r * 3 + 1];
-        float weight = chain_rows[r * 3 + 2];
-        int pos_a = s->sid_pos[sid_a];
-        int pos_b = s->sid_pos[sid_b];
+        int sid_a = (int)chain_rows[r * 5 + 0];
+        int sid_b = (int)chain_rows[r * 5 + 1];
+        int layer_a = (int)chain_rows[r * 5 + 2];
+        int layer_b = (int)chain_rows[r * 5 + 3];
+        float weight = chain_rows[r * 5 + 4];
+        int pos_a = layer_a >= 0 && layer_a < MAX_LAYERS
+            ? s->sid_pos_by_layer[sid_a][layer_a] : s->sid_pos[sid_a];
+        int pos_b = layer_b >= 0 && layer_b < MAX_LAYERS
+            ? s->sid_pos_by_layer[sid_b][layer_b] : s->sid_pos[sid_b];
         if (pos_a < 0 || pos_b < 0) continue;
         float proximity;
         if (pos_layer[pos_a] == pos_layer[pos_b]) {
-            proximity = 1.0f - dist[pos_a * n_pos + pos_b] * 0.2f;
+            proximity = 1.0f / (1.0f + dist[pos_a * n_pos + pos_b] * 0.2f);
         } else {
-            proximity = 0.3f - dist[pos_a * n_pos + pos_b] * 0.2f;
+            proximity = 0.3f / (1.0f + dist[pos_a * n_pos + pos_b] * 0.2f);
         }
-        if (proximity > 0.0f) {
-            adjacency += weight * 5.0f * 2.0f * proximity;
-        }
+        adjacency += weight * 5.0f * 2.0f * proximity;
     }
 
     for (int sid_a = 0; sid_a < n_short; sid_a++) {
@@ -1063,7 +1046,6 @@ __device__ void evaluate_single(
     // Thumb occupancy
     float thumb_occ = 0.0f;
     for (int target_layer = 0; target_layer < MAX_LAYERS; target_layer++) {
-        if (s->direct_left_thumb_momentary[target_layer] && s->direct_right_thumb_momentary[target_layer]) continue;
         bool restrict_left = s->direct_left_thumb_momentary[target_layer];
         bool restrict_right = s->direct_right_thumb_momentary[target_layer];
         if (!restrict_left && !restrict_right) continue;
@@ -1072,14 +1054,8 @@ __device__ void evaluate_single(
             if (sid < 0 || sid >= n_short) continue;
             if (pos_layer[i] != target_layer || !pos_is_thumb[i]) continue;
             if ((pos_hand[i] == 0 && restrict_left) || (pos_hand[i] == 1 && restrict_right)) {
-                if (s->reachable_toggle_access[target_layer]) {
-                    float effort_gap = 4.0f - pos_effort[i];
-                    if (effort_gap > 0.0f) {
-                        thumb_occ += effort_gap * (1.0f + shortcut_importance[sid] * 0.5f);
-                    }
-                } else {
-                    thumb_occ += 1.0f + shortcut_importance[sid] * 0.5f;
-                }
+                if (shortcut_access_target[sid] == 0) continue;
+                thumb_occ += 1.0f + shortcut_importance[sid] * 0.5f;
             }
         }
     }
@@ -1373,10 +1349,8 @@ __device__ void evaluate_single(
     // -------------------------------------------------------------------------
     float dynamic_mouse_layer = 100000.0f;
     int natural_mouse_layer = -1;
-    // Pass 1: determine the final natural_mouse_layer up front, from the same
-    // conditions used below, so pair_bonus_eligible (Pass 2) and the global
-    // same-layer-duplicate rule can both test `layer == natural_mouse_layer`
-    // directly instead of re-deriving a subset of the qualifying conditions.
+    // The dynamic scan is a legacy soft diagnostic; the owner contract below
+    // remains authoritative for the fixed L1 role.
     for (int layer = 0; layer < MAX_LAYERS; layer++) {
         if (layer == 0 || layer == 7) continue;
         int button_count = 0;
@@ -1409,7 +1383,7 @@ __device__ void evaluate_single(
         }
     }
 
-    // Pass 2: per-candidate-layer soft scoring (dynamic_mouse_layer).
+    // Pass 2: score the fixed L1 mouse role (legacy metric name retained).
     // natural_mouse_layer_penalty tracks the candidate_penalty of the one
     // layer Pass 1 already settled on as the real, accepted natural mouse
     // layer. Without this, dynamic_mouse_layer (the min() below) permanently
@@ -1439,15 +1413,10 @@ __device__ void evaluate_single(
         }
         int missing_buttons = 5 - button_count;
         float candidate_penalty = (float)missing_buttons * 200000.0f;
-        // Duplicate mouse-button policy: a second copy of the same button on
-        // this layer is only acceptable as one left-side + one right-side
-        // pair, and only when this layer is the actual, currently-recognized
-        // dynamic mouse layer (natural_mouse_layer, settled in Pass 1 above)
-        // — not merely "looks complete" by a narrower subset of conditions.
-        // Two right-side copies, or any duplicate on a layer that isn't
-        // natural_mouse_layer, pay a heavy penalty so evolution keeps a
-        // single right-side copy instead of scattering same-layer spam.
-        bool pair_bonus_eligible = (layer == natural_mouse_layer);
+        // The legacy left+right mouse-button pair exception is limited to the
+        // owner-defined L1 role. Other layers cannot earn that role by
+        // accumulating buttons and scroll bindings.
+        bool pair_bonus_eligible = (layer == 1 && layer == natural_mouse_layer);
         for (int button = 1; button < 6; button++) {
             int rc = s->mouse_button_right_count[layer][button];
             int lc = s->mouse_button_left_count[layer][button];
@@ -1598,11 +1567,8 @@ __device__ void evaluate_single(
     }
 
     // Global same-layer-duplicate rule: no shortcut may appear more than once
-    // on the same layer. L7 is fully excluded (frozen). The dynamic mouse
-    // layer allows exactly one extra copy of a core mouse button, as one
-    // left-side + one right-side placement — never two on the same side, and
-    // only on the currently-recognized natural_mouse_layer, not merely a
-    // layer that happens to hold mouse buttons.
+    // on the same layer. L7 is fully excluded (frozen). Only L1 can allow one
+    // left+right mouse-button pair; no other layer gets that exception.
     float same_layer_duplicate = 0.0f;
     for (int layer = 0; layer < MAX_LAYERS; layer++) {
         if (layer == 7) continue;
@@ -1620,7 +1586,8 @@ __device__ void evaluate_single(
             int c = s->layer_sid_counts[layer][sid];
             if (c <= 1) continue;
             int cap = 1;
-            if (layer == natural_mouse_layer && shortcut_is_mouse[sid] && shortcut_mouse_button[sid] > 0) {
+            if (layer == 1 && layer == natural_mouse_layer
+                && shortcut_is_mouse[sid] && shortcut_mouse_button[sid] > 0) {
                 int button = shortcut_mouse_button[sid];
                 int rc = s->mouse_button_right_count[layer][button];
                 int lc = s->mouse_button_left_count[layer][button];
@@ -1742,7 +1709,8 @@ __device__ void evaluate_single(
     }
 
     // -------------------------------------------------------------------------
-    // Empty position penalty (added to effort)
+    // Empty position penalty on generated layers only (added to effort).
+    // L0 is valuable base-layer capacity and may intentionally remain open.
     // -------------------------------------------------------------------------
     int layer_occupancy[MAX_LAYERS] = {0};
     for (int i = 0; i < n_pos; i++) {
@@ -1762,7 +1730,7 @@ __device__ void evaluate_single(
         if (genome[i] >= 0) continue;
         if (pos_is_frozen[i]) continue;
         int layer = pos_layer[i];
-        if (layer == 7) continue;
+        if (layer == 0 || layer == 7) continue;
         if (s->layer_access_cost[layer] >= 999999.0f) continue;
         float pv = 1.0f / (1.0f + pos_effort[i]);
         float xk = 8.0f * (pv - 0.5f);
@@ -1773,9 +1741,6 @@ __device__ void evaluate_single(
         float ld = s->layer_demand[layer];
         float demand_scale = 1.0f + ld / (1.0f + ld * 2.0f) * 0.6f;
         float empty_penalty = gate * layer_factor * demand_scale * 100.0f;
-        if (layer == 0) {
-            empty_penalty *= 3.0f;
-        }
         effort += empty_penalty;
     }
 
@@ -1869,12 +1834,8 @@ __device__ void evaluate_single(
     float empty_pos_waste = 0.0f;
     for (int i = 0; i < n_pos; i++) {
         int lyr = pos_layer[i];
-        if (genome[i] < 0 && !pos_is_frozen[i] && lyr != 7) {
-            if (lyr == 0) {
-                empty_pos_waste += pos_effort_waste[i] * 3.0f;
-            } else {
-                empty_pos_waste += pos_effort_waste[i];
-            }
+        if (genome[i] < 0 && !pos_is_frozen[i] && lyr != 0 && lyr != 7) {
+            empty_pos_waste += pos_effort_waste[i];
         }
     }
 
@@ -1978,9 +1939,12 @@ __device__ void evaluate_single(
     // -------------------------------------------------------------------------
     float workflow = 0.0f;
     for (int r = 0; r < n_chain_rows; r++) {
-        int sid_a = (int)chain_rows[r * 3 + 0];
-        int sid_b = (int)chain_rows[r * 3 + 1];
-        float weight = chain_rows[r * 3 + 2];
+        int sid_a = (int)chain_rows[r * 5 + 0];
+        int sid_b = (int)chain_rows[r * 5 + 1];
+        int layer_a = (int)chain_rows[r * 5 + 2];
+        int layer_b = (int)chain_rows[r * 5 + 3];
+        float weight = chain_rows[r * 5 + 4];
+        if (layer_a >= 0 || layer_b >= 0) continue;
         int pos_a = s->sid_pos[sid_a];
         int pos_b = s->sid_pos[sid_b];
         if (pos_a >= 0 && pos_b >= 0 && pos_layer[pos_a] != pos_layer[pos_b]) {
@@ -1988,9 +1952,12 @@ __device__ void evaluate_single(
         }
     }
     for (int r = 0; r < n_workflow_rows; r++) {
-        int sid_a = (int)workflow_rows[r * 3 + 0];
-        int sid_b = (int)workflow_rows[r * 3 + 1];
-        float weight = workflow_rows[r * 3 + 2];
+        int sid_a = (int)workflow_rows[r * 5 + 0];
+        int sid_b = (int)workflow_rows[r * 5 + 1];
+        int layer_a = (int)workflow_rows[r * 5 + 2];
+        int layer_b = (int)workflow_rows[r * 5 + 3];
+        float weight = workflow_rows[r * 5 + 4];
+        if (layer_a >= 0 || layer_b >= 0) continue;
         int pos_a = s->sid_pos[sid_a];
         int pos_b = s->sid_pos[sid_b];
         if (pos_a >= 0 && pos_b >= 0 && pos_layer[pos_a] != pos_layer[pos_b]) {

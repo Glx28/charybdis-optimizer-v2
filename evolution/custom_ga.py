@@ -1,32 +1,174 @@
 """Custom single-objective GA replacing pymoo NSGA2.
 
 Eliminates pymoo's Population objects, Pareto sort, crowding distance,
-and Python tournament loop. Uses GPU tournament selection (basic PyTorch
-tensor ops, CUDA 6.1 compatible) and keeps all existing operators
-(SwapMutation, StructuralGenomeSanitizer) unchanged.
+and Python tournament loop. Parent selection, crossover, mutation, repair,
+and survival run on CPU; exact fitness evaluation runs on CUDA when enabled.
 
 Expected speedup vs pymoo NSGA2: ~2x (from ~74ms/gen to ~38ms/gen).
 Phase-2 vectorized swap brings this to ~3x (~23ms/gen).
 """
 
-import concurrent.futures
 import glob
 import json
 import os
 import random
 import time
+from collections import OrderedDict
 
 import numpy as np
-import torch
 
 from evolution.acceptance import build_acceptance_report
 from evolution.arrow_cluster import analyze_arrows
-from evolution.completion_cluster import analyze_completion_cluster
+from evolution.completion_cluster import (
+    analyze_completion_cluster, completion_order, is_raw_completion_base,
+)
+from evolution.group_shapes import NORWEGIAN_CLUSTER_OFFSETS
 from evolution import NUMBA_AVAILABLE
 from tools.semantic_cluster_report import _cluster_quality
 
 if NUMBA_AVAILABLE:
     from evolution import _cycle_crossover_pair_numba, _cycle_crossover_batch_numba
+    from numba import njit
+
+    @njit(cache=True)
+    def _completion_cluster_pass_fast(
+        genome, shortcut_order, pos_layer, pos_x, pos_y, pos_frozen, offsets,
+    ):
+        """Match the completion acceptance check without allocating a report."""
+        first_pos = np.full(len(shortcut_order), -1, dtype=np.int32)
+        selected_sid = np.full(6, -1, dtype=np.int32)
+        layer_seen = np.full(6, -1, dtype=np.int32)
+        common_layer = -1
+        for idx in range(len(genome)):
+            sid = int(genome[idx])
+            if sid < 0 or sid >= len(shortcut_order):
+                continue
+            order = int(shortcut_order[sid])
+            if order < 1 or order > 5:
+                continue
+            if first_pos[sid] < 0:
+                first_pos[sid] = idx
+            selected_sid[order] = sid
+            layer = int(pos_layer[idx])
+            if pos_frozen[idx] or layer == 7:
+                continue
+            if layer_seen[order] < 0:
+                layer_seen[order] = layer
+            elif layer_seen[order] != layer:
+                return False
+            if common_layer < 0:
+                common_layer = layer
+            elif common_layer != layer:
+                return False
+        if common_layer < 0:
+            return False
+        for order in range(1, 6):
+            sid = int(selected_sid[order])
+            if sid < 0 or first_pos[sid] < 0 or layer_seen[order] < 0:
+                return False
+        anchor = first_pos[int(selected_sid[2])]
+        anchor_x = float(pos_x[anchor])
+        anchor_y = float(pos_y[anchor])
+        for order in range(1, 6):
+            idx = first_pos[int(selected_sid[order])]
+            if (abs(float(pos_x[idx]) - (anchor_x + float(offsets[order, 0]))) > 0.5
+                    or abs(float(pos_y[idx]) - (anchor_y + float(offsets[order, 1]))) > 0.5):
+                return False
+        return True
+
+    @njit(cache=True)
+    def _cluster_counts_fast(
+        genome, pos_layer, pos_x, pos_y, n_shortcuts,
+        cluster_starts, member_sids, member_dx, member_dy, requires_order,
+    ):
+        """Exact archive cluster metrics without rescanning the genome per cluster."""
+        first_pos = np.full((n_shortcuts, 32), -1, dtype=np.int32)
+        layer_masks = np.zeros(n_shortcuts, dtype=np.uint32)
+        for idx in range(len(genome)):
+            sid = int(genome[idx])
+            layer = int(pos_layer[idx])
+            if 0 <= sid < n_shortcuts and 0 <= layer < 32:
+                layer_masks[sid] |= np.uint32(1) << np.uint32(layer)
+                if first_pos[sid, layer] < 0:
+                    first_pos[sid, layer] = idx
+
+        together = 0
+        order_ok = 0
+        ordered_total = 0
+        n_clusters = len(cluster_starts) - 1
+        for cluster_idx in range(n_clusters):
+            start = int(cluster_starts[cluster_idx])
+            end = int(cluster_starts[cluster_idx + 1])
+            if end <= start:
+                continue
+            shared_layers = np.uint32(0xFFFFFFFF)
+            has_assignment = False
+            for member_idx in range(start, end):
+                sid = int(member_sids[member_idx])
+                if sid < 0 or sid >= n_shortcuts:
+                    shared_layers = np.uint32(0)
+                    break
+                if layer_masks[sid] != 0:
+                    has_assignment = True
+                shared_layers &= layer_masks[sid]
+            if requires_order[cluster_idx] and has_assignment:
+                ordered_total += 1
+            if shared_layers == 0:
+                continue
+            together += 1
+            if not requires_order[cluster_idx]:
+                continue
+
+            # _cluster_quality chooses the first full layer in member-order /
+            # position-order traversal. Since every full layer has a copy of
+            # the first member, its first position determines that same layer.
+            first_sid = int(member_sids[start])
+            dominant_layer = -1
+            dominant_first = len(genome) + 1
+            for layer in range(32):
+                if (shared_layers & (np.uint32(1) << np.uint32(layer))) != 0:
+                    idx = int(first_pos[first_sid, layer])
+                    if 0 <= idx < dominant_first:
+                        dominant_first = idx
+                        dominant_layer = layer
+            if dominant_layer < 0:
+                continue
+
+            anchor_member = -1
+            for member_idx in range(start, end):
+                if (abs(float(member_dx[member_idx])) <= 0.01
+                        and abs(float(member_dy[member_idx])) <= 0.01):
+                    anchor_member = member_idx
+                    break
+            # Preserve existing report semantics: absent anchor yields zero
+            # order errors, so a complete relative cluster counts as ordered.
+            if anchor_member < 0:
+                order_ok += 1
+                continue
+            anchor_sid = int(member_sids[anchor_member])
+            anchor_pos = int(first_pos[anchor_sid, dominant_layer])
+            if anchor_pos < 0:
+                order_ok += 1
+                continue
+            anchor_x = float(pos_x[anchor_pos])
+            anchor_y = float(pos_y[anchor_pos])
+            valid_order = True
+            for member_idx in range(start, end):
+                sid = int(member_sids[member_idx])
+                idx = int(first_pos[sid, dominant_layer])
+                if idx < 0:
+                    continue
+                dx = float(pos_x[idx]) - (anchor_x + float(member_dx[member_idx]))
+                dy = float(pos_y[idx]) - (anchor_y + float(member_dy[member_idx]))
+                if dx * dx + dy * dy > 0.25:
+                    valid_order = False
+                    break
+            if valid_order:
+                order_ok += 1
+        return together, order_ok, n_clusters, ordered_total
+else:
+    _cluster_counts_fast = None
+    _completion_cluster_pass_fast = None
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +182,8 @@ def _constraint_penalty_from_objectives(F, min_penalty=2.0, max_penalty=25.0, sp
     survive if it buys enough objective improvement to explore a new basin, but
     exact archive/final ranking still rejects dynamic-mouse failure.
     """
-    totals = F.sum(axis=1) if F.ndim == 2 else np.asarray(F, dtype=np.float32)
+    values = np.asarray(F, dtype=np.float64)
+    totals = values.sum(axis=1) if values.ndim == 2 else values
     if totals.size < 2:
         return float(min_penalty)
     q25, q75 = np.percentile(totals.astype(np.float64), [25, 75])
@@ -50,6 +193,20 @@ def _constraint_penalty_from_objectives(F, min_penalty=2.0, max_penalty=25.0, sp
     return float(np.clip(spread * spread_fraction, min_penalty, max_penalty))
 
 
+def _has_unsupported_duplicate(genome, unsupported_sid_mask, frozen_mask):
+    """Fast archive prefilter; detailed duplicate evidence remains in reports."""
+    if unsupported_sid_mask is None or not np.any(unsupported_sid_mask):
+        return False
+    values = np.asarray(genome, dtype=np.int32)
+    assigned = values >= 0
+    total = np.bincount(values[assigned], minlength=len(unsupported_sid_mask))
+    frozen_values = values[np.asarray(frozen_mask, dtype=np.bool_) & assigned]
+    frozen = np.bincount(frozen_values, minlength=len(unsupported_sid_mask))
+    return bool(np.any(
+        unsupported_sid_mask & (total > 1) & (frozen < total)
+    ))
+
+
 def _scalar(F, cv=None, constraint_penalty=None):
     """Exploration scalar fitness. Lower is better.
 
@@ -57,7 +214,8 @@ def _scalar(F, cv=None, constraint_penalty=None):
     intermediate states. Archive/final-best ranking applies hard acceptance
     tiers after exact evaluation.
     """
-    s = F.sum(axis=1) if F.ndim == 2 else np.asarray(F, dtype=np.float32)
+    values = np.asarray(F, dtype=np.float64)
+    s = values.sum(axis=1) if values.ndim == 2 else values
     if cv is not None:
         if constraint_penalty is None:
             constraint_penalty = _constraint_penalty_from_objectives(np.asarray(F))
@@ -92,6 +250,35 @@ def _prioritize_exact_eval_indices(sampled_indices, priority_indices, limit):
             if len(selected) >= limit:
                 return np.asarray(selected, dtype=np.int32)
     return np.asarray(selected, dtype=np.int32)
+
+
+def _reject_invalid_children(children_X, children_F, children_cv, fallback_X,
+                             fallback_F, fallback_cv, exact_constraints):
+    """Restore each hard-invalid proposal to its known-valid selected parent."""
+    invalid = np.any(np.asarray(exact_constraints) > 0, axis=1)
+    if np.any(invalid):
+        children_X[invalid] = fallback_X[invalid]
+        children_F[invalid] = fallback_F[invalid]
+        children_cv[invalid] = fallback_cv[invalid]
+    return invalid
+
+
+def _ordered_feasible_archive_indices(batch_F, batch_G, incumbent_total_score=None):
+    """Return only feasible rows the archive loop can reach, lowest score first.
+
+    The archive loop stops at the incumbent's total score. Filter rows at or
+    above that cutoff before sorting, so converged batches do not sort 1,500
+    candidates merely to discover that their best score cannot improve it.
+    """
+    feasible = np.flatnonzero(np.all(np.asarray(batch_G) <= 0, axis=1))
+    if not len(feasible):
+        return feasible
+    scores = np.asarray(batch_F, dtype=np.float64).sum(axis=1)
+    if incumbent_total_score is not None:
+        feasible = feasible[scores[feasible] < float(incumbent_total_score)]
+        if not len(feasible):
+            return feasible
+    return feasible[np.argsort(scores[feasible])]
 
 
 def _crossover_batch(pop_X, parent_idx, crossover_prob, n_shortcuts):
@@ -172,9 +359,9 @@ def _survivor_indices(scalar, cv, n_pop, forced_indices=(), relaxed=False):
     return np.concatenate([beacons, soft, forced])
 
 
-def _dynamic_mouse_failed(entry):
+def _owner_contract_failed(entry):
     failed = set(entry.get("acceptance_failed_checks", []))
-    return "dynamic_mouse_layer_present" in failed
+    return bool({"owner_layout_contract_v1", "l1_mouse_contract"} & failed)
 
 
 def _warmstart_needs_access_sanitizing(entry):
@@ -190,7 +377,7 @@ def _warmstart_needs_access_sanitizing(entry):
 
 def _display_gap(entry, target=None):
     """Return an optional calibrated gap; retain a sentinel for mouse failure."""
-    if _dynamic_mouse_failed(entry):
+    if _owner_contract_failed(entry):
         return 5.0
     return None if target is None else float(entry["total_score"]) - float(target)
 
@@ -211,6 +398,49 @@ def _count_clusters_together(layout):
             if requires_order and r.get("order_errors", 0) == 0:
                 order_ok += 1
     return together, order_ok, len(clusters), ordered_total
+
+
+def _cluster_count_arrays(layout):
+    starts = [0]
+    member_sids, member_dx, member_dy, requires_order = [], [], [], []
+    for cluster in getattr(layout, "semantic_clusters", ()):
+        members = list(cluster.get("members", ()))
+        offsets = [(float(m.get("dx", 0.0)), float(m.get("dy", 0.0))) for m in members]
+        member_sids.extend(int(m.get("sid", -1)) for m in members)
+        member_dx.extend(dx for dx, _ in offsets)
+        member_dy.extend(dy for _, dy in offsets)
+        requires_order.append(any(abs(dx) > 0.01 or abs(dy) > 0.01 for dx, dy in offsets))
+        starts.append(len(member_sids))
+    return (
+        np.asarray(starts, dtype=np.int32),
+        np.asarray(member_sids, dtype=np.int32),
+        np.asarray(member_dx, dtype=np.float32),
+        np.asarray(member_dy, dtype=np.float32),
+        np.asarray(requires_order, dtype=np.bool_),
+    )
+
+
+def _archive_cluster_precheck_reason(counts, completion_pass, incumbent):
+    """Name an earlier archive tier that proves a candidate cannot win."""
+    if incumbent is None or not incumbent.get("optimizer_side_pass", False):
+        return None
+    incumbent_completion = bool(incumbent.get("norwegian_completion_cluster_pass", True))
+    if bool(completion_pass) != incumbent_completion:
+        return "norwegian_completion_cluster" if not completion_pass else None
+    together, ordered, total, ordered_total = counts
+    for candidate_count, candidate_total, incumbent_count_key, incumbent_total_key in (
+        (together, total, "clusters_together", "clusters_total"),
+        (ordered, ordered_total, "clusters_order_ok", "clusters_ordered_total"),
+    ):
+        incumbent_count = incumbent.get(incumbent_count_key)
+        incumbent_total = incumbent.get(incumbent_total_key)
+        if (incumbent_count is None or incumbent_total is None
+                or int(candidate_total) <= 0 or int(incumbent_total) <= 0):
+            continue
+        if (float(candidate_count) / int(candidate_total) + 1e-12
+                < float(incumbent_count) / int(incumbent_total)):
+            return "semantic_cluster_monotonicity"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -235,10 +465,10 @@ class CustomGARunner:
         build_dir,
         perf,
         hard_constraints,
-        mini_eval_count: int = 150,
         n_constraints: int = 0,
         semantic_multiplier_schedule=None,
         cluster_score_tolerance: float = 0.15,
+        unsupported_duplicate_sid_mask=None,
     ):
         self.layout = layout
         self.evaluator = evaluator
@@ -253,11 +483,34 @@ class CustomGARunner:
         self.build_dir = build_dir
         self.perf = perf
         self.hard_constraints = hard_constraints
-        self.mini_eval_count = max(1, int(mini_eval_count))
         self.n_factors = 3
         self.n_constraints = int(n_constraints)
+        self._archive_pos_layer = np.asarray(
+            [position.layer for position in layout.positions], dtype=np.int32
+        )
+        self._archive_pos_x = np.asarray(
+            [position.x for position in layout.positions], dtype=np.float32
+        )
+        self._archive_pos_y = np.asarray(
+            [position.y for position in layout.positions], dtype=np.float32
+        )
+        self._archive_pos_frozen = np.asarray(
+            [position.is_frozen for position in layout.positions], dtype=np.bool_
+        )
+        self._shortcut_completion_order = np.asarray([
+            completion_order(shortcut) if is_raw_completion_base(shortcut) else 0
+            for shortcut in layout.shortcuts
+        ], dtype=np.int32)
+        self._completion_offsets = np.zeros((6, 2), dtype=np.float32)
+        for order, (dx, dy) in NORWEGIAN_CLUSTER_OFFSETS.items():
+            self._completion_offsets[int(order), 0] = float(dx)
+            self._completion_offsets[int(order), 1] = float(dy)
         self.semantic_multiplier_schedule = list(semantic_multiplier_schedule or [])
         self.cluster_score_tolerance = float(cluster_score_tolerance)
+        self.unsupported_duplicate_sid_mask = (
+            None if unsupported_duplicate_sid_mask is None
+            else np.asarray(unsupported_duplicate_sid_mask, dtype=np.bool_)
+        )
         self._left_alt_sid = next(
             (shortcut.sid for shortcut in layout.shortcuts if shortcut.keys == "LeftAlt"),
             None,
@@ -267,9 +520,19 @@ class CustomGARunner:
              if position.layer == 0 and not position.is_frozen],
             dtype=np.int32,
         )
-
-        # Background thread pool for concurrent mini exact eval during GPU predict
-        self._eval_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self._cluster_pos_layer = np.asarray(
+            [position.layer for position in layout.positions], dtype=np.int32,
+        )
+        self._cluster_pos_x = np.asarray(
+            [position.x for position in layout.positions], dtype=np.float32,
+        )
+        self._cluster_pos_y = np.asarray(
+            [position.y for position in layout.positions], dtype=np.float32,
+        )
+        (self._cluster_starts, self._cluster_member_sids,
+         self._cluster_member_dx, self._cluster_member_dy,
+         self._cluster_requires_order) = _cluster_count_arrays(layout)
+        self._layout_cluster_cache = OrderedDict()
 
         # State
         self.global_best_genome = None
@@ -289,6 +552,10 @@ class CustomGARunner:
         self.exact_history = []
         self._should_stop = False
         self.best_exact = None
+        self.archive_acceptance_rejections = {}
+        self.archive_duplicate_prefilter_rejections = 0
+        self.archive_cluster_prefilter_rejections = 0
+        self.archive_cluster_prefilter_reasons = {}
         self._relaxed_selection_until = 0  # gen until which to use diversity-preserving survival
 
     # ------------------------------------------------------------------
@@ -351,7 +618,34 @@ class CustomGARunner:
     @staticmethod
     def _fallback_key(objectives, constraints):
         cv = np.maximum(np.asarray(constraints, dtype=np.float64), 0.0)
-        return (int(np.count_nonzero(cv)), float(cv.sum()), float(np.asarray(objectives).sum()))
+        return (
+            int(np.count_nonzero(cv)), float(cv.sum()),
+            float(np.asarray(objectives, dtype=np.float64).sum()),
+        )
+
+    def _write_live_perf(self, generation, elapsed_seconds):
+        """Persist per-stage timings at each checkpoint for live run review."""
+        if self.perf is None or not self.build_dir:
+            return
+        report = {
+            "generation": int(generation),
+            "elapsed_seconds": float(elapsed_seconds),
+            "seconds_per_generation": float(elapsed_seconds) / max(int(generation), 1),
+            "events": self.perf.summary(),
+        }
+        path = os.path.join(self.build_dir, "v2_perf_live.json")
+        temporary = path + ".tmp"
+        with open(temporary, "w", encoding="utf-8") as stream:
+            json.dump(report, stream, indent=2)
+        os.replace(temporary, path)
+
+    def _record_generation_stage(self, name, started):
+        """Record one non-overlapping stage in the current generation."""
+        elapsed = time.perf_counter() - started
+        if self.perf:
+            self.perf.add(name, elapsed)
+        self._generation_stage_seconds += elapsed
+        return elapsed
 
     def _consider_infeasible_anchor(self, genome, objectives, constraints):
         """Retain the best exact low-violation genome for continued search."""
@@ -379,64 +673,106 @@ class CustomGARunner:
         if batch_X is None or len(batch_X) == 0:
             return
         if self.global_best_genome is None:
+            anchor_t0 = time.perf_counter()
             for i in range(len(batch_X)):
                 self._consider_infeasible_anchor(batch_X[i], batch_F[i], batch_G[i])
-        totals = _scalar(batch_F, batch_G)
-        feasible_indices = np.flatnonzero(np.all(batch_G <= 0, axis=1))
-        if len(feasible_indices):
-            # Soft population selection may prefer an infeasible child. The
-            # exact archive must still consider feasible members of this batch.
-            mini_best_i = int(feasible_indices[np.argmin(batch_F[feasible_indices].sum(axis=1))])
-        else:
-            mini_best_i = int(np.argmin(totals))
-        mini_best_genome = batch_X[mini_best_i]
-        mini_entry = self._exact_entry(
-            type(
-                "obj",
-                (object,),
-                {
-                    "objectives": batch_F[mini_best_i].copy(),
-                    "constraints": batch_G[mini_best_i].copy(),
-                    "factor_scores": self.evaluator._factor_scores_from_objectives(
-                        batch_F[mini_best_i]
-                    ),
-                    "total_score": float(batch_F[mini_best_i].sum()),
-                },
-            )(),
-            gen,
+            if self.perf:
+                self.perf.add("archive_anchor_scan", time.perf_counter() - anchor_t0)
+        incumbent_score = (
+            None if self.global_best_exact is None
+            else float(self.global_best_exact["total_score"])
         )
-        mini_best_layout = self.layout.clone_with(
-            genome=mini_best_genome.astype(np.int32)
+        prefilter_t0 = time.perf_counter()
+        feasible_indices = _ordered_feasible_archive_indices(
+            batch_F, batch_G, incumbent_score
         )
-        _, _, _, mini_acc = self._layout_reports(mini_best_layout)
-        self._annotate(mini_entry, mini_acc)
-        self._annotate_clusters(mini_entry, mini_best_layout)
-        if self._is_better(mini_entry, self.global_best_exact):
-            self._update_archive(mini_best_genome, mini_entry)
-            gap = _display_gap(mini_entry)
-            clusters = mini_entry.get("clusters_together")
-            details = []
-            if clusters is not None:
-                details.append(f"clusters={clusters}/{mini_entry.get('clusters_total')}")
-            if gap is not None:
-                details.append(f"contract_failure_signal={gap:.1f}")
-            details.append("source=exact_eval")
-            print(
-                f"    Gen {gen}: global best improved to {mini_entry['total_score']:.4f}"
-                f" ({', '.join(details)})",
-                flush=True,
+        if self.perf:
+            self.perf.add("archive_prefilter", time.perf_counter() - prefilter_t0)
+        if not len(feasible_indices):
+            return
+        for i in feasible_indices:
+            duplicate_t0 = time.perf_counter()
+            duplicate_rejected = _has_unsupported_duplicate(
+                batch_X[i], getattr(self, "unsupported_duplicate_sid_mask", None),
+                self.layout.frozen_mask,
             )
+            if self.perf:
+                self.perf.add("archive_duplicate_prefilter", time.perf_counter() - duplicate_t0)
+            if duplicate_rejected:
+                self.archive_duplicate_prefilter_rejections += 1
+                continue
+            score = float(np.asarray(batch_F[i], dtype=np.float64).sum())
+            candidate = batch_X[i]
+            candidate_layout = self.layout.clone_with(genome=candidate.astype(np.int32))
+            cluster_t0 = time.perf_counter()
+            completion_report = None
+            if all(hasattr(self, name) for name in (
+                    "_shortcut_completion_order", "_archive_pos_layer",
+                    "_archive_pos_x", "_archive_pos_y",
+                    "_archive_pos_frozen", "_completion_offsets")):
+                completion_pass = _completion_cluster_pass_fast(
+                    candidate, self._shortcut_completion_order,
+                    self._archive_pos_layer, self._archive_pos_x,
+                    self._archive_pos_y, self._archive_pos_frozen,
+                    self._completion_offsets,
+                )
+            else:
+                completion_report = analyze_completion_cluster(candidate_layout)
+                completion_pass = bool(completion_report.get("acceptance_pass", False))
+            cluster_counts = self._cluster_counts(candidate)
+            cluster_reject_reason = _archive_cluster_precheck_reason(
+                cluster_counts, completion_pass, self.global_best_exact,
+            )
+            if self.perf:
+                self.perf.add("archive_cluster_prefilter", time.perf_counter() - cluster_t0)
+            if cluster_reject_reason:
+                self.archive_cluster_prefilter_rejections += 1
+                self.archive_cluster_prefilter_reasons[cluster_reject_reason] = (
+                    self.archive_cluster_prefilter_reasons.get(cluster_reject_reason, 0) + 1
+                )
+                continue
+            if completion_report is None:
+                completion_report = analyze_completion_cluster(candidate_layout)
+            entry = self._exact_entry(
+                type("obj", (object,), {
+                    "objectives": batch_F[i].copy(),
+                    "constraints": batch_G[i].copy(),
+                    "factor_scores": self.evaluator._factor_scores_from_objectives(batch_F[i]),
+                    "total_score": score,
+                })(), gen,
+            )
+            together, ordered, total, ordered_total = cluster_counts
+            entry.update({
+                "clusters_together": int(together),
+                "clusters_order_ok": int(ordered),
+                "clusters_total": int(total),
+                "clusters_ordered_total": int(ordered_total),
+            })
+            report_t0 = time.perf_counter()
+            _, _, _, acceptance = self._layout_reports(
+                candidate_layout, completion_report=completion_report,
+            )
+            self._annotate(entry, acceptance)
+            for check, passed in acceptance.get("optimizer_side_checks", {}).items():
+                if not passed:
+                    self.archive_acceptance_rejections[check] = (
+                        self.archive_acceptance_rejections.get(check, 0) + 1
+                    )
+            if self.perf:
+                self.perf.add("archive_candidate_reports", time.perf_counter() - report_t0)
+            if not self._is_better(entry, self.global_best_exact):
+                continue
+            self._update_archive(candidate, entry)
+            print(f"    Gen {gen}: global best improved to {entry['total_score']:.4f} (source=exact_eval)", flush=True)
+            break
 
     def _is_better(self, candidate, incumbent):
         cand_cv = sum(max(0.0, float(x)) for x in candidate.get("constraints", []))
+        if (cand_cv != 0.0 or _owner_contract_failed(candidate)
+                or not candidate.get("optimizer_side_pass", False)):
+            return False
         if incumbent is None:
-            # Never seed the archive with an infeasible candidate: until a
-            # feasible individual is found, global_best_genome/global_best_exact
-            # stay None and checkpoint writing falls back to
-            # population_best_genome (see run_evolution.py). This guarantees
-            # any checkpoint's best_genome (best_source="global_exact_archive")
-            # has zero hard-constraint violations by construction.
-            return cand_cv == 0.0
+            return True
         inc_cv = sum(max(0.0, float(x)) for x in incumbent.get("constraints", []))
         # Only prefer lower constraint violation when one solution is feasible (cv=0)
         # and the other isn't. When both violate constraints the violation penalty is
@@ -445,8 +781,8 @@ class CustomGARunner:
         inc_feasible = inc_cv == 0.0
         if cand_feasible != inc_feasible:
             return cand_feasible
-        cand_mouse_fail = _dynamic_mouse_failed(candidate)
-        inc_mouse_fail = _dynamic_mouse_failed(incumbent)
+        cand_mouse_fail = _owner_contract_failed(candidate)
+        inc_mouse_fail = _owner_contract_failed(incumbent)
         if cand_mouse_fail != inc_mouse_fail:
             return not cand_mouse_fail
         # The Norwegian raw-key cluster is a user acceptance requirement. Keep
@@ -579,9 +915,24 @@ class CustomGARunner:
             return True
         return False
 
-    def _layout_reports(self, layout_obj):
+    def _layout_reports(self, layout_obj, completion_report=None):
+        # A converged population can propose the same genome many times. These
+        # reports depend only on the genome and fixed layout metadata; retain a
+        # bounded LRU so exact archive filtering does not re-audit repeats.
+        cache = getattr(self, "_layout_reports_cache", None)
+        if cache is None:
+            cache = OrderedDict()
+            self._layout_reports_cache = cache
+        genome = np.asarray(layout_obj.genome, dtype=np.int32)
+        key = genome.tobytes()
+        cached = cache.get(key)
+        if cached is not None:
+            cache.move_to_end(key)
+            return cached
+
         dup = self.analyze_duplicates(layout_obj)
-        comp = analyze_completion_cluster(layout_obj)
+        comp = (completion_report if completion_report is not None
+                else analyze_completion_cluster(layout_obj))
         arr = analyze_arrows(layout_obj)
         acc = build_acceptance_report(
             layout_obj,
@@ -589,7 +940,11 @@ class CustomGARunner:
             completion_cluster_report=comp,
             arrow_report=arr,
         )
-        return dup, comp, arr, acc
+        reports = (dup, comp, arr, acc)
+        cache[key] = reports
+        if len(cache) > 512:
+            cache.popitem(last=False)
+        return reports
 
     def _annotate(self, entry, acceptance):
         failed = [
@@ -605,12 +960,48 @@ class CustomGARunner:
 
     def _annotate_clusters(self, entry, layout):
         """Add semantic-cluster counts to an exact-eval entry."""
-        together, order_ok, total, ordered_total = _count_clusters_together(layout)
+        counts = self._cluster_counts(layout.genome, layout_obj=layout)
+        together, order_ok, total, ordered_total = counts
         entry["clusters_together"] = int(together)
         entry["clusters_order_ok"] = int(order_ok)
         entry["clusters_ordered_total"] = int(ordered_total)
         entry["clusters_total"] = int(total)
         return entry
+
+    def _cluster_counts(self, genome, layout_obj=None):
+        cache = getattr(self, "_layout_cluster_cache", None)
+        if cache is None:
+            cache = OrderedDict()
+            self._layout_cluster_cache = cache
+        values = np.asarray(genome, dtype=np.int32)
+        key = values.tobytes()
+        counts = cache.get(key)
+        if counts is None:
+            if (_cluster_counts_fast is None
+                    or not hasattr(self, "_cluster_pos_layer")):
+                source_layout = layout_obj
+                if source_layout is None:
+                    source_layout = self.layout.clone_with(genome=values)
+                counts = _count_clusters_together(source_layout)
+            else:
+                counts = _cluster_counts_fast(
+                    values,
+                    self._cluster_pos_layer,
+                    self._cluster_pos_x,
+                    self._cluster_pos_y,
+                    self.layout.n_shortcuts,
+                    self._cluster_starts,
+                    self._cluster_member_sids,
+                    self._cluster_member_dx,
+                    self._cluster_member_dy,
+                    self._cluster_requires_order,
+                )
+            cache[key] = counts
+            if len(cache) > 512:
+                cache.popitem(last=False)
+        else:
+            cache.move_to_end(key)
+        return counts
 
     # ------------------------------------------------------------------
     # Adaptive mutation rate
@@ -919,9 +1310,9 @@ class CustomGARunner:
                 )
                 self._should_stop = True
 
-        archive_genome = (
-            self.global_best_genome if self.global_best_genome is not None else best_genome
-        )
+        if self.global_best_genome is None or self.global_best_exact is None:
+            raise RuntimeError(f"No fully valid genome available for generation {gen} checkpoint")
+        archive_genome = self.global_best_genome
         archive_layout = self.layout.clone_with(genome=archive_genome)
         archive_entry = dict(self.global_best_exact or entry)
         self.best_exact = archive_entry
@@ -938,7 +1329,7 @@ class CustomGARunner:
             "best_objectives": [float(x) for x in archive_entry["objectives"]],
             "best_constraints": [float(x) for x in archive_entry["constraints"]],
             "best_exact": archive_entry,
-            "best_source": "global_exact_archive" if self.global_best_genome is not None else "population_exact_fallback",
+            "best_source": "global_exact_archive",
             "best_generation": self.global_best_generation,
             "population_best_genome": [int(x) for x in best_genome],
             "population_best_objectives": [float(x) for x in entry["objectives"]],
@@ -1108,88 +1499,68 @@ class CustomGARunner:
 
         for gen in range(1, n_gen + 1):
             t_gen = time.perf_counter()
+            self._generation_stage_seconds = 0.0
 
             # --- Staged semantic-cluster multiplier ---
+            stage_t0 = time.perf_counter()
             if self._apply_semantic_multiplier_schedule(gen):
                 pop_F, pop_cv = self._refresh_semantic_scores(pop_X)
+            self._record_generation_stage("semantic_schedule_and_refresh", stage_t0)
 
-            # --- Tournament selection (GPU) ---
+            # --- Tournament selection ---
+            stage_t0 = time.perf_counter()
             scalar = _scalar(pop_F, pop_cv)
             parent_idx = _tournament_select(scalar, self.pop_size)
+            fallback_X = pop_X[parent_idx].astype(np.int32).copy()
+            self._record_generation_stage("parent_selection", stage_t0)
 
             # --- Crossover ---
+            stage_t0 = time.perf_counter()
             children_X = _crossover_batch(
                 pop_X, parent_idx, self.crossover_prob, self.n_shortcuts
             )
+            self._record_generation_stage("crossover", stage_t0)
 
             # --- Mutation (call directly, problem=None is safe) ---
+            stage_t0 = time.perf_counter()
             self.mutation._do(None, children_X)
+            self._record_generation_stage("mutation", stage_t0)
 
             # --- Repair ---
+            stage_t0 = time.perf_counter()
             self.sanitizer._do(None, children_X)
+            self._record_generation_stage("sanitizer", stage_t0)
 
-            # --- Hybrid exact/surrogate evaluation ---
-            n_children = len(children_X)
-            n_cv_cols = self.n_constraints if self.n_constraints > 0 else len(self.hard_constraints)
+            # Exact-evaluate each child once. The GPU batch supplies both the
+            # true objective for survivor selection and the hard-contract audit;
+            # surrogate scores must never decide survival for audited children.
+            t0 = time.perf_counter()
+            children_F, children_G = self.evaluator.evaluate_batch(children_X)
+            children_cv = np.maximum(children_G, 0).astype(np.float32)
+            self._record_generation_stage("exact_eval", t0)
+
+            stage_t0 = time.perf_counter()
             if sm is not None and sm.trainer.mean is not None:
-                if self.mini_eval_count >= n_children:
-                    # Fix #2: exact-evaluate every child (mini_eval_fraction ≈ 1.0).
-                    t0 = time.perf_counter()
-                    children_F, children_G = self.evaluator.evaluate_batch(children_X)
-                    children_cv = np.maximum(children_G, 0).astype(np.float32)
-                    if self.perf:
-                        self.perf.add("exact_eval", time.perf_counter() - t0)
-                    sm.add_exact_evaluations(children_X, children_F, children_G)
-                    self._maybe_update_global_from_batch(
-                        children_X, children_F, children_G, gen
-                    )
-                else:
-                    # Submit a small exact-eval mini batch to background before GPU predict.
-                    # Exact scores for a subset of children act as selection "beacons" that
-                    # guide the search toward hard-constraint-satisfying regions.
-                    n_mini = min(self.mini_eval_count, n_children)
-                    mini_idx = np.random.choice(n_children, n_mini, replace=False)
-                    if self._left_alt_sid is not None and len(self._l0_mutable_positions):
-                        direct_alt = np.any(
-                            children_X[:, self._l0_mutable_positions] == self._left_alt_sid,
-                            axis=1,
-                        )
-                        priority_idx = np.flatnonzero(direct_alt)
-                        if len(priority_idx) > n_mini:
-                            priority_idx = np.random.choice(priority_idx, n_mini, replace=False)
-                        mini_idx = _prioritize_exact_eval_indices(
-                            mini_idx, priority_idx, n_mini,
-                        )
-                    mini_batch = children_X[mini_idx].copy()
-                    mini_future = self._eval_executor.submit(
-                        self.evaluator.evaluate_batch, mini_batch
-                    )
-                    t0 = time.perf_counter()
-                    pred = sm.trainer.predict(children_X)
-                    if self.perf:
-                        self.perf.add("surrogate_predict", time.perf_counter() - t0)
-                    # Fix #1: surrogate now predicts objectives + constraints.
-                    children_F = pred[:, : self.n_factors].astype(np.float32)
-                    children_cv = np.maximum(pred[:, self.n_factors :], 0).astype(np.float32)
-                    if children_cv.shape[1] == 0:
-                        children_cv = np.zeros((n_children, n_cv_cols), dtype=np.float32)
-                    # Collect exact results and splice back — overrides surrogate predictions
-                    # for these children with ground-truth fitness and constraints.
-                    mini_F, mini_G = mini_future.result()
-                    children_F[mini_idx] = mini_F
-                    children_cv[mini_idx] = np.maximum(mini_G, 0)
-                    sm.add_exact_evaluations(mini_batch, mini_F, mini_G)
-                    self._maybe_update_global_from_batch(
-                        mini_batch, mini_F, mini_G, gen
-                    )
-            else:
-                t0 = time.perf_counter()
-                children_F, children_G = self.evaluator.evaluate_batch(children_X)
-                children_cv = np.maximum(children_G, 0).astype(np.float32)
-                if self.perf:
-                    self.perf.add("exact_eval", time.perf_counter() - t0)
+                valid_rows = np.all(children_G <= 0, axis=1)
+                if np.any(valid_rows):
+                    sm.add_exact_evaluations(children_X[valid_rows], children_F[valid_rows],
+                                             children_G[valid_rows])
+                    self._maybe_update_global_from_batch(children_X[valid_rows],
+                                                         children_F[valid_rows],
+                                                         children_G[valid_rows], gen)
+                _reject_invalid_children(
+                    children_X, children_F, children_cv, fallback_X,
+                    pop_F[parent_idx], pop_cv[parent_idx], children_G,
+                )
+            elif np.any(np.any(children_G > 0, axis=1)):
+                _reject_invalid_children(
+                    children_X, children_F, children_cv, fallback_X,
+                    pop_F[parent_idx], pop_cv[parent_idx], children_G,
+                )
+            self._record_generation_stage("contract_filter_and_archive", stage_t0)
 
             # --- (µ+λ) survival: keep best pop_size from parents + children ---
+            stage_t0 = time.perf_counter()
             all_X = np.concatenate([pop_X, children_X], axis=0)
             all_F = np.concatenate([pop_F, children_F], axis=0)
             all_cv = np.concatenate([pop_cv, children_cv], axis=0) if 'children_cv' in dir() else None
@@ -1223,27 +1594,55 @@ class CustomGARunner:
             pop_X = all_X[survivors].astype(np.int32)
             pop_F = all_F[survivors]
             pop_cv = all_cv[survivors] if all_cv is not None else pop_cv
+            self._record_generation_stage("survivor_selection", stage_t0)
 
             # --- Adaptive mutation rate ---
+            stage_t0 = time.perf_counter()
             best_quality = float(_scalar(pop_F, pop_cv).min())
             self._adjust_mutation(best_quality, gen)
+            self._record_generation_stage("adaptive_mutation", stage_t0)
 
             # --- Periodic: teacher update, retrain, checkpoint ---
+            stage_t0 = time.perf_counter()
             pop_F, pop_cv = self._maybe_teacher_update(pop_X, pop_F, pop_cv, gen)
+            self._record_generation_stage("teacher_update_total", stage_t0)
 
             if gen % self.checkpoint_every == 0:
                 t0 = time.perf_counter()
                 self._checkpoint(pop_X, pop_F, pop_cv, gen)
-                if self.perf:
-                    self.perf.add("checkpoint", time.perf_counter() - t0)
+                self._record_generation_stage("checkpoint", t0)
                 # Diversity injection (uses stagnation_count updated above)
+                stage_t0 = time.perf_counter()
                 pop_X, pop_F, pop_cv = self._inject_diversity(pop_X, pop_F, pop_cv, gen)
-                if self._should_stop:
-                    break
+                self._record_generation_stage("diversity_injection", stage_t0)
 
             gen_times.append(time.perf_counter() - t_gen)
+            if self.perf:
+                self.perf.add("generation_total", gen_times[-1])
+                self.perf.add(
+                    "generation_unattributed",
+                    max(0.0, gen_times[-1] - self._generation_stage_seconds),
+                )
+            if gen % self.checkpoint_every == 0:
+                elapsed = time.perf_counter() - t_start
+                self._write_live_perf(gen, elapsed)
+                rate = gen / max(elapsed, 1e-9)
+                print(
+                    f"  Throughput at gen {gen}: {rate:.3f} gen/s "
+                    f"({1000.0 / max(rate, 1e-9):.1f} ms/gen)",
+                    flush=True,
+                )
+            if self._should_stop:
+                break
 
         total_time = time.perf_counter() - t_start
+        completed_generations = len(gen_times)
+        if completed_generations and completed_generations % self.checkpoint_every:
+            checkpoint_t0 = time.perf_counter()
+            self._checkpoint(pop_X, pop_F, pop_cv, completed_generations)
+            self._record_generation_stage("checkpoint", checkpoint_t0)
+            self._write_live_perf(completed_generations, time.perf_counter() - t_start)
+
         avg_gen_ms = 1000.0 * sum(gen_times) / max(len(gen_times), 1)
         gens_per_sec = len(gen_times) / max(total_time, 1e-9)
         print(
@@ -1261,4 +1660,8 @@ class CustomGARunner:
             "best_exact": self.best_exact,
             "total_time": total_time,
             "gens_run": len(gen_times),
+            "archive_acceptance_rejections": dict(self.archive_acceptance_rejections),
+            "archive_duplicate_prefilter_rejections": self.archive_duplicate_prefilter_rejections,
+            "archive_cluster_prefilter_rejections": self.archive_cluster_prefilter_rejections,
+            "archive_cluster_prefilter_reasons": dict(self.archive_cluster_prefilter_reasons),
         }

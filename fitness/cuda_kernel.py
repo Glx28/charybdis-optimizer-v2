@@ -14,6 +14,40 @@ import torch
 _CUDA_AVAILABLE = torch.cuda.is_available()
 _CUDA_EXTENSION = None
 
+# Keep in sync with fixed-size PerThreadScratch capacities in fitness_kernel.cu.
+_CUDA_SCRATCH_CAPACITIES = {
+    "positions": 1024,
+    "shortcuts": 320,
+    "apps": 32,
+    "key_groups": 96,
+    "layers": 16,
+}
+
+
+def _validate_cuda_scratch_dimensions(
+    pos_layer, shortcut_access_target, shortcut_importance, app_usage_weight, group_matrix
+):
+    """Fail before launch if a layout exceeds fixed per-genome CUDA scratch arrays."""
+    pos_layer = np.asarray(pos_layer)
+    used = {
+        "positions": int(pos_layer.size),
+        "shortcuts": int(np.asarray(shortcut_importance).size),
+        "apps": int(np.asarray(app_usage_weight).size),
+        "key_groups": int(np.asarray(group_matrix).shape[0]),
+        "layers": max(
+            int(pos_layer.max(initial=-1)) + 1,
+            int(np.asarray(shortcut_access_target).max(initial=-1)) + 1,
+        ),
+    }
+    overflow = {
+        name: {"used": count, "capacity": _CUDA_SCRATCH_CAPACITIES[name]}
+        for name, count in used.items()
+        if count > _CUDA_SCRATCH_CAPACITIES[name]
+    }
+    if overflow:
+        raise ValueError(f"CUDA fitness scratch capacity exceeded: {overflow}")
+    return used
+
 
 def _extension_name() -> str:
     return "charybdis_fitness_cuda"
@@ -117,6 +151,9 @@ def _build_args(arrays: Tuple[Any, ...]) -> Tuple[torch.Tensor, ...]:
         pos_effort_waste,
         lat_params,
     ) = arrays
+    _validate_cuda_scratch_dimensions(
+        pos_layer, shortcut_access_target, shortcut_importance, app_usage_weight, group_matrix
+    )
     # lat_params is consumed by the Numba kernel; the CUDA mirror will use it in Task 5.
     return (
         _to_tensor(pos_effort),

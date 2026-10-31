@@ -582,6 +582,7 @@ def load_usage_stats(path: str) -> Optional[UsageData]:
         scroll_by_layer=data.get("scroll_by_layer", {}),
         raw_completion_keys=data.get("raw_completion_keys", {}),
         raw_completion_total=int(data.get("raw_completion_total", 0) or 0),
+        norwegian_symbol_usage=data.get("norwegian_symbol_usage", {}),
         by_layer_shortcut=data.get("by_layer_shortcut", {}),
         layer_shortcuts=data.get("layer_shortcuts", {}),
         by_app=data.get("by_app", {}),

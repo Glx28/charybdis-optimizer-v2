@@ -187,7 +187,9 @@ def generate_optimizer_json(apps: list[App]) -> dict[str, Any]:
 def generate_coach_json(apps: list[App]) -> dict[str, Any]:
     result: dict[str, Any] = {"_comment": "Per-app keyboard shortcut reference, independent of the optimized layout. Generated from charybdis-optimizer-v2/data/shortcuts_source/."}
     for app in apps:
-        shortcuts: dict[str, str] = {}
+        app_entry = result.setdefault(app.name, {"exeNames": [], "shortcuts": {}})
+        app_entry["exeNames"] = list(dict.fromkeys(app_entry["exeNames"] + app.exe_names))
+        shortcuts = app_entry["shortcuts"]
         for sc in app.shortcuts:
             key = sc.keys
             # Simple dedup: if key already exists, append action

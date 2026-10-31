@@ -1,5 +1,11 @@
 # Charybdis Optimizer V2 Handoff
 
+> Historical 2026-07 snapshot; superseded for current policy and run state by
+> `AGENTS.md`, `contracts/layout_contract_v1.json`, `SPEED_HANDOFF.md`, and
+> `docs/validated-30k-run.md`. Mini-evaluation and dynamic-mouse-layer advice,
+> old PIDs, and restart commands below are archival; do not use as current
+> instructions.
+
 Date: 2026-07-06
 Repo: `/home/nos/charybdis/charybdis-optimizer-v2`
 Commit: `a0770cb` on `master`
@@ -133,9 +139,9 @@ To reach 20–40 gen/sec without quality loss, the semantic mutation operators w
    - If the user wants a real long run, start one with bounded generations (not `999999` unless explicitly requested).
    - Use the restart snippet below.
 
-3. **Monitor completion cluster and dynamic mouse layer**
-   - Existing handoff policy still applies: Norwegian raw completion family should concentrate on one anchor layer.
-   - Final acceptance requires a generated non-L0/non-L7 dynamic mouse layer with MB1-MB5 on the right side, right-hand non-thumb momentary Scroll, no mouse button on right-thumb, no right-thumb momentary access to the layer, and reachable toggle access.
+3. **Mouse role and owner controls**
+   - The versioned owner contract fixes the mouse role to L1. Check `contracts/layout_contract_v1.json` and `docs/LAYOUT_ACCEPTANCE.md` for current acceptance rules.
+   - Other non-L7 layers remain available for ordinary workflows. L7 stays frozen and exempt.
 
 4. **CUDA kernel parity / robustness**
    - Seed genome parity is exact.
@@ -233,5 +239,8 @@ PY build/runs/<run>/v2_checkpoint_gen500.json
 - Do not revive CPU-primary production training. The code now fails fast; keep it that way.
 - Do not reduce `mini_eval_fraction` below `0.1` to chase speed — it removes exact training signal from the surrogate cache.
 - Do not judge 50-gen quality as final; this optimizer typically needs thousands of generations.
-- Do not hardcode a mouse layer, scroll layer, or layer numbers other than L0/L7.
+- The mouse role is fixed to L1 by the versioned owner contract. Keep scroll
+  placement and other layer workflows governed by that contract and live data.
 - If exported CSV and standalone analyzer disagree, fix the decoder source first.
+# Historical handoff — superseded for current work by
+# `contracts/layout_contract_v1.json` and `docs/LAYOUT_ACCEPTANCE.md`.

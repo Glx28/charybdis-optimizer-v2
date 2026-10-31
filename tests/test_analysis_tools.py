@@ -1,5 +1,7 @@
 """Smoke tests for the shared analysis infrastructure and tools."""
+import json
 import os
+import shutil
 import subprocess
 import sys
 
@@ -18,6 +20,88 @@ from tools._common import (
     load_evaluator,
     load_layout,
 )
+from tools.compare_checkpoints import _comparison_verdict
+
+
+def test_aggregate_usage_preserves_layer_symbols_and_shortcut_sequences(tmp_path):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js is required for usage aggregation")
+
+    usage_log = tmp_path / "shortcut_usage.jsonl"
+    output_path = tmp_path / "usage_stats.json"
+    events = [
+        {"ts": "2026-10-29T10:00:00Z", "type": "shortcut", "keys": "^c",
+         "app": "Code.exe", "layer": "0", "count": 1},
+        {"ts": "2026-10-29T10:00:00.120Z", "type": "shortcut", "keys": "^v",
+         "prev": "^c", "prev_layer": "0", "gap_ms": 120, "app": "Code.exe", "layer": "1", "count": 1},
+        {"ts": "2026-10-29T10:00:00.200Z", "type": "norwegian_symbol_key",
+         "physical_key": "2", "produced_output": "@", "modifier_state": "altgr",
+         "app": "Code.exe", "layer": "1"},
+        {"ts": "2026-10-29T10:00:00.300Z", "type": "norwegian_symbol_key",
+         "physical_key": "SC056", "produced_output": "<", "modifier_state": "shift",
+         "app": "Code.exe", "layer": "10"},
+        {"ts": "2026-10-29T10:00:00.400Z", "type": "norwegian_symbol_key",
+         "physical_key": "SC01A", "produced_output": "å", "modifier_state": "normal",
+         "app": "Code.exe", "layer": "9"},
+        {"ts": "2026-10-29T10:00:00.500Z", "type": "norwegian_symbol_key",
+         "physical_key": "SC027", "produced_output": "ø", "modifier_state": "normal",
+         "app": "Code.exe", "layer": "1"},
+        {"ts": "2026-10-29T10:00:00.600Z", "type": "norwegian_symbol_key",
+         "physical_key": "SC028", "produced_output": "æ", "modifier_state": "normal",
+         "app": "Code.exe", "layer": "2"},
+        {"ts": "2026-10-29T10:00:00.700Z", "type": "norwegian_symbol_key",
+         "physical_key": "SC00C", "produced_output": "+", "modifier_state": "normal",
+         "app": "Code.exe", "layer": "5"},
+    ]
+    usage_log.write_text(
+        "\n".join(json.dumps(event) for event in events)
+        + "\n\x00\x00\x00" + json.dumps({
+            "ts": "2026-10-29T10:00:00.800Z", "type": "shortcut", "keys": "^s",
+            "app": "Code.exe", "layer": "1", "count": 1,
+        })
+        + "\n\x00truncated\n",
+        encoding="utf-8",
+    )
+
+    env = os.environ.copy()
+    env["CHARYBDIS_USAGE_LOG"] = str(usage_log)
+    env["CHARYBDIS_USAGE_STATS_OUT"] = str(output_path)
+    result = subprocess.run(
+        [node, "pipeline/aggregate_usage.js"], cwd=REPO_ROOT, env=env,
+        capture_output=True, text=True, check=True,
+    )
+    assert "Usage aggregation:" in result.stdout
+    assert "9 events" in result.stdout
+    assert "1 malformed JSON event line(s) skipped" in result.stderr
+    assert "1 NUL-padded JSON event line(s) recovered" in result.stderr
+    stats = json.loads(output_path.read_text(encoding="utf-8"))
+    assert stats["total_events"] == 9
+    assert stats["malformed_event_lines"] == 1
+    assert stats["repaired_padded_event_lines"] == 1
+
+    assert stats["by_layer_shortcut"]["Ctrl+C"] == {"0": 1}
+    assert stats["by_layer_shortcut"]["Ctrl+V"] == {"1": 1}
+    assert stats["by_layer_shortcut"]["Ctrl+S"] == {"1": 1}
+    assert stats["shortcut_sequences"]["Ctrl+C -> Ctrl+V"]["count"] == 1
+    assert stats["shortcut_sequences"]["Ctrl+C -> Ctrl+V"]["by_layer_pair"] == {"0->1": 1}
+    assert stats["chains"]["Ctrl+C -> Ctrl+V"]["by_layer_path"] == {"0->1": 1}
+    assert stats["norwegian_symbol_usage"]["by_output"]["@"]["by_layer"] == {"1": 1}
+    assert stats["norwegian_symbol_usage"]["by_output"]["@"]["physical_keys"] == {"2": 1}
+    assert stats["norwegian_symbol_usage"]["by_output"]["<"]["by_layer"] == {"10": 1}
+    assert stats["norwegian_symbol_usage"]["by_output"]["å"]["by_layer"] == {"9": 1}
+    assert stats["norwegian_symbol_usage"]["by_output"]["ø"]["by_layer"] == {"1": 1}
+    assert stats["norwegian_symbol_usage"]["by_output"]["æ"]["by_layer"] == {"2": 1}
+    assert stats["norwegian_symbol_usage"]["by_output"]["+"]["physical_keys"] == {"SC00C": 1}
+
+
+def test_compare_checkpoint_verdict_treats_lower_penalty_as_better():
+    assert _comparison_verdict(-10.0, True, True) == (
+        "B has lower (better) exact score; both pass"
+    )
+    assert _comparison_verdict(10.0, True, True) == (
+        "B has higher (worse) exact score; both pass"
+    )
 
 
 def test_load_layout_returns_layout():

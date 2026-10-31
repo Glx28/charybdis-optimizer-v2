@@ -4,7 +4,7 @@ GPU training policy is repo-wide: production optimizer training must be
 GPU-primary. Do not start or continue training if CUDA is unavailable or if the
 active path is CPU/Numba-primary. See `GPU_TRAINING_POLICY.md`.
 
-Layer access buttons are not fixed structure.
+Layer access buttons are mutable except the required L0 x3,y4 ordinary hold to L1.
 
 They must be represented as first-class assignable `Shortcut` capabilities with
 `is_layer_access=True`. The optimizer may move, duplicate, remove, or replace
@@ -70,9 +70,7 @@ Required scoring behavior:
   group members are on different layers, group scoring must not penalize or
   move them across layers. Group-aware mutation may move a whole protected
   group as one unit when a large overwrite would replace half or more of that
-  group; scoring then decides whether that moved group survives. Post-hoc
-  semantic repairs for mouse, arrows, completion, app, or workflow groups are
-  not allowed
+  group; scoring then decides whether that moved group survives. Seed repair is governed by the owner contract below.
 - Norwegian/raw completion keys are a backup group for physical keys missing
   from L0. They should be grouped together in normal-keyboard-like order,
   preferably on the far-right side, but not as a hardcoded layer role. Since the
@@ -80,57 +78,15 @@ Required scoring behavior:
   workflow shortcuts. Logged usage determines access priority relative to
   workflows: lower usage means lower-priority access; higher usage can outrank
   less-used workflows
-- non-scroll momentary layer access must be on a thumb position
-- Scroll-mode access is exempt: it remains a finger-operated pointer mode
-  switch
-- direct L0 thumb access is preferred for high-traffic layers
-- nested access is expensive
-- momentary-into-momentary access is very expensive
-- mouse shortcuts and mouse-layer access can compete for L0/thumb slots when
-  usage data supports them
-- scroll is a trackball pointer-to-wheel mode switch with a layer side effect;
-  do not model `ScrollUp`/`ScrollDown` as ordinary keypress shortcuts and do
-  not treat any layer as a hardcoded scroll-only destination
-- `ScrollUp` and `ScrollDown` must not appear in protected/static/dynamic
-  groups. Scroll grouping is represented by the scroll-mode access capability,
-  not by fake wheel-direction keypresses
-- target-generation run validity requires a generated dynamic mouse workflow
-  layer. If the run reaches its target generation and no non-L0/non-L7 layer
-  contains every core mouse button, MB1-MB2-MB3-MB4-MB5, accessible on the right
-  side of that same layer, the entire run is invalid. Mouse buttons on that
-  generated mouse layer must not occupy the right-thumb area. That same layer
-  must also include right-hand non-thumb momentary Scroll, no momentary
-  mouse-layer access on the right thumb side, and a reachable toggle access path. This is a final acceptance
-  constraint, not a requirement that every intermediate generation already
-  satisfy it
-- momentary Scroll is part of the core mouse group on the generated mouse
-  layer. Because scrolling is a high-frequency trackball/mouse action, a toggle
-  Scroll alone does not satisfy dynamic mouse-layer success; the required
-  Scroll capability is right-hand, non-thumb, and momentary
-- mouse-button placement on the generated mouse layer is usage-weighted. More
-  used mouse buttons should receive better positions, but they still compete
-  with stronger workflow shortcuts. Mouse duplicates outside that layer are
-  allowed but have lower duplicate value and must be justified by usage/access
-  evidence. MB1/MB2 and MB4/MB5 receive small soft bonuses for left-to-right,
-  close, same-row pair placement
-- after a natural generated mouse layer exists, it should dominate mouse
-  interactions. Mouse buttons on other layers receive lower value and extra
-  cleanup pressure, but exceptions are allowed when usage/access evidence shows
-  a workflow uses mouse buttons heavily enough that switching to the mouse layer
-  each time would be more expensive
-- layer-aware logger data must record which shortcuts and mouse/scroll actions
-  occur while each layer is active. The optimizer may use this as evidence, but
-  must not convert observed layer numbers into permanent semantic layer roles
-- L7 is not a generated mouse layer. It is frozen RPG/arrows/navigation/
-  keyboard-system fallback and must not satisfy mutable/generated mouse
-  workflow requirements. Frozen L7 content is not an optimizer acceptance
-  surface.
-- L7 access is the only L7 acceptance check: L7 must be reachable by both a
-  momentary layer access capability and a toggle layer access capability
-- thumb clearance is strict and dynamic. For any non-L0/non-L7 layer, thumb
-  positions on a side are restricted if that layer is accessed by a momentary
-  thumb key from that side. The restricted side must be empty on the target
-  layer. Both thumb areas become available only when the layer has reachable
-  toggle access or has momentary thumb access from both left and right sides.
-  If either freeing condition is later lost, any keys in the newly restricted
-  thumb area make the layout invalid until moved
+## Canonical mouse and access contract
+
+`contracts/layout_contract_v1.json` is the versioned source of truth for generation, mutation, exact evaluation, archive selection, export, and promotion. All checks must use its CPU audit semantics.
+
+- Mouse role is fixed to L1. L0 x3,y4 is an ordinary momentary hold to L1, preserving cursor movement.
+- L1 MB1, MB2, and momentary Scroll are fixed at x8,y2, x9,y2, and x10,y2. MB3 remains movable within L1 right-hand non-thumb positions. MB4 and MB5 stay adjacent, ordered left-to-right, on that region.
+- Exactly three momentary current-layer Scroll bindings exist: fixed L1 Scroll plus two on distinct non-L0, non-L1, non-L7 layers. They never serve essential layer access.
+- L1 has a reachable self-lock usable while holding L0's L1 access key; release preserves lock.
+- Every generated layer L1-L10 except frozen L7 has an ordinary momentary hold path from L0. Every occupied target thumb side on those paths contains only empty or return-to-L0 bindings. Toggles and locks never waive this restriction. L7 is byte-for-byte frozen and exempt.
+- Preserve Norwegian key grouping, L0 LeftAlt, reachable non-L0 RightAlt, required shortcut groups, and duplicate restrictions. Required L1 shortcuts and effort limits are listed in the contract.
+
+Other layers can evolve useful workflows; only L1 has the mouse role. Never select or publish a candidate that fails the versioned contract.

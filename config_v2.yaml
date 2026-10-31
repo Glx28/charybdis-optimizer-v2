@@ -4,7 +4,8 @@ evolution:
   crossover_prob: 0.7
   mutation_prob: 0.2
   group_overwrite_prob: 0.15
-  mouse_workflow_prob: 0.06
+  mouse_workflow_prob: 0.0
+  mb45_move_prob: 0.04
   l7_access_prob: 0.03
   random_assign_prob: 0.08
   bulk_assign_prob: 0.04
@@ -16,7 +17,7 @@ evolution:
   inject_seed: true
 surrogate:
   enabled: true
-  initial_exact_samples: 5000   # bootstrap; gets washed out by mini-evals quickly
+  initial_exact_samples: 5000   # bootstrap exact-evaluation cache
   exact_eval_every: 300         # full-pop exact eval still runs periodically
   retrain_every: 300
   train_epochs: 100
@@ -25,7 +26,6 @@ surrogate:
   max_retrain_samples: 9000      # keep only recent 9000 samples → local surrogate, higher R²
   hidden_dim: 256
   embedding_dim: 32
-  mini_eval_fraction: 0.1        # fraction of children exact-evaluated each generation
 training:
   require_cuda: true
   require_gpu_primary: true
@@ -52,7 +52,7 @@ fitness:
     Win+H: 6.0
     Win+Tab: 6.0
     Alt+Tab: 10.0  # preserve the corpus's existing constant-use importance
-    Win+Alt+Space: 12.0  # Owner requires CmdPal on the dynamic mouse layer.
+    Win+Alt+Space: 12.0  # Owner requires CmdPal on L1.
     Ctrl+-: 9.0
     Ctrl++: 9.0
     Win+Shift+Left: 8.0
@@ -73,8 +73,7 @@ fitness:
     Shift+Enter: 9.5
     # Ctrl+C: 52/day but only eff=1.00; same importance as Ctrl+V which is at eff=0.00
     # Keep at 10.0 (already set by app data) — optimizer needs to find it a home-row slot
-    # Scroll: no L10 hardcode — kernel tracks scroll_right_momentary dynamically by placement layer.
-    # Effort penalty (coeff 15000) pushes whichever scroll key lands on the mouse layer to eff=0.
+    # Scroll roles and placements follow contracts/layout_contract_v1.json.
   # Semantic cluster same-layer pressure. Higher values pull cluster members onto one layer more
   # strongly. Tuned against the violations IQR scale factor; start near 200 and raise cautiously.
   semantic_cluster_multiplier: 200.0
@@ -90,12 +89,16 @@ fitness:
   sparse_layer_base_penalty: 0.0
   sparse_layer_gap_penalty: 0.0
   right_alt_l0_penalty: 5000.0
-  layer_usage_preference_penalty: 200.0
+  # Layer-local familiarity plus incumbent-position stability. Underused-layer
+  # copies pay most at low effort; mature same-layer bindings resist coordinate
+  # moves until use supports another layer. Counts mature logarithmically.
+  layer_usage_preference_penalty: 10000.0
   mouse_layer_shortcut_penalty: 10000.0
-  # Owner-required mouse-workflow controls. Their target layer is detected from
-  # each genome's valid MB1-MB5 and scroll bindings, never a fixed layer number.
+  # Favorites receive only a soft L1 bonus where layer-aware logger evidence
+  # shows actual L1 use. All workflow placement remains evolvable.
   owner_mouse_layer_shortcut_preferences:
     - Win+Alt+Space
+    - Ctrl+Alt+Win+F11
     - Ctrl+-
     - Ctrl++
     - Win+Shift+Left
@@ -104,9 +107,8 @@ fitness:
     - Ctrl+V
     - Ctrl+S
     - Ctrl+C
-  owner_mouse_layer_shortcut_penalty: 50000.0
-  # Owner preference: make the left x3,y4 thumb the easiest direct access to
-  # the dynamically identified mouse-button layer when that layer is valid.
+  owner_mouse_layer_shortcut_penalty: 1000.0
+  # Owner preference: make the left x3,y4 thumb the easiest direct access to L1.
   mouse_layer_access_position_penalty: 2.0
   # Start with enough pressure to move ordered groups; no zero-pressure warmup.
   semantic_cluster_multiplier_schedule:
@@ -134,37 +136,31 @@ fitness:
     mouse_layer_access: 5000000.0
     arrow_scattered: 0.0
     mouse_scattered: 500000.0
-    layer7_access: 50000.0
+    layer7_access: 0.0
     duplicate_value_gap: 45000.0
     access_layout: 5000.0
     raw_keyboard_completion_norwegian: 80000.0
-    dynamic_mouse_layer: 5000000000.0
+    # Mouse role is fixed by contracts/layout_contract_v1.json. Legacy
+    # dynamic-layer scoring stays disabled for checkpoint compatibility.
+    dynamic_mouse_layer: 0.0
     empty_position: 200.0
     layer_reachability: 50000.0
     layer_depth_penalty: 3000000000.0
-    natural_mouse_layer_exists: 200000000000.0
-    toggle_back_to_l0: 150000000000.0
-    mouse_hold_position_conflict: 150000000000.0
-    mouse_layer_depth_penalty: 150000000000.0
+    natural_mouse_layer_exists: 0.0
+    toggle_back_to_l0: 0.0
+    mouse_hold_position_conflict: 0.0
+    mouse_layer_depth_penalty: 0.0
     same_layer_duplicate: 200000.0
     # The violations objective is divided by a ~323B IQR scale; use a large
     # sub-weight so opposite-thumb rewards and same-side penalties remain visible.
     same_side_hold_flow: 5000000000.0
   hard_constraints:
-    - missing_important
-    - layer7_access
-    - natural_mouse_layer_exists
-    - layer_reachability
     - toggle_back_to_l0
     - same_layer_duplicate
-    - layer_access_thumb_preference
     - l0_toggle_access
     - right_alt_off_l0
-    - cmdpal_on_mouse_layer
     - access_hold_target_position_conflict
-    - zoom_controls_present_together
-    - monitor_move_pair_together
-    - l5_hold_to_self_toggle_path
+    - owner_layout_contract_v1
 output:
   checkpoint_interval: 500
   verbose: true

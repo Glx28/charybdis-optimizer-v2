@@ -1,6 +1,7 @@
 {
-  "eval_genomes_per_sec": 6358.635086728129,
-  "mutation_individuals_per_sec": 33487.614195111346,
-  "recorded_at": "2026-10-05T08:13:41Z",
-  "reason": "Re-baseline CPU mutation throughput for this shared 8-vCPU WSL session: an active music-processing pipeline and local assistant consume CPU concurrently. The Aug 31 baseline was measured under a different load profile. Correctness tests pass; record this as shared-load throughput and remeasure on an idle host before making idle-performance comparisons."
+  "eval_genomes_per_sec": 4555.225116829765,
+  "mutation_individuals_per_sec": 24193.680749861327,
+  "workload": "/home/nos/charybdis/charybdis-optimizer-v2/seeds/gen25k_corrected_seed.json sha256=8cb0e3b38f0d23d46765d5dbdf9ca5e145207581493718fb454528cff81d57bc",
+  "recorded_at": "2026-10-29T07:37:46Z",
+  "reason": "Rebaseline workload to the corrected gen25k production seed; prior 2026-10-05 baseline mutated the unrelated layout default and overstated representative throughput."
 }
